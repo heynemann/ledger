@@ -1,282 +1,257 @@
 ---
 title: Getting Started
-description: Install Ledger and create your first billing plan in under five minutes.
+description: Install Ledger, create a plan, subscribe a tenant, check a quota and bill the period.
 ---
 
 ## Prerequisites
 
-- Go 1.22 or later
+- Go 1.26 or later
 - A Go module (`go mod init`)
-- PostgreSQL, SQLite, or Redis (for storage)
+
+The steps below use the in-memory store, so you don't need a database to follow along. [Switch to PostgreSQL](#switch-to-postgresql) at the end when you're ready.
 
 ## Install
 
 ```bash
-go get github.com/xraph/ledger
+go get github.com/xraph/ledger@latest
 ```
 
-## Step 1: Create the billing engine
+## Step 1: Create the engine
 
-The Ledger engine is the central billing coordinator. It needs a store for persistence:
+`ledger.New` takes a `store.Store` and any number of options. `Start` migrates the store (a no-op for the memory store), then starts the meter flush worker and the lifecycle clock. `Stop` flushes buffered usage, stops the workers and closes the store.
 
 ```go
-package main
-
-import (
-    "context"
-    "log"
-    "time"
-
-    "github.com/xraph/ledger"
-    "github.com/xraph/ledger/store/postgres"
+engine := ledger.New(memory.New(),
+	ledger.WithMeterConfig(100, 5*time.Second),     // flush every 100 events or every 5s
+	ledger.WithEntitlementCacheTTL(30*time.Second), // cache quota answers for 30s
 )
+if err := engine.Start(ctx); err != nil {
+	log.Fatal(err)
+}
+defer engine.Stop()
+```
 
-func main() {
-    ctx := context.Background()
+Those two options are the defaults, so `ledger.New(memory.New())` behaves the same. [Configuration](/docs/concepts/configuration) lists every option.
 
-    // Create PostgreSQL store
-    store := postgres.New(pool) // your *pgxpool.Pool
+## Step 2: Create a plan
 
-    // Create billing engine with configuration
-    engine := ledger.New(store,
-        ledger.WithMeterConfig(100, 5*time.Second),     // Batch 100 events or 5 seconds
-        ledger.WithEntitlementCacheTTL(30*time.Second), // Cache entitlements for 30s
-    )
+A plan carries its features, its currency and its pricing. `CreatePlan` validates it, assigns a `plan_` TypeID and stores it. A plan with no `Status` is saved as a draft, and only an active plan takes subscribers, so set `plan.StatusActive` (or call `ActivatePlan` later).
 
-    // Start the engine
-    if err := engine.Start(ctx); err != nil {
-        log.Fatal(err)
-    }
-    defer engine.Stop()
+```go
+pro := &plan.Plan{
+	Name:     "Pro",
+	Slug:     "pro",
+	Currency: "usd",
+	Status:   plan.StatusActive,
+	AppID:    "my-app",
+	Features: []plan.Feature{
+		{Key: "api_calls", Name: "API calls", Type: plan.FeatureMetered, Limit: 10000, Period: plan.PeriodMonthly, SoftLimit: true},
+		{Key: "sso", Name: "Single sign-on", Type: plan.FeatureBoolean, Limit: 1},
+	},
+	Pricing: &plan.Pricing{
+		BaseAmount:    types.USD(4900), // $49.00
+		BillingPeriod: plan.PeriodMonthly,
+		Tiers: []plan.PriceTier{
+			{FeatureKey: "api_calls", Type: plan.TierGraduated, UpTo: 10000, UnitAmount: types.Zero("usd")},
+			{FeatureKey: "api_calls", Type: plan.TierGraduated, UpTo: -1, UnitAmount: types.USD(1)}, // 1 cent a call
+		},
+	},
+}
+if err := engine.CreatePlan(ctx, pro); err != nil {
+	log.Fatal(err)
 }
 ```
 
-## Step 2: Set up multi-tenancy
+The feature's `Limit` does two jobs. It's the quota `Entitled` enforces, and for a metered feature it's also the allowance the invoice includes before overage starts. `SoftLimit: true` lets a tenant go past it and bills the extra through the tiers. A boolean feature is on when its `Limit` is above zero.
 
-Ledger extracts tenant ID and app ID from context for isolation:
+## Step 3: Subscribe a tenant
 
-```go
-// Set tenant context for all operations
-ctx = context.WithValue(ctx, "tenant_id", "tenant_123")
-ctx = context.WithValue(ctx, "app_id", "app_456")
-```
-
-All operations are automatically scoped to the tenant — cross-tenant access is impossible.
-
-## Step 3: Create a pricing plan
-
-Define what you're selling with features and pricing:
+The tenant is the customer you bill: a string you choose, such as an organization ID. The subscription must name it, and its `AppID` must match the plan's.
 
 ```go
-import (
-    "github.com/xraph/ledger/plan"
-    "github.com/xraph/ledger/types"
-)
-
-proPlan := &plan.Plan{
-    Name:        "Pro Plan",
-    Slug:        "pro",
-    Description: "Best for growing teams",
-    Features: []plan.Feature{
-        {
-            Key:         "api_calls",
-            Type:        plan.FeatureMetered,
-            Description: "API requests per month",
-            Limit:       10000,
-        },
-        {
-            Key:         "seats",
-            Type:        plan.FeatureLicensed,
-            Description: "Team member seats",
-            Limit:       5,
-        },
-        {
-            Key:         "storage_gb",
-            Type:        plan.FeatureMetered,
-            Description: "Storage in gigabytes",
-            Limit:       100,
-        },
-    },
-    Pricing: &plan.Pricing{
-        BaseAmount: types.USD(4900), // $49.00/month
-        Interval:   plan.IntervalMonthly,
-        Tiers: []plan.PriceTier{
-            // First 1000 API calls free
-            {UpTo: 1000, UnitAmount: types.Zero()},
-            // Next 4000 at $0.01 each
-            {UpTo: 5000, UnitAmount: types.USD(1)},
-            // Everything else at $0.005 each
-            {UpTo: -1, UnitAmount: types.Cents(0.5)},
-        },
-    },
-}
-
-if err := engine.CreatePlan(ctx, proPlan); err != nil {
-    log.Fatal(err)
-}
-```
-
-## Step 4: Create a subscription
-
-Subscribe a customer to your plan:
-
-```go
-import (
-    "github.com/xraph/ledger/subscription"
-)
-
-sub := &subscription.Subscription{
-    TenantID:    "tenant_123",
-    CustomerID:  "cust_abc123",
-    PlanID:      proPlan.ID,
-    Status:      subscription.StatusTrialing,
-    TrialEnd:    time.Now().AddDate(0, 0, 14), // 14-day trial
-    CurrentPeriod: subscription.Period{
-        Start: time.Now(),
-        End:   time.Now().AddDate(0, 1, 0),
-    },
-}
-
+sub := &subscription.Subscription{TenantID: "acme", AppID: "my-app", PlanID: pro.ID}
 if err := engine.CreateSubscription(ctx, sub); err != nil {
-    log.Fatal(err)
+	log.Fatal(err)
 }
 ```
 
-## Step 5: Check entitlements
+`CreateSubscription` fills in the `sub_` ID and the first period, which starts now and runs one billing period. With no `Status` set, the subscription starts as `trialing` when the plan has `TrialDays`, and `active` otherwise.
 
-Check if a customer can use a feature (sub-millisecond with cache):
+## Step 4: Check a quota and meter usage
+
+`Entitled`, `Remaining` and `Meter` take the tenant and app from the context values `"tenant_id"` and `"app_id"`, both plain strings.
 
 ```go
-// Check entitlement
-result, err := engine.Entitled(ctx, "api_calls")
+ctx = context.WithValue(ctx, "tenant_id", "acme")
+ctx = context.WithValue(ctx, "app_id", "my-app")
+
+res, err := engine.Entitled(ctx, "api_calls")
 if err != nil {
-    log.Fatal(err)
+	log.Fatal(err)
+}
+if !res.Allowed {
+	// Respond with 429 or similar. res.Reason says why.
+	return
 }
 
-if result.Allowed {
-    fmt.Printf("API calls remaining: %d/%d\n",
-        result.Remaining, result.Limit)
-
-    // Process the API request...
-
-    // Track usage (non-blocking, batched)
-    engine.Meter(ctx, "api_calls", 1)
-} else {
-    // Return 429 Too Many Requests
-    fmt.Printf("Quota exceeded: %s\n", result.Reason)
+// Do the work, then record it.
+if err := engine.Meter(ctx, "api_calls", 1); err != nil {
+	log.Fatal(err)
 }
 ```
 
-## Step 6: Generate invoices
+If either value is missing, `Meter` returns `ledger.ErrInvalidInput` and `Entitled` answers not allowed with the reason `"missing tenant or app context"`.
 
-Generate invoices for billing periods:
+Two timing details are worth knowing early. `Meter` doesn't write on the spot: the event sits in a buffer until the flush worker writes the batch, so it counts toward quota checks and invoices only after that flush. And `Entitled` caches its answer for the cache TTL, so a quota check can lag the latest flush by up to 30 seconds.
+
+## Step 5: Generate an invoice
+
+`GenerateInvoice` bills the subscription's current period: a base fee line, an overage line per metered feature past its allowance, seat lines, discounts from applied coupons and tax from any tax plugin.
 
 ```go
-// Generate invoice for current period
-invoice, err := engine.GenerateInvoice(ctx, sub.ID)
+inv, err := engine.GenerateInvoice(ctx, sub.ID)
 if err != nil {
-    log.Fatal(err)
+	log.Fatal(err)
 }
 
-fmt.Printf("Invoice %s\n", invoice.ID)
-fmt.Printf("Subtotal: %s\n", invoice.Subtotal.Format())
-fmt.Printf("Tax: %s\n", invoice.Tax.Format())
-fmt.Printf("Total: %s\n", invoice.Total.Format())
-
-// Line items breakdown
-for _, item := range invoice.LineItems {
-    fmt.Printf("- %s: %s x %d = %s\n",
-        item.Description,
-        item.UnitAmount.Format(),
-        item.Quantity,
-        item.Amount.Format())
+fmt.Println("invoice", inv.ID, inv.Status)
+for _, li := range inv.LineItems {
+	fmt.Printf("  %-8s %-22s %s\n", li.Type, li.Description, li.Amount)
 }
+fmt.Println("  subtotal", inv.Subtotal, "tax", inv.TaxAmount, "total", inv.Total)
 ```
 
-## Step 7: Process payments
+A second invoice for a period that already has a live one fails with `ledger.ErrAlreadyExists`. To bill a period that has already ended, pass `ledger.ForPeriod(start, end)`. Ledger never generates invoices by itself, so you decide when to call this, typically from an `OnSubscriptionRenewed` plugin hook or your own scheduler. See [Billing cycles](/docs/subsystems/billing-cycles).
 
-Integrate with payment providers:
+## Step 6: Finalize and record payment
+
+An invoice starts as a draft. `FinalizeInvoice` moves it to `pending` and sets a due date 30 days out. Once your payment provider has collected the money, record it:
 
 ```go
-import "github.com/xraph/ledger/provider/stripe"
-
-// Configure Stripe provider
-stripeProvider := stripe.New(stripeClient)
-engine.SetProvider(stripeProvider)
-
-// Collect payment
-payment, err := engine.CollectPayment(ctx, invoice.ID,
-    provider.PaymentMethod{
-        Type: provider.MethodCard,
-        ID:   "pm_card_visa", // Stripe payment method
-    })
-
-if payment.Status == provider.StatusSucceeded {
-    fmt.Printf("Payment collected: %s\n", payment.Amount.Format())
+if err := engine.FinalizeInvoice(ctx, inv.ID); err != nil {
+	log.Fatal(err)
+}
+if err := engine.MarkInvoicePaid(ctx, inv.ID, time.Now(), "ch_123"); err != nil {
+	log.Fatal(err)
 }
 ```
+
+The lifecycle clock marks a pending invoice `past_due` once its due date passes.
 
 ## Complete example
 
-Here's a complete billing flow:
-
 ```go
 package main
 
 import (
-    "context"
-    "fmt"
-    "log"
-    "time"
+	"context"
+	"fmt"
+	"log"
+	"time"
 
-    "github.com/xraph/ledger"
-    "github.com/xraph/ledger/plan"
-    "github.com/xraph/ledger/store/memory"
-    "github.com/xraph/ledger/subscription"
-    "github.com/xraph/ledger/types"
+	"github.com/xraph/ledger"
+	"github.com/xraph/ledger/plan"
+	"github.com/xraph/ledger/store/memory"
+	"github.com/xraph/ledger/subscription"
+	"github.com/xraph/ledger/types"
 )
 
 func main() {
-    ctx := context.Background()
+	ctx := context.Background()
 
-    // Create engine with in-memory store for testing
-    engine := ledger.New(memory.New())
-    engine.Start(ctx)
-    defer engine.Stop()
+	engine := ledger.New(memory.New())
+	if err := engine.Start(ctx); err != nil {
+		log.Fatal(err)
+	}
+	defer engine.Stop()
 
-    // Set tenant context
-    ctx = context.WithValue(ctx, "tenant_id", "acme_corp")
+	pro := &plan.Plan{
+		Name:     "Pro",
+		Slug:     "pro",
+		Currency: "usd",
+		Status:   plan.StatusActive,
+		AppID:    "my-app",
+		Features: []plan.Feature{
+			{Key: "api_calls", Name: "API calls", Type: plan.FeatureMetered, Limit: 10000, Period: plan.PeriodMonthly},
+			{Key: "sso", Name: "Single sign-on", Type: plan.FeatureBoolean, Limit: 1},
+		},
+		Pricing: &plan.Pricing{
+			BaseAmount:    types.USD(4900),
+			BillingPeriod: plan.PeriodMonthly,
+		},
+	}
+	if err := engine.CreatePlan(ctx, pro); err != nil {
+		log.Fatal(err)
+	}
 
-    // Create plan
-    plan := createStarterPlan()
-    engine.CreatePlan(ctx, plan)
+	sub := &subscription.Subscription{TenantID: "acme", AppID: "my-app", PlanID: pro.ID}
+	if err := engine.CreateSubscription(ctx, sub); err != nil {
+		log.Fatal(err)
+	}
 
-    // Create subscription
-    sub := createSubscription(plan.ID)
-    engine.CreateSubscription(ctx, sub)
+	ctx = context.WithValue(ctx, "tenant_id", "acme")
+	ctx = context.WithValue(ctx, "app_id", "my-app")
 
-    // Simulate API usage
-    for i := 0; i < 100; i++ {
-        if result, _ := engine.Entitled(ctx, "api_calls"); result.Allowed {
-            engine.Meter(ctx, "api_calls", 1)
-            fmt.Printf("Request %d processed\n", i+1)
-        } else {
-            fmt.Printf("Quota exceeded at request %d\n", i+1)
-            break
-        }
-    }
+	for i := range 3 {
+		res, err := engine.Entitled(ctx, "api_calls")
+		if err != nil {
+			log.Fatal(err)
+		}
+		if !res.Allowed {
+			fmt.Println("quota exceeded at request", i+1)
+			break
+		}
+		if err := engine.Meter(ctx, "api_calls", 1); err != nil {
+			log.Fatal(err)
+		}
+	}
 
-    // Generate invoice
-    invoice, _ := engine.GenerateInvoice(ctx, sub.ID)
-    fmt.Printf("\nInvoice Total: %s\n", invoice.Total.Format())
+	inv, err := engine.GenerateInvoice(ctx, sub.ID)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("invoice", inv.ID, "total", inv.Total)
+
+	if err := engine.FinalizeInvoice(ctx, inv.ID); err != nil {
+		log.Fatal(err)
+	}
+	if err := engine.MarkInvoicePaid(ctx, inv.ID, time.Now(), "manual"); err != nil {
+		log.Fatal(err)
+	}
 }
 ```
+
+Run it with `go run .` and it prints the invoice ID and a total of `$49.00`, the base fee: three calls are well inside the 10,000 allowance.
+
+## Switch to PostgreSQL
+
+The PostgreSQL, SQLite and MongoDB stores all take a `*grove.DB`. Open a Grove driver, wrap it, and hand the store to `ledger.New`:
+
+```go
+pg := pgdriver.New()
+if err := pg.Open(ctx, os.Getenv("DATABASE_URL")); err != nil {
+	log.Fatal(err)
+}
+
+db, err := grove.Open(pg)
+if err != nil {
+	log.Fatal(err)
+}
+
+engine := ledger.New(postgres.New(db))
+if err := engine.Start(ctx); err != nil { // runs the store's migrations first
+	log.Fatal(err)
+}
+defer engine.Stop() // also closes db
+```
+
+The imports are `github.com/xraph/grove`, `github.com/xraph/grove/drivers/pgdriver` and `github.com/xraph/ledger/store/postgres`. See [PostgreSQL store](/docs/stores/postgres).
 
 ## Next steps
 
 <Cards>
-  <Card title="Architecture" href="/docs/architecture" description="Understand Ledger's package structure" />
-  <Card title="Plans & Pricing" href="/docs/concepts/plans" description="Design your pricing models" />
-  <Card title="Subscriptions" href="/docs/concepts/subscriptions" description="Manage customer subscriptions" />
-  <Card title="Metering" href="/docs/subsystems/metering" description="Track usage at scale" />
+  <Card title="Architecture" href="/docs/architecture" description="How the packages fit together." />
+  <Card title="Plans and pricing" href="/docs/subsystems/plans" description="Features, limits and price tiers." />
+  <Card title="Subscriptions" href="/docs/subsystems/subscriptions" description="Trials, plan changes, pause, resume and cancel." />
+  <Card title="Metering" href="/docs/subsystems/metering" description="How usage gets from Meter to the store." />
 </Cards>

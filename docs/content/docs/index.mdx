@@ -1,131 +1,110 @@
 ---
 title: Introduction
-description: Modern billing engine for SaaS applications in Go.
+description: A usage-based billing engine you import into your Go program.
 ---
 
-Ledger is a Go library for building usage-based billing systems for SaaS applications. Instead of managing complex pricing logic, you define **plans**, track **usage**, check **entitlements**, and generate **invoices** — and Ledger handles the billing orchestration at runtime.
+Ledger is a Go library for usage-based billing in SaaS products. You define **plans** and a feature catalog, subscribe your tenants, meter **usage**, check **entitlements** and quotas on the request path, and generate **invoices** with tiered pricing and coupons.
 
-Ledger is a **library** — not a service. You bring your own database, payment provider, and HTTP server. Ledger provides the billing engine plumbing.
+It's a library, not a service. It runs inside your process against your own database (PostgreSQL, SQLite, MongoDB or the in-memory store), and you keep `main`, the connection and the HTTP server. Ledger doesn't charge cards: it works out what a tenant owes and tracks the invoice's state, and collecting the money is the job of a payment provider you plug in.
 
-## The Billing Model
-
-Ledger models SaaS billing the way modern applications need it:
+## The billing model
 
 | Component | What it represents | Go type |
 |-----------|-------------------|---------|
-| **Plan** | What you sell (features + pricing) | `plan.Plan` |
-| **Feature** | What customers can use (seats, API calls, storage) | `plan.Feature` |
-| **Subscription** | What customers have purchased | `subscription.Subscription` |
-| **Meter** | Usage tracking (API calls, storage, etc.) | `meter.UsageEvent` |
-| **Entitlement** | Permission checks (sub-millisecond latency) | `entitlement.Result` |
-| **Invoice** | What customers owe | `invoice.Invoice` |
-| **Coupon** | Discounts and promotions | `coupon.Coupon` |
-| **Provider** | Payment gateway integration | `provider.Provider` |
+| Plan | What you sell: features, limits, a base fee and price tiers | `plan.Plan` |
+| Plan feature | One thing a plan grants: a metered quota, a seat count or an on/off flag | `plan.Feature` |
+| Catalog feature | A reusable feature definition, kept apart from any plan | `feature.Feature` |
+| Subscription | A tenant on a plan, with its current billing period | `subscription.Subscription` |
+| Usage event | One metered unit of work | `meter.UsageEvent` |
+| Entitlement result | The answer to "can this tenant use this feature right now?" | `entitlement.Result` |
+| Invoice | What a tenant owes for one period, as line items | `invoice.Invoice` |
+| Coupon | A percentage or fixed-amount discount | `coupon.Coupon` |
+| Provider | Your bridge to a payment gateway | `provider.Provider` |
 
 ## What it does
 
-- **Usage-based billing** — Track metered usage with high-throughput batched ingestion (10K+ events/sec).
-- **Sub-millisecond entitlements** — Check feature access with sub-millisecond latency using intelligent caching.
-- **Flexible pricing** — Graduated tiers, volume pricing, per-seat, flat-rate, and hybrid models.
-- **Subscription lifecycle** — Trials, upgrades, downgrades, cancellations, and proration.
-- **Invoice generation** — Automated invoice creation with line items, taxes, and discounts.
-- **Multi-tenancy** — Built-in tenant isolation with context propagation.
-- **Plugin system** — 16 lifecycle hooks for metrics, audit trails, webhooks, and custom logic.
-- **TypeID everywhere** — All entities use type-prefixed, K-sortable identifiers (`sub_`, `inv_`, `pln_`, etc.).
-- **Integer-only money** — No floating-point precision issues with currency amounts.
-- **Multiple stores** — PostgreSQL, SQLite, Redis, and in-memory implementations.
-- **Provider ready** — Integration points for Stripe, Paddle, and custom payment gateways.
-
-## Design philosophy
-
-**Library, not service.** Ledger is a set of Go packages you import. You control `main`, the database connection, and the process lifecycle.
-
-**Performance first.** Entitlement checks in under 1ms with caching. Usage ingestion at 10K+ events/second. Invoice generation in under 100ms.
-
-**Type-safe money.** All currency amounts use integer cents with the `types.Money` type. No floating-point errors.
-
-**Context-driven tenancy.** `context.Context` carries tenant and app IDs, enforced at every layer.
-
-**Pluggable everything.** Every subsystem defines a Go interface. Swap any storage backend or provider with a single type change.
+- Usage metering: `Meter` drops an event into a buffer that a background worker flushes to the store in batches, so the call never waits on the database.
+- Quota checks: `Entitled` and `Remaining` answer from the tenant's active subscription and its plan, with hard or soft limits and `-1` for unlimited. Results are cached in the store for 30 seconds by default.
+- Pricing: a base fee plus graduated, volume or flat tiers per feature, with seat features billed per seat.
+- Subscription lifecycle: trials, plan changes, pause and resume, scheduled or immediate cancels, and a lifecycle clock that rolls periods forward, enacts cancels, ends trials and marks overdue invoices past due.
+- Invoices: `GenerateInvoice` builds base, overage, seat, discount and tax lines for a period. You call it; Ledger never bills a period on its own.
+- Plugins: typed hooks for plan, subscription, usage, entitlement, invoice and provider events, plus strategy plugins for pricing, usage aggregation, tax, export formats and coupon validation.
+- TypeIDs: every entity gets a prefixed, K-sortable ID (`plan_`, `sub_`, `inv_`, `cpn_` and so on).
+- Exact money: `types.Money` holds integer minor units, with overflow-checked arithmetic.
 
 ## Quick look
+
+This program uses the in-memory store, so there's nothing to install:
 
 ```go
 package main
 
 import (
-    "context"
-    "log"
-    "time"
+	"context"
+	"fmt"
+	"log"
 
-    "github.com/xraph/ledger"
-    "github.com/xraph/ledger/plan"
-    "github.com/xraph/ledger/store/postgres"
-    "github.com/xraph/ledger/subscription"
-    "github.com/xraph/ledger/types"
+	"github.com/xraph/ledger"
+	"github.com/xraph/ledger/plan"
+	"github.com/xraph/ledger/store/memory"
+	"github.com/xraph/ledger/subscription"
+	"github.com/xraph/ledger/types"
 )
 
 func main() {
-    ctx := context.Background()
+	ctx := context.Background()
 
-    // Create the store
-    store := postgres.New(pool)
+	engine := ledger.New(memory.New())
+	if err := engine.Start(ctx); err != nil {
+		log.Fatal(err)
+	}
+	defer engine.Stop()
 
-    // Build the billing engine
-    engine := ledger.New(store,
-        ledger.WithMeterConfig(100, 5*time.Second),
-        ledger.WithEntitlementCacheTTL(30*time.Second),
-    )
+	pro := &plan.Plan{
+		Name:     "Pro",
+		Slug:     "pro",
+		Currency: "usd",
+		Status:   plan.StatusActive,
+		AppID:    "my-app",
+		Features: []plan.Feature{
+			{Key: "api_calls", Name: "API calls", Type: plan.FeatureMetered, Limit: 10000, Period: plan.PeriodMonthly},
+		},
+		Pricing: &plan.Pricing{
+			BaseAmount:    types.USD(4900), // $49.00
+			BillingPeriod: plan.PeriodMonthly,
+		},
+	}
+	if err := engine.CreatePlan(ctx, pro); err != nil {
+		log.Fatal(err)
+	}
 
-    // Start the engine
-    if err := engine.Start(ctx); err != nil {
-        log.Fatal(err)
-    }
-    defer engine.Stop()
+	sub := &subscription.Subscription{TenantID: "acme", AppID: "my-app", PlanID: pro.ID}
+	if err := engine.CreateSubscription(ctx, sub); err != nil {
+		log.Fatal(err)
+	}
 
-    // Create a plan
-    p := &plan.Plan{
-        Name: "Pro Plan",
-        Slug: "pro",
-        Features: []plan.Feature{
-            {
-                Key:   "api_calls",
-                Type:  plan.FeatureMetered,
-                Limit: 10000,
-            },
-        },
-        Pricing: &plan.Pricing{
-            BaseAmount: types.USD(4900), // $49.00
-        },
-    }
+	// Entitled and Meter read the tenant and app from the context.
+	ctx = context.WithValue(ctx, "tenant_id", "acme")
+	ctx = context.WithValue(ctx, "app_id", "my-app")
 
-    engine.CreatePlan(ctx, p)
-
-    // Create a subscription
-    sub := &subscription.Subscription{
-        TenantID: "tenant_123",
-        PlanID:   p.ID,
-        Status:   subscription.StatusActive,
-    }
-
-    engine.CreateSubscription(ctx, sub)
-
-    // Check entitlement (sub-millisecond)
-    ctx = context.WithValue(ctx, "tenant_id", "tenant_123")
-    result, _ := engine.Entitled(ctx, "api_calls")
-
-    if result.Allowed {
-        // Track usage (non-blocking)
-        engine.Meter(ctx, "api_calls", 1)
-    }
+	res, err := engine.Entitled(ctx, "api_calls")
+	if err != nil {
+		log.Fatal(err)
+	}
+	if res.Allowed {
+		if err := engine.Meter(ctx, "api_calls", 1); err != nil {
+			log.Fatal(err)
+		}
+	}
+	fmt.Println("allowed:", res.Allowed, "remaining:", res.Remaining)
 }
 ```
 
 ## Where to go next
 
 <Cards>
-  <Card title="Getting started" href="/docs/getting-started" description="Install Ledger and create your first billing plan in minutes." />
-  <Card title="Architecture" href="/docs/architecture" description="Understand how the packages fit together." />
-  <Card title="Plans & Pricing" href="/docs/concepts/plans" description="Learn how to model your SaaS pricing." />
-  <Card title="API reference" href="/docs/api-reference/go-packages" description="Full Go API documentation for all packages." />
+  <Card title="Getting started" href="/docs/getting-started" description="Install Ledger and bill your first plan." />
+  <Card title="Architecture" href="/docs/architecture" description="How the packages fit together." />
+  <Card title="Plans and pricing" href="/docs/subsystems/plans" description="Model features, limits and price tiers." />
+  <Card title="Go packages" href="/docs/api-reference/go-packages" description="The Go API, package by package." />
 </Cards>

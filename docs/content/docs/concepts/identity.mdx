@@ -15,7 +15,7 @@ The `plan` prefix identifies this as a plan. The suffix is a base32-encoded UUID
 
 ## The `id` package
 
-The `id` package wraps the [TypeID Go library](https://github.com/jetify-com/typeid-go) (v2) with a single `ID` struct. All entity types share the same struct -- the prefix distinguishes them.
+The `id` package wraps the [TypeID Go library](https://github.com/jetify-com/typeid-go) (v2) with a single `ID` struct. All entity types share the same struct, and the prefix tells them apart. The per-entity names (`id.PlanID`, `id.SubscriptionID`, `id.InvoiceID` and so on) are type aliases for `id.ID`, so the compiler won't stop you passing an invoice ID where a plan ID is expected. `ParseWithPrefix` and the `ParseXxxID` helpers check the prefix at runtime.
 
 ### Creating IDs
 
@@ -27,14 +27,16 @@ subscriptionID := id.New(id.PrefixSubscription)  // sub_01h455vb...
 invoiceID      := id.New(id.PrefixInvoice)       // inv_01h455vb...
 ```
 
-Convenience constructors: `id.NewPlanID()`, `id.NewFeatureID()`, `id.NewPriceID()`, `id.NewSubscriptionID()`, `id.NewUsageEventID()`, `id.NewEntitlementID()`, `id.NewInvoiceID()`, `id.NewLineItemID()`, `id.NewCouponID()`, `id.NewPaymentID()`.
+Convenience constructors: `id.NewPlanID()`, `id.NewFeatureID()`, `id.NewPriceID()`, `id.NewSubscriptionID()`, `id.NewUsageEventID()`, `id.NewEntitlementID()`, `id.NewInvoiceID()`, `id.NewLineItemID()`, `id.NewCouponID()`, `id.NewPaymentID()`, `id.NewCouponApplicationID()`.
+
+You rarely need them: `CreatePlan`, `CreateSubscription`, `CreateCoupon` and `CreateFeature` assign an ID when the field is empty, and `GenerateInvoice` gives every invoice and line item its own.
 
 ### Parsing IDs
 
 ```go
-parsed, err := id.Parse("plan_01h455vb4pex5vsknk084sn02q")
-parsed, err := id.ParseWithPrefix("plan_01h455vb...", id.PrefixPlan)  // validates prefix
-parsed, err := id.ParsePlanID("plan_01h455vb...")                     // convenience
+parsed, err := id.Parse("plan_01h455vb4pex5vsknk084sn02q")         // any prefix
+parsed, err = id.ParseWithPrefix("plan_01h455vb4pex5vsknk084sn02q", id.PrefixPlan) // checks the prefix
+parsed, err = id.ParsePlanID("plan_01h455vb4pex5vsknk084sn02q")    // the same, for plans
 ```
 
 ### Nil ID
@@ -48,11 +50,11 @@ id.Nil.IsNil() // true
 
 ### Database storage
 
-`id.ID` implements `Scanner` and `driver.Valuer`. Stores as a string, returns `NULL` for nil IDs.
+`id.ID` implements `sql.Scanner` and `driver.Valuer`. It's stored as a string, and a nil ID is stored as `NULL`. It also implements the MongoDB driver's BSON value interfaces, as a string or a BSON null.
 
 ### JSON serialization
 
-`id.ID` implements `TextMarshaler` and `TextUnmarshaler`. Nil IDs serialize as empty strings.
+`id.ID` implements `TextMarshaler` and `TextUnmarshaler`. A nil ID serializes as an empty string, and an empty string parses back to the nil ID.
 
 ## Prefix reference
 
@@ -67,4 +69,5 @@ id.Nil.IsNil() // true
 | `id.PrefixInvoice` | `inv` | Invoice |
 | `id.PrefixLineItem` | `li` | Line item |
 | `id.PrefixCoupon` | `cpn` | Coupon |
-| `id.PrefixPayment` | `pay` | Payment |
+| `id.PrefixPayment` | `pay` | Payment (reserved; no payment entity exists yet) |
+| `id.PrefixCouponApplication` | `cpna` | A coupon applied to a subscription |

@@ -1,93 +1,90 @@
 ---
 title: PostgreSQL Store
-description: Production-ready PostgreSQL store using grove ORM with pgdriver.
+description: The PostgreSQL store, on Grove's pgdriver.
 ---
 
-The **PostgreSQL Store** is Ledger's production storage backend. It uses the grove ORM with the PostgreSQL driver, providing persistent storage with automatic migrations, multi-tenant isolation, and optimized queries for high-throughput billing operations.
+`store/postgres` implements `store.Store` on a `*grove.DB` opened with Grove's PostgreSQL driver. It's the store to run in production.
 
 ## Setup
 
 ```go
 import (
-    "github.com/xraph/grove"
-    "github.com/xraph/grove/drivers/pgdriver"
-    "github.com/xraph/ledger"
-    "github.com/xraph/ledger/store/postgres"
+	"github.com/xraph/grove"
+	"github.com/xraph/grove/drivers/pgdriver"
+	"github.com/xraph/ledger"
+	"github.com/xraph/ledger/store/postgres"
 )
 
-db, err := grove.Open(pgdriver.Open(os.Getenv("DATABASE_URL")))
-if err != nil {
-    log.Fatal(err)
+pg := pgdriver.New()
+if err := pg.Open(ctx, os.Getenv("DATABASE_URL")); err != nil {
+	log.Fatal(err)
 }
 
-s := postgres.New(db)
+db, err := grove.Open(pg)
+if err != nil {
+	log.Fatal(err)
+}
 
-engine := ledger.New(s,
-    ledger.WithMeterConfig(100, 5*time.Second),
-    ledger.WithEntitlementCacheTTL(30*time.Second),
-)
-
-// Start runs migrations automatically
-if err := engine.Start(ctx); err != nil {
-    log.Fatal(err)
+engine := ledger.New(postgres.New(db))
+if err := engine.Start(ctx); err != nil { // migrates first
+	log.Fatal(err)
 }
 defer engine.Stop()
 ```
 
+`pgdriver.New()` returns an unconnected driver, and `Open(ctx, dsn, ...)` connects it. `grove.Open` wraps the driver in a `*grove.DB`, and `postgres.New(db)` takes that.
+
+`engine.Stop()` closes the store, and the store's `Close` closes the `*grove.DB`. Don't close the database yourself as well, and don't share one `*grove.DB` between a Ledger engine and code that outlives it.
+
 ## Migrations
 
-Migrations run automatically when `engine.Start()` is called via the `Migrate(ctx)` method. The store uses the grove orchestrator with programmatic migrations that create and update tables as needed.
-
-For manual migration control:
+`engine.Start` calls the store's `Migrate`, which runs the `postgres.Migrations` group through Grove's migration orchestrator. Grove records which migrations have run, so it's safe on every start. To migrate on your own schedule, pass `ledger.WithoutMigrate()` to the engine and call `Migrate` yourself:
 
 ```go
+s := postgres.New(db)
 if err := s.Migrate(ctx); err != nil {
-    log.Fatal("migration failed:", err)
+	log.Fatal(err)
 }
+
+engine := ledger.New(s, ledger.WithoutMigrate())
 ```
 
-Migrations are idempotent -- safe to run on every startup.
+## Tables
 
-## Database schema
+| Table | Holds |
+|-------|-------|
+| `ledger_plans` | Plans, with `features` and `pricing` as JSONB |
+| `ledger_features` | The feature catalog |
+| `ledger_subscriptions` | Subscriptions, with period, trial, cancel, pause and seat columns |
+| `ledger_usage_events` | Usage events |
+| `ledger_entitlement_cache` | Cached quota answers, with an `expires_at` |
+| `ledger_invoices` | Invoices, with `line_items` as JSONB |
+| `ledger_coupons` | Coupons and their redemption counts |
+| `ledger_coupon_applications` | Which coupon is on which subscription |
 
-The PostgreSQL store creates and manages the following tables:
+Plans, catalog features and coupons carry `app_id`, with unique indexes on `(slug, app_id)`, `(key, app_id)` and `(code, app_id)`. Subscriptions, invoices and usage events carry `tenant_id` and `app_id`, with indexes that lead with both. Usage events have a partial unique index on `idempotency_key` where the key isn't empty, and a duplicate key is skipped on insert.
 
-- **`ledger_plans`** -- Plans with features (JSONB), pricing, currency, and billing cycle
-- **`ledger_subscriptions`** -- Customer subscriptions with period tracking and trial support
-- **`ledger_usage_events`** -- High-throughput usage event ingestion with idempotency
-- **`ledger_invoices`** -- Invoices with line items (JSONB) and payment tracking
-- **`ledger_coupons`** -- Discount coupons with redemption limits
-- **`ledger_entitlement_cache`** -- TTL-based entitlement result caching
+## Isolation
 
-All tables include `tenant_id` and `app_id` columns for multi-tenant isolation, with composite indexes for efficient queries.
-
-## Multi-tenancy
-
-All queries enforce tenant isolation via `tenant_id` and `app_id` filtering. Composite indexes on `(tenant_id, app_id)` ensure efficient multi-tenant queries.
-
-## Implements `store.Store`
-
-```go
-// Compile-time check
-var _ store.Store = (*Store)(nil)
-```
+The store filters by the tenant and app the engine passes it, and an empty tenant means every tenant. There's no row-level security. See [Multi-tenancy](/docs/concepts/multi-tenancy).
 
 ## Characteristics
 
 | Aspect | Detail |
 |--------|--------|
-| Driver | grove ORM + pgdriver |
-| Migrations | grove orchestrator with programmatic migrations |
-| Transactions | Database-level ACID |
-| JSONB columns | Features, pricing, line items, metadata |
-| Batch ingestion | Optimized bulk insert for usage events |
-| Ping | `db.Ping(ctx)` |
-| Close | Caller-owned -- call `db.Close()` |
+| Driver | Grove with `pgdriver` |
+| Migrations | `postgres.Migrations`, run by `Migrate` |
+| Coupon redemption | Cap check, count and application written as one unit |
+| Lifecycle writes | Conditional updates, so several replicas can run the lifecycle clock |
+| `Ping` | `db.Ping(ctx)` |
+| `Close` | Closes the `*grove.DB` |
 
-## When to use
+## Testing against it
 
-- Production deployments requiring ACID transactions and full SQL query power.
-- Multi-process environments with connection pooling.
-- High-throughput billing with usage event ingestion.
+The conformance suite in `store/storetest` runs against PostgreSQL when `LEDGER_TEST_POSTGRES_DSN` is set, and skips otherwise:
 
-See [Memory Store](/docs/stores/memory) for a comparison of implementations.
+```bash
+LEDGER_TEST_POSTGRES_DSN=postgres://... go test ./store/postgres/...
+```
+
+See [Memory store](/docs/stores/memory) for how the stores compare.

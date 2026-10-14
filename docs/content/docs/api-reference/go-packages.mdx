@@ -1,509 +1,250 @@
 ---
 title: Go Packages
-description: Complete reference for all Ledger Go packages, types, and interfaces.
+description: Every exported package in the Ledger module, with its constructors, methods and types.
 ---
 
-All Ledger packages are importable from `github.com/xraph/ledger`. The module is designed as a composable library -- import only the packages you need.
+Everything lives in one module, `github.com/xraph/ledger`. Import the packages you need. This page lists what each one exports; the [pkg.go.dev reference](https://pkg.go.dev/github.com/xraph/ledger) has the doc comments, and the entity structs are spelled out field by field in [Entities](/docs/concepts/entities).
 
-## Core packages
+## `github.com/xraph/ledger`
 
-### `github.com/xraph/ledger`
-
-Main engine and configuration. The root package provides the `Ledger` struct that coordinates all billing operations, plus re-exported convenience types.
+The engine.
 
 ```go
-// Constructor
 func New(s store.Store, opts ...Option) *Ledger
 
 // Lifecycle
-func (l *Ledger) Start(ctx context.Context) error
-func (l *Ledger) Stop() error
+func (l *Ledger) Start(ctx context.Context) error // migrate (unless WithoutMigrate), OnInit, start workers
+func (l *Ledger) Stop() error                     // stop workers, OnShutdown, close the store
+func (l *Ledger) Health(ctx context.Context) error
+func (l *Ledger) Store() store.Store
+func (l *Ledger) LifecycleInterval() time.Duration
 
-// Plan management
+// Plans
 func (l *Ledger) CreatePlan(ctx context.Context, p *plan.Plan) error
+func (l *Ledger) UpdatePlan(ctx context.Context, p *plan.Plan) error
+func (l *Ledger) ActivatePlan(ctx context.Context, planID id.PlanID) error
+func (l *Ledger) ArchivePlan(ctx context.Context, planID id.PlanID) error
+func (l *Ledger) DeletePlan(ctx context.Context, planID id.PlanID) error
 func (l *Ledger) GetPlan(ctx context.Context, planID id.PlanID) (*plan.Plan, error)
 func (l *Ledger) GetPlanBySlug(ctx context.Context, slug, appID string) (*plan.Plan, error)
 
-// Subscription management
+// Feature catalog
+func (l *Ledger) CreateFeature(ctx context.Context, f *feature.Feature) error
+func (l *Ledger) UpdateFeature(ctx context.Context, f *feature.Feature) error
+func (l *Ledger) ArchiveFeature(ctx context.Context, featureID id.FeatureID) error
+func (l *Ledger) DeleteFeature(ctx context.Context, featureID id.FeatureID) error
+func (l *Ledger) GetFeature(ctx context.Context, featureID id.FeatureID) (*feature.Feature, error)
+func (l *Ledger) GetFeatureByKey(ctx context.Context, key, appID string) (*feature.Feature, error)
+func (l *Ledger) ListFeatures(ctx context.Context, appID string, opts feature.ListOpts) ([]*feature.Feature, error)
+func (l *Ledger) ListGlobalFeatures(ctx context.Context, opts feature.ListOpts) ([]*feature.Feature, error)
+func ValidateFeature(f *feature.Feature) error
+
+// Subscriptions
 func (l *Ledger) CreateSubscription(ctx context.Context, sub *subscription.Subscription) error
 func (l *Ledger) GetSubscription(ctx context.Context, subID id.SubscriptionID) (*subscription.Subscription, error)
 func (l *Ledger) GetActiveSubscription(ctx context.Context, tenantID, appID string) (*subscription.Subscription, error)
+func (l *Ledger) ChangePlan(ctx context.Context, subID id.SubscriptionID, planID id.PlanID, quantity map[string]int64) (*subscription.Subscription, error)
+func (l *Ledger) PauseSubscription(ctx context.Context, subID id.SubscriptionID) (*subscription.Subscription, error)
+func (l *Ledger) ResumeSubscription(ctx context.Context, subID id.SubscriptionID) (*subscription.Subscription, error)
 func (l *Ledger) CancelSubscription(ctx context.Context, subID id.SubscriptionID, immediately bool) error
 
-// Usage metering (non-blocking)
+// Usage and entitlements (tenant and app from ctx values "tenant_id" and "app_id")
 func (l *Ledger) Meter(ctx context.Context, featureKey string, quantity int64) error
-
-// Entitlement checking
 func (l *Ledger) Entitled(ctx context.Context, featureKey string) (*entitlement.Result, error)
 func (l *Ledger) Remaining(ctx context.Context, featureKey string) (int64, error)
+func (l *Ledger) InspectEntitlement(ctx context.Context, tenantID, appID, featureKey string) (*entitlement.Result, error)
 
-// Invoice generation
-func (l *Ledger) GenerateInvoice(ctx context.Context, subID id.SubscriptionID) (*invoice.Invoice, error)
+// Invoices
+func (l *Ledger) GenerateInvoice(ctx context.Context, subID id.SubscriptionID, opts ...InvoiceOption) (*invoice.Invoice, error)
+func ForPeriod(start, end time.Time) InvoiceOption
+func (l *Ledger) FinalizeInvoice(ctx context.Context, invID id.InvoiceID) error
+func (l *Ledger) MarkInvoicePaid(ctx context.Context, invID id.InvoiceID, paidAt time.Time, paymentRef string) error
+func (l *Ledger) MarkInvoiceVoided(ctx context.Context, invID id.InvoiceID, reason string) error
+func (l *Ledger) ExportInvoice(ctx context.Context, invID id.InvoiceID, format string) ([]byte, error)
+func (l *Ledger) InvoiceFormats() []string
+
+// Coupons
+func (l *Ledger) CreateCoupon(ctx context.Context, c *coupon.Coupon) error
+func (l *Ledger) UpdateCoupon(ctx context.Context, c *coupon.Coupon) error
+func (l *Ledger) DeleteCoupon(ctx context.Context, couponID id.CouponID) error
+func (l *Ledger) ApplyCoupon(ctx context.Context, subID id.SubscriptionID, code string) (*coupon.Coupon, error)
+func (l *Ledger) ListAppliedCoupons(ctx context.Context, subID id.SubscriptionID) ([]*coupon.Coupon, error)
+
+// Lifecycle clock
+func (l *Ledger) Advance(ctx context.Context, now time.Time) (LifecycleReport, error)
+func (l *Ledger) AdvancePeriods(ctx context.Context, now time.Time) ([]id.SubscriptionID, error)
+func (l *Ledger) EnactCancels(ctx context.Context, now time.Time) ([]id.SubscriptionID, error)
+func (l *Ledger) EndTrials(ctx context.Context, now time.Time) ([]id.SubscriptionID, error)
+func (l *Ledger) MarkInvoicesPastDue(ctx context.Context, now time.Time) ([]id.InvoiceID, error)
+
+// Payment providers
+func (l *Ledger) HasProviders() bool
+func (l *Ledger) ProviderNames() []string
+func (l *Ledger) ListPaymentMethods(ctx context.Context, tenantID string) ([]provider.PaymentMethod, error)
+func (l *Ledger) SyncPlanToProvider(ctx context.Context, planID id.PlanID) (*provider.SyncResult, error)
+func (l *Ledger) SyncFeatureToProvider(ctx context.Context, featureID id.FeatureID) (*provider.SyncResult, error)
+func (l *Ledger) SyncSubscriptionToProvider(ctx context.Context, subID id.SubscriptionID) (*provider.SyncResult, error)
+func (l *Ledger) SyncInvoiceToProvider(ctx context.Context, invID id.InvoiceID) (*provider.SyncResult, error)
+func (l *Ledger) ImportPlanFromProvider(ctx context.Context, providerName, providerID string, opts ...ImportOption) (*plan.Plan, error)
+func (l *Ledger) ImportFeatureFromProvider(ctx context.Context, providerName, providerID string, opts ...ImportOption) (*feature.Feature, error)
+func (l *Ledger) ImportSubscriptionFromProvider(ctx context.Context, providerName, providerID string, opts ...ImportOption) (*subscription.Subscription, error)
+func (l *Ledger) ImportInvoiceFromProvider(ctx context.Context, providerName, providerID string, opts ...ImportOption) (*invoice.Invoice, error)
+func ImportInto(appID string) ImportOption
+func (l *Ledger) HandleWebhook(ctx context.Context, providerName string, payload []byte) (*provider.WebhookResult, error)
 ```
-
-**Functional options:**
-
-| Option | Description |
-|--------|-------------|
-| `WithLogger(*slog.Logger)` | Set the structured logger |
-| `WithPlugin(plugin.Plugin)` | Register a plugin for lifecycle hooks |
-| `WithMeterConfig(batchSize int, flushInterval time.Duration)` | Configure meter batching (default: 100 events, 5s) |
-| `WithEntitlementCacheTTL(time.Duration)` | Set entitlement cache TTL (default: 30s) |
-
-**Re-exported types:**
-
-| Type alias | Origin | Description |
-|------------|--------|-------------|
-| `Money` | `types.Money` | Type-safe monetary value |
-| `Entity` | `types.Entity` | Base entity with timestamps |
-
-**Re-exported constructors:**
-
-| Function | Description |
-|----------|-------------|
-| `USD(cents int64)` | Create Money in US Dollars |
-| `EUR(cents int64)` | Create Money in Euros |
-| `GBP(pence int64)` | Create Money in British Pounds |
-| `JPY(yen int64)` | Create Money in Japanese Yen |
-| `CAD(cents int64)` | Create Money in Canadian Dollars |
-| `AUD(cents int64)` | Create Money in Australian Dollars |
-| `Zero(currency string)` | Create zero-value Money in any currency |
-| `Sum(values ...Money)` | Sum multiple Money values |
-| `NewEntity()` | Create Entity with current timestamps |
-
-**Sentinel errors:**
-
-The root package defines all sentinel errors. They are grouped by category:
-
-| Category | Errors |
-|----------|--------|
-| General | `ErrNotFound`, `ErrAlreadyExists`, `ErrInvalidInput`, `ErrUnauthorized`, `ErrForbidden` |
-| Plan | `ErrPlanNotFound`, `ErrPlanArchived`, `ErrPlanInUse`, `ErrFeatureNotFound`, `ErrInvalidPricing`, `ErrDuplicateFeature` |
-| Subscription | `ErrSubscriptionNotFound`, `ErrSubscriptionExists`, `ErrSubscriptionCanceled`, `ErrSubscriptionExpired`, `ErrInvalidUpgrade`, `ErrInvalidDowngrade`, `ErrTrialExpired`, `ErrNoActiveSubscription` |
-| Metering | `ErrMeterBufferFull`, `ErrInvalidQuantity`, `ErrDuplicateEvent`, `ErrEventTooOld` |
-| Entitlement | `ErrQuotaExceeded`, `ErrFeatureDisabled`, `ErrHardLimitReached`, `ErrSoftLimitReached`, `ErrNoEntitlement` |
-| Invoice | `ErrInvoiceNotFound`, `ErrInvoiceFinalized`, `ErrInvoicePaid`, `ErrInvoiceVoided`, `ErrInvoiceIncomplete`, `ErrInvalidDiscount` |
-| Coupon | `ErrCouponNotFound`, `ErrCouponExpired`, `ErrCouponInvalid`, `ErrCouponExhausted`, `ErrCouponNotStarted` |
-| Provider | `ErrProviderNotFound`, `ErrProviderSync`, `ErrProviderWebhook`, `ErrProviderNotConfigured` |
-| Store | `ErrStoreNotReady`, `ErrStoreClosed`, `ErrTransactionFailed`, `ErrMigrationFailed` |
-| Cache | `ErrCacheMiss`, `ErrCacheInvalidate` |
-
-**Error helpers:**
 
 ```go
-func IsNotFound(err error) bool    // Checks all not-found variants
-func IsQuotaError(err error) bool  // Checks all quota/limit variants
-func IsRetryable(err error) bool   // Checks if the operation can be retried
+type LifecycleReport struct {
+	PeriodsAdvanced []id.SubscriptionID
+	CancelsEnacted  []id.SubscriptionID
+	TrialsEnded     []id.SubscriptionID
+	InvoicesPastDue []id.InvoiceID
+}
+func (r LifecycleReport) Empty() bool
 ```
 
-**Error types:**
+Options, all covered in [Configuration](/docs/concepts/configuration):
 
-```go
-type ValidationError struct {
-    Field   string
-    Message string
-}
+| Option | Default |
+|--------|---------|
+| `WithLogger(log.Logger)` (go-utils) | no-op |
+| `WithPlugin(plugin.Plugin)` | none |
+| `WithMeterConfig(batchSize int, flushInterval time.Duration)` | `100`, `5s` |
+| `WithEntitlementCacheTTL(time.Duration)` | `30s` |
+| `WithLifecycleInterval(time.Duration)` | `1m`; zero or less turns it off |
+| `WithClock(func() time.Time)` | `time.Now` |
+| `WithoutMigrate()` | migrate on `Start` |
 
-type MultiError struct {
-    Errors []error
-}
-func (e *MultiError) Add(err error)
-func (e MultiError) HasErrors() bool
-func (e MultiError) First() error
-```
+Re-exports: `Money` and `Entity` (aliases for the `types` ones), `ID` and `Prefix` (aliases for the `id` ones), and the variables `USD`, `EUR`, `GBP`, `JPY`, `CAD`, `AUD`, `Zero`, `Sum` and `NewEntity`.
 
-See [Error Handling](/docs/concepts/errors) for the full error reference.
-
----
+Errors: the sentinel errors, `IsNotFound`, `IsQuotaError`, `IsRetryable`, and the `ValidationError` and `MultiError` types. See [Error handling](/docs/concepts/errors), which also says which sentinels the engine actually returns.
 
 ## Entity packages
 
 ### `github.com/xraph/ledger/plan`
 
-Plan and feature definitions. A plan describes what features are available, at what limits, and at what price.
+`Plan`, `Feature`, `Pricing`, `PriceTier` and `ListOpts`, plus:
 
 ```go
-type Plan struct {
-    types.Entity
-    ID          id.PlanID
-    Name        string
-    Slug        string
-    Description string
-    Currency    string
-    Status      Status            // "active", "archived", "draft"
-    TrialDays   int
-    Features    []Feature
-    Pricing     *Pricing
-    AppID       string
-    Metadata    map[string]string
-}
-
 func (p *Plan) FindFeature(key string) *Feature
 func (p *Plan) Allows(featureKey string, currentUsage int64) bool
 ```
 
-**Feature:**
-
-```go
-type Feature struct {
-    types.Entity
-    ID        id.FeatureID
-    Key       string
-    Name      string
-    Type      FeatureType       // "metered", "boolean", "seat"
-    Limit     int64             // -1 = unlimited
-    Period    Period            // "monthly", "yearly", "none"
-    SoftLimit bool
-    Metadata  map[string]string
-}
-```
-
-**Pricing:**
-
-```go
-type Pricing struct {
-    types.Entity
-    ID            id.PriceID
-    PlanID        id.PlanID
-    BaseAmount    types.Money
-    BillingPeriod Period
-    Tiers         []PriceTier
-}
-
-type PriceTier struct {
-    FeatureKey string
-    Type       TierType          // "graduated", "volume", "flat"
-    UpTo       int64
-    UnitAmount types.Money
-    FlatAmount types.Money
-    Priority   int
-}
-```
-
-**Constants:**
-
-| Constant | Values |
-|----------|--------|
-| `Status` | `StatusActive`, `StatusArchived`, `StatusDraft` |
+| Type | Constants |
+|------|-----------|
+| `Status` | `StatusDraft`, `StatusActive`, `StatusArchived` |
 | `FeatureType` | `FeatureMetered`, `FeatureBoolean`, `FeatureSeat` |
 | `Period` | `PeriodMonthly`, `PeriodYearly`, `PeriodNone` |
 | `TierType` | `TierGraduated`, `TierVolume`, `TierFlat` |
 
-**Store interface:**
+`plan.Store` is the plan slice of storage (`Create`, `Get`, `GetBySlug`, `List`, `Update`, `Delete`, `Archive`). Stores implement `store.Store` instead, which repeats these with entity-prefixed names.
 
-```go
-type Store interface {
-    Create(ctx context.Context, p *Plan) error
-    Get(ctx context.Context, planID id.PlanID) (*Plan, error)
-    GetBySlug(ctx context.Context, slug string, appID string) (*Plan, error)
-    List(ctx context.Context, appID string, opts ListOpts) ([]*Plan, error)
-    Update(ctx context.Context, p *Plan) error
-    Delete(ctx context.Context, planID id.PlanID) error
-    Archive(ctx context.Context, planID id.PlanID) error
-}
+### `github.com/xraph/ledger/feature`
 
-type ListOpts struct {
-    Status Status
-    Limit  int
-    Offset int
-}
-```
-
-See [Plans](/docs/subsystems/plans) for usage details.
-
----
+The catalog: `Feature` and `ListOpts`, with its own `Status`, `FeatureType` and `Period` types and the same constant names as `plan`.
 
 ### `github.com/xraph/ledger/subscription`
 
-Subscription lifecycle management. A subscription connects a tenant to a plan with status tracking, billing period management, and trial support.
+`Subscription`, `Period` (`Start`, `End`), `Renewal` (what `OnSubscriptionRenewed` receives), `Stretch` and `Resume` (pause bookkeeping), `ListOpts`, `DueOpts` and `DueField`.
 
-```go
-type Subscription struct {
-    types.Entity
-    ID                 id.SubscriptionID
-    TenantID           string
-    PlanID             id.PlanID
-    Status             Status
-    CurrentPeriodStart time.Time
-    CurrentPeriodEnd   time.Time
-    TrialStart         *time.Time
-    TrialEnd           *time.Time
-    CanceledAt         *time.Time
-    CancelAt           *time.Time
-    EndedAt            *time.Time
-    AppID              string
-    ProviderID         string
-    ProviderName       string
-    Metadata           map[string]string
-}
-```
+| Type | Constants |
+|------|-----------|
+| `Status` | `StatusActive`, `StatusTrialing`, `StatusPastDue`, `StatusCanceled`, `StatusExpired`, `StatusPaused` |
+| `DueField` | `DueCancel`, `DueTrialEnd`, `DuePeriodEnd` |
 
-**Constants:**
-
-| Constant | Value |
-|----------|-------|
-| `StatusActive` | `"active"` |
-| `StatusTrialing` | `"trialing"` |
-| `StatusPastDue` | `"past_due"` |
-| `StatusCanceled` | `"canceled"` |
-| `StatusExpired` | `"expired"` |
-| `StatusPaused` | `"paused"` |
-
-**Store interface:**
-
-```go
-type Store interface {
-    Create(ctx context.Context, s *Subscription) error
-    Get(ctx context.Context, subID id.SubscriptionID) (*Subscription, error)
-    GetActive(ctx context.Context, tenantID string, appID string) (*Subscription, error)
-    List(ctx context.Context, tenantID string, appID string, opts ListOpts) ([]*Subscription, error)
-    Update(ctx context.Context, s *Subscription) error
-    Cancel(ctx context.Context, subID id.SubscriptionID, cancelAt time.Time) error
-}
-
-type ListOpts struct {
-    Status Status
-    Limit  int
-    Offset int
-}
-```
-
-See [Subscriptions](/docs/subsystems/subscriptions) for usage details.
-
----
+`StretchColumns` and `StretchFromColumns` convert a `*Stretch` to and from four nullable time columns, for store implementations.
 
 ### `github.com/xraph/ledger/meter`
 
-Usage event tracking and batching. Events are collected in a high-throughput ring buffer and flushed to the store in configurable batches.
-
-```go
-type UsageEvent struct {
-    ID             id.UsageEventID
-    TenantID       string
-    AppID          string
-    FeatureKey     string
-    Quantity       int64
-    Timestamp      time.Time
-    IdempotencyKey string
-    Metadata       map[string]string
-}
-```
-
-**Store interface:**
-
-```go
-type Store interface {
-    IngestBatch(ctx context.Context, events []*UsageEvent) error
-    Aggregate(ctx context.Context, tenantID, appID, featureKey string, period plan.Period) (int64, error)
-    AggregateMulti(ctx context.Context, tenantID, appID string, featureKeys []string, period plan.Period) (map[string]int64, error)
-    Query(ctx context.Context, tenantID, appID string, opts QueryOpts) ([]*UsageEvent, error)
-    Purge(ctx context.Context, before time.Time) (int64, error)
-}
-
-type QueryOpts struct {
-    FeatureKey string
-    Start      time.Time
-    End        time.Time
-    Limit      int
-    Offset     int
-}
-```
-
-See [Metering](/docs/subsystems/metering) for usage details.
-
----
+`UsageEvent` and `QueryOpts` (`FeatureKey`, `Start`, `End`, `Limit`, `Offset`). `meter.Store` lists the usage methods. The buffering lives in the engine, not here.
 
 ### `github.com/xraph/ledger/entitlement`
 
-Feature access checking with caching. The result struct carries full context about whether a feature is allowed and how much quota remains.
-
-```go
-type Result struct {
-    Allowed   bool   // Whether the feature is accessible
-    Feature   string // Feature key that was checked
-    Used      int64  // Current period usage
-    Limit     int64  // Plan limit (-1 = unlimited)
-    Remaining int64  // Remaining quota (-1 = unlimited)
-    SoftLimit bool   // Whether the limit is soft (allows overage)
-    Reason    string // Explanation when denied
-}
-```
-
-**Store interface:**
-
-```go
-type Store interface {
-    GetCached(ctx context.Context, tenantID, appID, featureKey string) (*Result, error)
-    SetCached(ctx context.Context, tenantID, appID, featureKey string, result *Result, ttl time.Duration) error
-    Invalidate(ctx context.Context, tenantID, appID string) error
-    InvalidateFeature(ctx context.Context, tenantID, appID, featureKey string) error
-}
-```
-
-See [Entitlements](/docs/subsystems/entitlements) for usage details.
-
----
+`Result` (`Allowed`, `Feature`, `Used`, `Limit`, `Remaining`, `SoftLimit`, `Reason`) and the cache interface `entitlement.Store` (`GetCached`, `SetCached`, `Invalidate`, `InvalidateFeature`).
 
 ### `github.com/xraph/ledger/invoice`
 
-Invoice generation and line items. Invoices aggregate usage charges, base fees, taxes, and discounts into a detailed billing document.
+`Invoice`, `LineItem`, `ListOpts` and `OverdueOpts`.
 
-```go
-type Invoice struct {
-    types.Entity
-    ID             id.InvoiceID
-    TenantID       string
-    SubscriptionID id.SubscriptionID
-    Status         Status
-    Currency       string
-    Subtotal       types.Money
-    TaxAmount      types.Money
-    DiscountAmount types.Money
-    Total          types.Money
-    LineItems      []LineItem
-    PeriodStart    time.Time
-    PeriodEnd      time.Time
-    DueDate        *time.Time
-    PaidAt         *time.Time
-    VoidedAt       *time.Time
-    VoidReason     string
-    PaymentRef     string
-    ProviderID     string
-    AppID          string
-    Metadata       map[string]string
-}
-
-type LineItem struct {
-    ID          id.LineItemID
-    InvoiceID   id.InvoiceID
-    FeatureKey  string
-    Description string
-    Quantity    int64
-    UnitAmount  types.Money
-    Amount      types.Money
-    Type        LineItemType
-    Metadata    map[string]string
-}
-```
-
-**Constants:**
-
-| Constant | Values |
-|----------|--------|
+| Type | Constants |
+|------|-----------|
 | `Status` | `StatusDraft`, `StatusPending`, `StatusPaid`, `StatusPastDue`, `StatusVoided` |
 | `LineItemType` | `LineItemBase`, `LineItemUsage`, `LineItemOverage`, `LineItemSeat`, `LineItemDiscount`, `LineItemTax` |
 
-**Store interface:**
+The tier pricing the engine uses is exported:
 
 ```go
-type Store interface {
-    Create(ctx context.Context, inv *Invoice) error
-    Get(ctx context.Context, invID id.InvoiceID) (*Invoice, error)
-    List(ctx context.Context, tenantID, appID string, opts ListOpts) ([]*Invoice, error)
-    Update(ctx context.Context, inv *Invoice) error
-    GetByPeriod(ctx context.Context, tenantID, appID string, periodStart, periodEnd time.Time) (*Invoice, error)
-    ListPending(ctx context.Context, appID string) ([]*Invoice, error)
-    MarkPaid(ctx context.Context, invID id.InvoiceID, paidAt time.Time, paymentRef string) error
-    MarkVoided(ctx context.Context, invID id.InvoiceID, reason string) error
-}
+func ValidateTiers(tiers []plan.PriceTier, currency string) error // wraps ErrInvalidTiers
+func ComputeOverage(tiers []plan.PriceTier, usage, included int64, currency string) (types.Money, error)
+func SortTiers(tiers []plan.PriceTier) []plan.PriceTier
 
-type ListOpts struct {
-    Status Status
-    Start  time.Time
-    End    time.Time
-    Limit  int
-    Offset int
-}
+var ErrInvalidTiers = errors.New("invoice: invalid price tiers")
 ```
-
-See [Invoicing](/docs/subsystems/invoicing) for usage details.
-
----
 
 ### `github.com/xraph/ledger/coupon`
 
-Discounts and promotional codes. Coupons can be percentage-based or fixed-amount, with optional validity windows and redemption limits.
+`Coupon`, `Application` and `ListOpts` (`Active`, `Limit`, `Offset`). `CouponType` has `CouponTypePercentage` and `CouponTypeAmount`.
+
+### `github.com/xraph/ledger/provider`
+
+The `Provider` interface (see [Payment providers](/docs/subsystems/payments)) and three result structs:
 
 ```go
-type Coupon struct {
-    types.Entity
-    ID             id.CouponID
-    Code           string
-    Name           string
-    Type           CouponType        // "percentage" or "amount"
-    Amount         types.Money       // For fixed-amount coupons
-    Percentage     int               // For percentage coupons (0-100)
-    Currency       string
-    MaxRedemptions int
-    TimesRedeemed  int
-    ValidFrom      *time.Time
-    ValidUntil     *time.Time
-    AppID          string
-    Metadata       map[string]string
+type PaymentMethod struct {
+	ID, Type, Last4, Brand  string
+	ExpiryMonth, ExpiryYear int
+	IsDefault               bool
+	ProviderName            string
+	ProviderID              string
+}
+
+type SyncResult struct {
+	ProviderName, ProviderID string
+	EntityType, EntityID     string
+	Direction                string // "push" or "pull"
+	Success                  bool
+	Error                    string
+}
+
+type WebhookResult struct {
+	EventType, ProviderID string
+	EntityType, EntityID  string
+	Handled               bool
+	Error                 string
+	Timestamp             time.Time
 }
 ```
 
-**Constants:**
-
-| Constant | Value |
-|----------|-------|
-| `CouponTypePercentage` | `"percentage"` |
-| `CouponTypeAmount` | `"amount"` |
-
-**Store interface:**
-
-```go
-type Store interface {
-    Create(ctx context.Context, c *Coupon) error
-    Get(ctx context.Context, code string, appID string) (*Coupon, error)
-    GetByID(ctx context.Context, couponID id.CouponID) (*Coupon, error)
-    List(ctx context.Context, appID string, opts ListOpts) ([]*Coupon, error)
-    Update(ctx context.Context, c *Coupon) error
-    Delete(ctx context.Context, couponID id.CouponID) error
-}
-
-type ListOpts struct {
-    Active bool
-    Limit  int
-    Offset int
-}
-```
-
-See [Coupons](/docs/subsystems/coupons) for usage details.
-
----
+## Shared packages
 
 ### `github.com/xraph/ledger/types`
 
-Shared types used across all Ledger packages.
-
-**Money:**
-
 ```go
 type Money struct {
-    Amount   int64  // Smallest currency unit (cents, pence, etc.)
-    Currency string // ISO 4217 lowercase: "usd", "eur", "gbp"
+	Amount   int64
+	Currency string
 }
 
-// Constructors
-func USD(cents int64) Money
-func EUR(cents int64) Money
-func GBP(pence int64) Money
-func JPY(yen int64) Money
-func CAD(cents int64) Money
-func AUD(cents int64) Money
+func USD(cents int64) Money // also EUR, GBP, JPY, CAD, AUD
 func Zero(currency string) Money
-func Sum(values ...Money) Money
+func Sum(values ...Money) Money // panics on mixed currencies; "usd" zero when empty
 
-// Arithmetic (panics on currency mismatch)
+// Arithmetic. Add, Subtract, Min, Max, LessThan and GreaterThan panic on mixed currencies.
 func (m Money) Add(other Money) Money
 func (m Money) Subtract(other Money) Money
 func (m Money) Multiply(qty int64) Money
-func (m Money) Divide(divisor int64) Money
+func (m Money) Divide(divisor int64) Money // integer division; panics on 0
+func (m Money) Percent(pct int) Money      // truncates toward zero
 func (m Money) Negate() Money
 func (m Money) Abs() Money
 
-// Comparison
+// Overflow-checked. Errors wrap ErrOverflow; a currency mismatch is an error too.
+func (m Money) CheckedAdd(other Money) (Money, error)
+func (m Money) CheckedSubtract(other Money) (Money, error)
+func (m Money) CheckedMultiply(qty int64) (Money, error)
+func (m Money) CheckedPercent(pct int) (Money, error)
+
+// Comparison and formatting
 func (m Money) IsZero() bool
 func (m Money) IsPositive() bool
 func (m Money) IsNegative() bool
@@ -512,467 +253,138 @@ func (m Money) LessThan(other Money) bool
 func (m Money) GreaterThan(other Money) bool
 func (m Money) Min(other Money) Money
 func (m Money) Max(other Money) Money
+func (m Money) FormatMajor() string // "49.99"
+func (m Money) String() string      // "$49.99"
+func (m Money) MarshalJSON() ([]byte, error) // {"amount":..,"currency":..,"display":..}
 
-// Formatting
-func (m Money) FormatMajor() string  // "49.00"
-func (m Money) String() string       // "$49.00"
-func (m Money) MarshalJSON() ([]byte, error)
+var ErrOverflow = errors.New("types: money arithmetic overflow")
 ```
 
-**Entity:**
-
-```go
-type Entity struct {
-    CreatedAt time.Time
-    UpdatedAt time.Time
-}
-
-func NewEntity() Entity
-func (e *Entity) Touch()
-func (e Entity) Age() time.Duration
-func (e Entity) LastModified() time.Duration
-func (e Entity) IsNew() bool
-func (e Entity) IsStale(staleDuration time.Duration) bool
-```
-
----
+`Entity` holds `CreatedAt` and `UpdatedAt`, with `NewEntity()`, `Touch()`, `Age()`, `LastModified()`, `IsNew()` and `IsStale(d)`.
 
 ### `github.com/xraph/ledger/id`
 
-TypeID-based identifiers for all Ledger entities. Every ID is type-prefixed, K-sortable, and UUIDv7-based. IDs are validated at parse time to ensure the prefix matches the expected type.
-
-**ID types:**
-
-| Type | Prefix | Example |
-|------|--------|---------|
-| `PlanID` | `plan` | `plan_01h2xcejqtf2nbrexx3vqjhp41` |
-| `FeatureID` | `feat` | `feat_01h2xcejqtf2nbrexx3vqjhp41` |
-| `PriceID` | `price` | `price_01h2xcejqtf2nbrexx3vqjhp41` |
-| `SubscriptionID` | `sub` | `sub_01h2xcejqtf2nbrexx3vqjhp41` |
-| `UsageEventID` | `uevt` | `uevt_01h2xcejqtf2nbrexx3vqjhp41` |
-| `EntitlementID` | `ent` | `ent_01h2xcejqtf2nbrexx3vqjhp41` |
-| `InvoiceID` | `inv` | `inv_01h455vb4pex5vsknk084sn02q` |
-| `LineItemID` | `li` | `li_01h455vb4pex5vsknk084sn02q` |
-| `CouponID` | `cpn` | `cpn_01h455vb4pex5vsknk084sn02q` |
-| `PaymentID` | `pay` | `pay_01h455vb4pex5vsknk084sn02q` |
-| `AnyID` | any | Accepts any valid prefix |
-
-**Constructors:**
-
 ```go
-func NewPlanID() PlanID
-func NewFeatureID() FeatureID
-func NewPriceID() PriceID
-func NewSubscriptionID() SubscriptionID
-func NewUsageEventID() UsageEventID
-func NewEntitlementID() EntitlementID
-func NewInvoiceID() InvoiceID
-func NewLineItemID() LineItemID
-func NewCouponID() CouponID
-func NewPaymentID() PaymentID
+type ID struct{ /* unexported */ }
+type Prefix string
+
+func New(prefix Prefix) ID
+func Parse(s string) (ID, error)
+func ParseWithPrefix(s string, expected Prefix) (ID, error)
+func ParseAny(s string) (ID, error)
+func MustParse(s string) ID
+func MustParseWithPrefix(s string, expected Prefix) ID
+
+func (i ID) String() string
+func (i ID) Prefix() Prefix
+func (i ID) IsNil() bool
+
+var Nil ID
 ```
 
-**Parsers (validate prefix at parse time):**
+`PlanID`, `FeatureID`, `PriceID`, `SubscriptionID`, `UsageEventID`, `EntitlementID`, `InvoiceID`, `LineItemID`, `CouponID`, `CouponApplicationID`, `PaymentID` and `AnyID` are aliases for `ID`. Each but `AnyID` has a `NewXxxID()` constructor, and each but `AnyID` and `CouponApplicationID` has a `ParseXxxID(s)`. `ID` implements text, SQL and BSON marshalling. See [Identity](/docs/concepts/identity).
 
-```go
-func ParsePlanID(s string) (PlanID, error)
-func ParseFeatureID(s string) (FeatureID, error)
-func ParsePriceID(s string) (PriceID, error)
-func ParseSubscriptionID(s string) (SubscriptionID, error)
-func ParseUsageEventID(s string) (UsageEventID, error)
-func ParseEntitlementID(s string) (EntitlementID, error)
-func ParseInvoiceID(s string) (InvoiceID, error)
-func ParseLineItemID(s string) (LineItemID, error)
-func ParseCouponID(s string) (CouponID, error)
-func ParsePaymentID(s string) (PaymentID, error)
-func ParseAny(s string) (AnyID, error)
-```
-
-All IDs implement `String() string` and are K-sortable (chronological ordering without timestamps).
-
-See [Identity](/docs/concepts/identity) for the design rationale.
-
----
-
-## Store packages
+## Storage
 
 ### `github.com/xraph/ledger/store`
 
-The unified storage interface for all Ledger entities. The `Store` interface explicitly declares all methods from the sub-store interfaces to avoid naming conflicts.
+The `Store` interface every backend implements. See [Custom store](/docs/guides/custom-store).
+
+### `store/memory`, `store/postgres`, `store/sqlite`, `store/mongo`
 
 ```go
-type Store interface {
-    // Plan methods (7)
-    CreatePlan(ctx context.Context, p *plan.Plan) error
-    GetPlan(ctx context.Context, planID id.PlanID) (*plan.Plan, error)
-    GetPlanBySlug(ctx context.Context, slug string, appID string) (*plan.Plan, error)
-    ListPlans(ctx context.Context, appID string, opts plan.ListOpts) ([]*plan.Plan, error)
-    UpdatePlan(ctx context.Context, p *plan.Plan) error
-    DeletePlan(ctx context.Context, planID id.PlanID) error
-    ArchivePlan(ctx context.Context, planID id.PlanID) error
-
-    // Subscription methods (6)
-    CreateSubscription(ctx context.Context, s *subscription.Subscription) error
-    GetSubscription(ctx context.Context, subID id.SubscriptionID) (*subscription.Subscription, error)
-    GetActiveSubscription(ctx context.Context, tenantID string, appID string) (*subscription.Subscription, error)
-    ListSubscriptions(ctx context.Context, tenantID string, appID string, opts subscription.ListOpts) ([]*subscription.Subscription, error)
-    UpdateSubscription(ctx context.Context, s *subscription.Subscription) error
-    CancelSubscription(ctx context.Context, subID id.SubscriptionID, cancelAt time.Time) error
-
-    // Meter methods (5)
-    IngestBatch(ctx context.Context, events []*meter.UsageEvent) error
-    Aggregate(ctx context.Context, tenantID, appID, featureKey string, period plan.Period) (int64, error)
-    AggregateMulti(ctx context.Context, tenantID, appID string, featureKeys []string, period plan.Period) (map[string]int64, error)
-    QueryUsage(ctx context.Context, tenantID, appID string, opts meter.QueryOpts) ([]*meter.UsageEvent, error)
-    PurgeUsage(ctx context.Context, before time.Time) (int64, error)
-
-    // Entitlement methods (4)
-    GetCached(ctx context.Context, tenantID, appID, featureKey string) (*entitlement.Result, error)
-    SetCached(ctx context.Context, tenantID, appID, featureKey string, result *entitlement.Result, ttl time.Duration) error
-    Invalidate(ctx context.Context, tenantID, appID string) error
-    InvalidateFeature(ctx context.Context, tenantID, appID, featureKey string) error
-
-    // Invoice methods (8)
-    CreateInvoice(ctx context.Context, inv *invoice.Invoice) error
-    GetInvoice(ctx context.Context, invID id.InvoiceID) (*invoice.Invoice, error)
-    ListInvoices(ctx context.Context, tenantID, appID string, opts invoice.ListOpts) ([]*invoice.Invoice, error)
-    UpdateInvoice(ctx context.Context, inv *invoice.Invoice) error
-    GetInvoiceByPeriod(ctx context.Context, tenantID, appID string, periodStart, periodEnd time.Time) (*invoice.Invoice, error)
-    ListPendingInvoices(ctx context.Context, appID string) ([]*invoice.Invoice, error)
-    MarkInvoicePaid(ctx context.Context, invID id.InvoiceID, paidAt time.Time, paymentRef string) error
-    MarkInvoiceVoided(ctx context.Context, invID id.InvoiceID, reason string) error
-
-    // Coupon methods (6)
-    CreateCoupon(ctx context.Context, c *coupon.Coupon) error
-    GetCoupon(ctx context.Context, code string, appID string) (*coupon.Coupon, error)
-    GetCouponByID(ctx context.Context, couponID id.CouponID) (*coupon.Coupon, error)
-    ListCoupons(ctx context.Context, appID string, opts coupon.ListOpts) ([]*coupon.Coupon, error)
-    UpdateCoupon(ctx context.Context, c *coupon.Coupon) error
-    DeleteCoupon(ctx context.Context, couponID id.CouponID) error
-
-    // Core methods (3)
-    Migrate(ctx context.Context) error
-    Ping(ctx context.Context) error
-    Close() error
-}
+func memory.New() *memory.Store
+func postgres.New(db *grove.DB) *postgres.Store
+func sqlite.New(db *grove.DB) *sqlite.Store
+func mongo.New(db *grove.DB) *mongo.Store
 ```
 
-See [Custom Store](/docs/guides/custom-store) for implementing your own store.
+The three Grove stores also export `Migrations`, their Grove migration group. The MongoDB store has `DB() *grove.DB`. See the [store pages](/docs/stores/postgres).
 
----
-
-### `github.com/xraph/ledger/store/memory`
-
-In-memory store implementation for testing and development. All data is stored in Go maps with `sync.RWMutex` for thread safety.
+### `github.com/xraph/ledger/store/storetest`
 
 ```go
-func New() *Store
+func Run(t *testing.T, newStore func(t *testing.T) store.Store)
+func NewMemory(t *testing.T) store.Store
+func NewSQLite(t *testing.T) store.Store
+func NewPostgres(t *testing.T) store.Store // skips without LEDGER_TEST_POSTGRES_DSN
+func NewMongo(t *testing.T) store.Store    // skips without LEDGER_TEST_MONGO_URI
 ```
 
-The memory store implements the full `store.Store` interface. No configuration is needed. Data is lost when the process exits.
-
-```go
-import "github.com/xraph/ledger/store/memory"
-
-s := memory.New()
-l := ledger.New(s)
-```
-
-See [Memory Store](/docs/stores/memory) for details.
-
----
-
-### `github.com/xraph/ledger/store/postgres`
-
-PostgreSQL store implementation for production use. Uses bun ORM for database operations with automatic migrations.
-
-```go
-func New(databaseURL string) (*Store, error)
-```
-
-```go
-import "github.com/xraph/ledger/store/postgres"
-
-s, err := postgres.New("postgres://user:pass@localhost:5432/ledger?sslmode=disable")
-if err != nil {
-    log.Fatal(err)
-}
-```
-
-See [PostgreSQL Store](/docs/stores/postgres) for configuration and schema details.
-
----
-
-## Plugin packages
+## Plugins
 
 ### `github.com/xraph/ledger/plugin`
 
-Plugin system and registry. Plugins implement lifecycle hooks to extend Ledger's functionality. The base `Plugin` interface requires only a `Name()` method; hook interfaces are optional and implement-any-subset.
+`Plugin`, the hook interfaces (`OnInit`, `OnShutdown`, `OnPlanCreated`, `OnPlanUpdated`, `OnPlanArchived`, `OnFeatureCreated`, `OnFeatureUpdated`, `OnFeatureArchived`, `OnFeatureDeleted`, `OnSubscriptionCreated`, `OnSubscriptionChanged`, `OnSubscriptionCanceled`, `OnSubscriptionCancelScheduled`, `OnSubscriptionExpired`, `OnSubscriptionRenewed`, `OnSubscriptionTrialEnded`, `OnUsageIngested`, `OnUsageFlushed`, `OnEntitlementChecked`, `OnQuotaExceeded`, `OnSoftLimitReached`, `OnInvoiceGenerated`, `OnInvoiceFinalized`, `OnInvoicePaid`, `OnInvoiceFailed`, `OnInvoiceVoided`, `OnInvoicePastDue`, `OnProviderSync`, `OnWebhookReceived`), and the strategy interfaces (`PricingStrategy`, `UsageAggregator`, `TaxCalculator`, `InvoiceFormatter`, `CouponValidator`, `PaymentProviderPlugin`).
 
-**Base interface:**
-
-```go
-type Plugin interface {
-    Name() string
-}
-```
-
-**Lifecycle hooks:**
-
-| Interface | Method signature | Trigger |
-|-----------|-----------------|---------|
-| `OnInit` | `OnInit(ctx, ledger interface{}) error` | Engine started |
-| `OnShutdown` | `OnShutdown(ctx) error` | Engine stopping |
-
-**Plan hooks:**
-
-| Interface | Method signature | Trigger |
-|-----------|-----------------|---------|
-| `OnPlanCreated` | `OnPlanCreated(ctx, plan interface{}) error` | Plan created |
-| `OnPlanUpdated` | `OnPlanUpdated(ctx, oldPlan, newPlan interface{}) error` | Plan updated |
-| `OnPlanArchived` | `OnPlanArchived(ctx, planID string) error` | Plan archived |
-
-**Subscription hooks:**
-
-| Interface | Method signature | Trigger |
-|-----------|-----------------|---------|
-| `OnSubscriptionCreated` | `OnSubscriptionCreated(ctx, sub interface{}) error` | Subscription created |
-| `OnSubscriptionChanged` | `OnSubscriptionChanged(ctx, sub, oldPlan, newPlan interface{}) error` | Plan changed |
-| `OnSubscriptionCanceled` | `OnSubscriptionCanceled(ctx, sub interface{}) error` | Subscription canceled |
-| `OnSubscriptionExpired` | `OnSubscriptionExpired(ctx, sub interface{}) error` | Subscription expired |
-
-**Usage/Metering hooks:**
-
-| Interface | Method signature | Trigger |
-|-----------|-----------------|---------|
-| `OnUsageIngested` | `OnUsageIngested(ctx, events []interface{}) error` | Events ingested |
-| `OnUsageFlushed` | `OnUsageFlushed(ctx, count int, elapsed time.Duration) error` | Batch flushed to store |
-
-**Entitlement hooks:**
-
-| Interface | Method signature | Trigger |
-|-----------|-----------------|---------|
-| `OnEntitlementChecked` | `OnEntitlementChecked(ctx, result interface{}) error` | Entitlement checked |
-| `OnQuotaExceeded` | `OnQuotaExceeded(ctx, tenantID, featureKey string, used, limit int64) error` | Hard quota exceeded |
-| `OnSoftLimitReached` | `OnSoftLimitReached(ctx, tenantID, featureKey string, used, limit int64) error` | Soft limit reached |
-
-**Invoice hooks:**
-
-| Interface | Method signature | Trigger |
-|-----------|-----------------|---------|
-| `OnInvoiceGenerated` | `OnInvoiceGenerated(ctx, inv interface{}) error` | Invoice generated |
-| `OnInvoiceFinalized` | `OnInvoiceFinalized(ctx, inv interface{}) error` | Invoice finalized |
-| `OnInvoicePaid` | `OnInvoicePaid(ctx, inv interface{}) error` | Invoice paid |
-| `OnInvoiceFailed` | `OnInvoiceFailed(ctx, inv interface{}, err error) error` | Payment failed |
-| `OnInvoiceVoided` | `OnInvoiceVoided(ctx, inv interface{}, reason string) error` | Invoice voided |
-
-**Provider hooks:**
-
-| Interface | Method signature | Trigger |
-|-----------|-----------------|---------|
-| `OnProviderSync` | `OnProviderSync(ctx, provider string, success bool, err error) error` | Provider sync |
-| `OnWebhookReceived` | `OnWebhookReceived(ctx, provider string, payload []byte) error` | Webhook received |
-| `PaymentProviderPlugin` | `Provider() interface{}` | Provides payment provider |
-
-**Strategy plugins:**
-
-| Interface | Key method | Purpose |
-|-----------|------------|---------|
-| `PricingStrategy` | `Compute(tiers, usage, included, currency)` | Custom pricing calculation |
-| `UsageAggregator` | `Aggregate(ctx, events)` | Custom usage aggregation |
-| `TaxCalculator` | `CalculateTax(ctx, subtotal, tenantID)` | Tax computation |
-| `InvoiceFormatter` | `Render(ctx, inv, writer)` | Invoice export (PDF, HTML, CSV) |
-| `CouponValidator` | `ValidateCoupon(ctx, coupon, sub)` | Custom coupon validation |
-
-**Registry:**
-
-```go
-func NewRegistry() *Registry
-func (r *Registry) Register(p Plugin) error
-func (r *Registry) Get(name string) Plugin
-func (r *Registry) List() []Plugin
-func (r *Registry) Count() int
-func (r *Registry) WithLogger(logger *slog.Logger) *Registry
-
-// Strategy lookups
-func (r *Registry) GetPaymentProviders() []PaymentProviderPlugin
-func (r *Registry) GetPricingStrategy(name string) PricingStrategy
-func (r *Registry) GetTaxCalculators() []TaxCalculator
-```
-
-The registry uses type-cached discovery for O(1) dispatch performance. All hook calls include a 5-second timeout to prevent plugins from blocking the billing pipeline.
-
-See [Custom Plugin](/docs/guides/custom-plugin) for writing custom plugins.
-
----
-
-## Extension packages
-
-### `github.com/xraph/ledger/observability`
-
-Metrics extension that records lifecycle event counts via a `MetricFactory` interface. Registers counters and histograms for all major billing operations.
-
-```go
-func NewMetricsExtension(factory MetricFactory) *MetricsExtension
-```
-
-**MetricFactory interface:**
-
-```go
-type MetricFactory interface {
-    Counter(name string) Counter
-    Histogram(name string) Histogram
-}
-
-type Counter interface {
-    Inc()
-    Add(float64)
-}
-
-type Histogram interface {
-    Observe(float64)
-}
-```
-
-**Recorded metrics:**
-
-| Metric | Type | Description |
-|--------|------|-------------|
-| `ledger.plan.created` | Counter | Plans created |
-| `ledger.plan.updated` | Counter | Plans updated |
-| `ledger.plan.archived` | Counter | Plans archived |
-| `ledger.subscription.created` | Counter | Subscriptions created |
-| `ledger.subscription.upgraded` | Counter | Plan upgrades |
-| `ledger.subscription.downgraded` | Counter | Plan downgrades |
-| `ledger.subscription.canceled` | Counter | Cancellations |
-| `ledger.subscription.expired` | Counter | Expirations |
-| `ledger.usage.events.ingested` | Counter | Usage events ingested |
-| `ledger.usage.batch.size` | Histogram | Batch sizes |
-| `ledger.usage.flush.latency_ms` | Histogram | Flush latency in ms |
-| `ledger.entitlement.checks` | Counter | Entitlement checks |
-| `ledger.entitlement.cache.hits` | Counter | Cache hits |
-| `ledger.entitlement.cache.misses` | Counter | Cache misses |
-| `ledger.entitlement.denied` | Counter | Access denied |
-| `ledger.entitlement.latency_ms` | Histogram | Check latency in ms |
-| `ledger.invoice.generated` | Counter | Invoices generated |
-| `ledger.invoice.finalized` | Counter | Invoices finalized |
-| `ledger.invoice.paid` | Counter | Invoices paid |
-| `ledger.invoice.voided` | Counter | Invoices voided |
-| `ledger.invoice.total_amount` | Histogram | Invoice amounts |
-| `ledger.provider.sync.success` | Counter | Successful syncs |
-| `ledger.provider.sync.failure` | Counter | Failed syncs |
-| `ledger.webhook.received` | Counter | Webhooks received |
-| `ledger.webhook.processed` | Counter | Webhooks processed |
-| `ledger.store.errors` | Counter | Store errors |
-| `ledger.plugin.errors` | Counter | Plugin errors |
-
-See [Custom Plugin](/docs/guides/custom-plugin) for integration details.
-
----
+`Registry` (from `NewRegistry()`) is what the engine uses to dispatch. You don't normally need it. [Custom plugin](/docs/guides/custom-plugin) says which hooks fire and when.
 
 ### `github.com/xraph/ledger/audit_hook`
 
-Audit trail extension that bridges Ledger lifecycle events to an audit backend. Uses a local `Recorder` interface so the package does not import Chronicle directly.
+Package `audithook`.
 
 ```go
 func New(r Recorder, opts ...Option) *Extension
-```
+func WithLogger(logger log.Logger) Option
+func WithEnabledActions(actions ...string) Option
+func WithDisabledActions(actions ...string) Option
 
-**Recorder interface:**
-
-```go
 type Recorder interface {
-    Record(ctx context.Context, event *AuditEvent) error
+	Record(ctx context.Context, event *AuditEvent) error
 }
-
-// Adapter for plain functions
 type RecorderFunc func(ctx context.Context, event *AuditEvent) error
 
 type AuditEvent struct {
-    Action     string
-    Resource   string
-    Category   string
-    ResourceID string
-    Metadata   map[string]any
-    Outcome    string
-    Severity   string
-    Reason     string
+	Action, Resource, Category, ResourceID string
+	Metadata                               map[string]any
+	Outcome, Severity, Reason              string
 }
 ```
 
-**Options:**
+Constants for actions (`ActionPlanCreated` and so on), resources, categories, severities and outcomes.
 
-| Option | Description |
-|--------|-------------|
-| `WithLogger(*slog.Logger)` | Set the logger |
-| `WithEnabledActions(actions ...string)` | Audit only these actions (whitelist) |
-| `WithDisabledActions(actions ...string)` | Skip these actions (blacklist) |
-
-**Action constants:**
-
-| Constant | Value |
-|----------|-------|
-| `ActionPlanCreated` | `"plan.created"` |
-| `ActionPlanUpdated` | `"plan.updated"` |
-| `ActionPlanArchived` | `"plan.archived"` |
-| `ActionSubscriptionCreated` | `"subscription.created"` |
-| `ActionSubscriptionUpgraded` | `"subscription.upgraded"` |
-| `ActionSubscriptionDowngraded` | `"subscription.downgraded"` |
-| `ActionSubscriptionCanceled` | `"subscription.canceled"` |
-| `ActionSubscriptionExpired` | `"subscription.expired"` |
-| `ActionUsageIngested` | `"usage.ingested"` |
-| `ActionUsageFlushed` | `"usage.flushed"` |
-| `ActionEntitlementChecked` | `"entitlement.checked"` |
-| `ActionEntitlementDenied` | `"entitlement.denied"` |
-| `ActionQuotaExceeded` | `"quota.exceeded"` |
-| `ActionSoftLimitReached` | `"soft_limit.reached"` |
-| `ActionInvoiceGenerated` | `"invoice.generated"` |
-| `ActionInvoiceFinalized` | `"invoice.finalized"` |
-| `ActionInvoicePaid` | `"invoice.paid"` |
-| `ActionInvoiceFailed` | `"invoice.failed"` |
-| `ActionInvoiceVoided` | `"invoice.voided"` |
-| `ActionProviderSync` | `"provider.sync"` |
-| `ActionWebhookReceived` | `"webhook.received"` |
-| `ActionWebhookProcessed` | `"webhook.processed"` |
-
-**Resource, Category, Severity, and Outcome constants:**
+### `github.com/xraph/ledger/observability`
 
 ```go
-// Resources
-ResourcePlan, ResourceSubscription, ResourceUsage,
-ResourceEntitlement, ResourceInvoice, ResourceProvider, ResourceWebhook
+func NewMetricsExtension(factory MetricFactory) *MetricsExtension
 
-// Categories
-CategoryBilling, CategorySubscription, CategoryUsage,
-CategoryAccess, CategoryPayment, CategoryIntegration
-
-// Severities
-SeverityInfo, SeverityWarning, SeverityError, SeverityCritical
-
-// Outcomes
-OutcomeSuccess, OutcomeFailure, OutcomePartial
+type MetricFactory interface {
+	Counter(name string) Counter
+	Histogram(name string) Histogram
+}
+type Counter interface {
+	Inc()
+	Add(float64)
+}
+type Histogram interface {
+	Observe(float64)
+}
 ```
 
-See [Custom Plugin](/docs/guides/custom-plugin) for integration details.
+`MetricsExtension` exposes its counters and histograms as exported fields.
 
----
+## Forge
 
-## Package index
+### `github.com/xraph/ledger/extension`
 
-| Package | Import path | Purpose |
-|---------|-------------|---------|
-| `ledger` | `github.com/xraph/ledger` | Main engine and configuration |
-| `plan` | `github.com/xraph/ledger/plan` | Plan and feature definitions |
-| `subscription` | `github.com/xraph/ledger/subscription` | Subscription lifecycle management |
-| `meter` | `github.com/xraph/ledger/meter` | Usage event tracking and batching |
-| `entitlement` | `github.com/xraph/ledger/entitlement` | Feature access checking with cache |
-| `invoice` | `github.com/xraph/ledger/invoice` | Invoice generation and line items |
-| `coupon` | `github.com/xraph/ledger/coupon` | Discounts and promotional codes |
-| `types` | `github.com/xraph/ledger/types` | Money, Entity, and common types |
-| `id` | `github.com/xraph/ledger/id` | TypeID identifiers |
-| `store` | `github.com/xraph/ledger/store` | Unified storage interface |
-| `store/memory` | `github.com/xraph/ledger/store/memory` | In-memory store for testing |
-| `store/postgres` | `github.com/xraph/ledger/store/postgres` | PostgreSQL implementation |
-| `plugin` | `github.com/xraph/ledger/plugin` | Plugin system and registry |
-| `audit_hook` | `github.com/xraph/ledger/audit_hook` | Audit trail extension |
-| `observability` | `github.com/xraph/ledger/observability` | Metrics extension |
+```go
+func New(opts ...Option) *Extension
+func (e *Extension) Engine() *ledger.Ledger
+func (e *Extension) Register(fapp forge.App) error
+func (e *Extension) Start(ctx context.Context) error
+func (e *Extension) Stop(ctx context.Context) error
+func (e *Extension) Health(ctx context.Context) error
+func (e *Extension) RegisterContractContributor(disp *dispatcher.Dispatcher, reg contract.Registry, wreg contract.WardenRegistry) error
+
+func DefaultConfig() Config
+
+const ExtensionName = "ledger"
+const ExtensionVersion = "0.1.0"
+const ExtensionDescription = "Composable usage-based billing engine"
+```
+
+Options: `WithStore`, `WithGroveDatabase`, `WithPlugin`, `WithLedgerOption`, `WithConfig`, `WithRequireConfig`, `WithMeterBatchSize`, `WithMeterFlushInterval`, `WithEntitlementCacheTTL`, `WithDisableMigrate`, `WithDisableLifecycle`, `WithAppID`, and `WithBasePath` and `WithDisableRoutes`, which do nothing. See [Forge extension](/docs/guides/forge-extension) and [Configuration](/docs/concepts/configuration#forge-extension-config).
+
+### `github.com/xraph/ledger/extension/contract`
+
+The Forge dashboard contributor: `Register(d, reg, wreg, deps)`, the `Deps` it needs, and the input and output types of every intent. The extension calls it for you. See [HTTP API](/docs/api-reference/http-api).

@@ -11,17 +11,17 @@ const footerLinks = {
     { label: "Configuration", href: "/docs/concepts/configuration" },
   ],
   Components: [
-    { label: "Ingestion", href: "/docs/subsystems/recording" },
-    { label: "Retrieval", href: "/docs/subsystems/verification" },
-    { label: "Chunker", href: "/docs/subsystems/erasure" },
-    { label: "Embedder", href: "/docs/subsystems/compliance" },
-    { label: "Extensions", href: "/docs/subsystems/plugins" },
+    { label: "Plans", href: "/docs/subsystems/plans" },
+    { label: "Subscriptions", href: "/docs/subsystems/subscriptions" },
+    { label: "Metering", href: "/docs/subsystems/metering" },
+    { label: "Entitlements", href: "/docs/subsystems/entitlements" },
+    { label: "Invoicing", href: "/docs/subsystems/invoicing" },
   ],
   Stores: [
     { label: "Memory", href: "/docs/stores/memory" },
     { label: "PostgreSQL", href: "/docs/stores/postgres" },
     { label: "SQLite", href: "/docs/stores/sqlite" },
-    { label: "pgvector", href: "/docs/stores/bun" },
+    { label: "MongoDB", href: "/docs/stores/mongo" },
     { label: "Custom Store", href: "/docs/guides/custom-store" },
   ],
   Community: [
@@ -33,16 +33,6 @@ const footerLinks = {
     {
       label: "Issues",
       href: "https://github.com/xraph/ledger/issues",
-      external: true,
-    },
-    {
-      label: "Discussions",
-      href: "https://github.com/xraph/ledger/discussions",
-      external: true,
-    },
-    {
-      label: "Contributing",
-      href: "https://github.com/xraph/ledger/blob/main/CONTRIBUTING.md",
       external: true,
     },
   ],

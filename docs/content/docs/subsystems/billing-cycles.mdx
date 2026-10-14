@@ -1,286 +1,109 @@
 ---
 title: Billing Cycles
-description: How Ledger manages subscription billing cycles, period calculations, and automated billing runs.
+description: How periods are worked out, what the lifecycle clock does on each run, and how to bill the periods it ends.
 ---
 
-Ledger automates billing through recurring billing cycles tied to subscriptions. Each subscription has a billing period (monthly, yearly, etc.) and Ledger automatically generates invoices at the end of each period.
+Each subscription has one current period, `CurrentPeriodStart` to `CurrentPeriodEnd`. The lifecycle clock moves it forward when it ends. Billing the period that ended is a separate step you take, because Ledger never generates an invoice by itself.
 
-## Billing period
+## Period length
 
-The billing period is defined in the plan and copied to subscriptions:
+The plan's `Pricing.BillingPeriod` sets the length:
+
+| `BillingPeriod` | Period |
+|-----------------|--------|
+| `plan.PeriodMonthly`, or empty, or no pricing | one calendar month |
+| `plan.PeriodYearly` | twelve calendar months |
+| `plan.PeriodNone` | a first period of one month, which never rolls |
+
+There are no daily, weekly or quarterly periods.
+
+A period ends on the same day of the month it started, at the same time of day, in UTC. When that day doesn't exist, the period ends on the month's last day, and the next one goes back to the original day: a subscription that started on 31 January ends its periods on 28 (or 29) February, then 31 March.
+
+```
+created 2026-01-31 10:00 UTC, monthly
+  period 1: 2026-01-31 10:00 → 2026-02-28 10:00
+  period 2: 2026-02-28 10:00 → 2026-03-31 10:00
+  period 3: 2026-03-31 10:00 → 2026-04-30 10:00
+```
+
+## The lifecycle clock
+
+`Start` runs `Advance(ctx, now)` every minute (`ledger.WithLifecycleInterval` changes that, and `0` turns it off). One run does four steps, in this order:
+
+| Step | Method | What it does | Hook |
+|------|--------|--------------|------|
+| 1 | `AdvancePeriods` | Moves every `active`, `trialing` or `past_due` subscription whose period has ended into the period that contains now, in one write however many periods it missed. It never moves past a scheduled cancel. | `OnSubscriptionRenewed`, once per subscription, listing every period that ended |
+| 2 | `EnactCancels` | Cancels every subscription whose `CancelAt` has passed, paused ones included, and sets `CanceledAt` to `CancelAt`. | `OnSubscriptionCanceled` |
+| 3 | `EndTrials` | Makes every `trialing` subscription whose `TrialEnd` has passed `active`. A paused subscription's trial is left alone. | `OnSubscriptionTrialEnded` |
+| 4 | `MarkInvoicesPastDue` | Moves every `pending` invoice whose due date has passed to `past_due`. The subscription isn't touched. | `OnInvoicePastDue` |
+
+`Advance` returns a `LifecycleReport` with the IDs each step changed. Each step keeps going past a row that fails, and the errors come back joined.
+
+Every change is a conditional store write, so the clock is safe to run on several replicas at once. Only the replica whose write lands reports the change and fires its hook. A paused subscription doesn't roll: its period stands still until `ResumeSubscription` stretches it by the length of the pause.
+
+### Running it yourself
+
+Turn the background clock off and call `Advance` from your own scheduler, or from a test with any time you like:
 
 ```go
-type Plan struct {
-    BillingPeriod string `json:"billing_period"` // month, year, quarter, week
-    // ...
+engine := ledger.New(store, ledger.WithLifecycleInterval(0))
+// ...
+report, err := engine.Advance(ctx, time.Now())
+if err != nil {
+	log.Println("lifecycle:", err)
 }
-
-type Subscription struct {
-    CurrentPeriodStart time.Time  `json:"current_period_start"`
-    CurrentPeriodEnd   time.Time  `json:"current_period_end"`
-    // ...
+if !report.Empty() {
+	log.Println("advanced", len(report.PeriodsAdvanced), "past due", len(report.InvoicesPastDue))
 }
 ```
 
-Supported billing periods:
+Each step is also a method of its own (`AdvancePeriods`, `EnactCancels`, `EndTrials`, `MarkInvoicesPastDue`) if you want to run them on different schedules. In the Forge extension, set `disable_lifecycle: true`.
 
-| Period | Duration | Example |
-|--------|----------|---------|
-| `day` | 1 day | Daily billing |
-| `week` | 7 days | Weekly billing |
-| `month` | 1 calendar month | Monthly billing |
-| `quarter` | 3 calendar months | Quarterly billing |
-| `year` | 1 calendar year | Annual billing |
+## Billing ended periods
 
-## Period calculation
-
-When a subscription is created, Ledger calculates the first billing period:
+`OnSubscriptionRenewed` receives a `*subscription.Renewal`: the subscription as stored after the move, and `Ended`, every period that ended in it. Generate an invoice for each with `ForPeriod`:
 
 ```go
-func CalculateInitialPeriod(startTime time.Time, period string) (start, end time.Time) {
-    start = startTime
+type biller struct{ engine *ledger.Ledger }
 
-    switch period {
-    case "month":
-        end = start.AddDate(0, 1, 0) // +1 month
-    case "year":
-        end = start.AddDate(1, 0, 0) // +1 year
-    case "quarter":
-        end = start.AddDate(0, 3, 0) // +3 months
-    case "week":
-        end = start.AddDate(0, 0, 7) // +7 days
-    case "day":
-        end = start.AddDate(0, 0, 1) // +1 day
-    }
+func (b *biller) Name() string { return "biller" }
 
-    return start, end
+func (b *biller) OnSubscriptionRenewed(ctx context.Context, renewal interface{}) error {
+	r, ok := renewal.(*subscription.Renewal)
+	if !ok {
+		return nil
+	}
+	for _, p := range r.Ended {
+		inv, err := b.engine.GenerateInvoice(ctx, r.Subscription.ID, ledger.ForPeriod(p.Start, p.End))
+		if errors.Is(err, ledger.ErrAlreadyExists) {
+			continue // billed already
+		}
+		if err != nil {
+			return err
+		}
+		if err := b.engine.FinalizeInvoice(ctx, inv.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 ```
 
-Example:
+The plugin needs the engine, and the engine needs the plugin at construction, so register it with a pointer you fill in afterwards:
 
 ```go
-// Create subscription on January 15, 2024
-sub := &Subscription{
-    ID:                 id.NewSubscriptionID(),
-    CurrentPeriodStart: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
-    CurrentPeriodEnd:   time.Date(2024, 2, 15, 0, 0, 0, 0, time.UTC), // +1 month
-}
+b := &biller{}
+engine := ledger.New(store, ledger.WithPlugin(b))
+b.engine = engine
 ```
 
-## Billing run
+Hook delivery is at most once and in-process. If the process dies between the period write and the hook, or the hook returns an error, that announcement is gone: the clock never fires it again. So run a reconciliation now and then: list subscriptions, and for every period that ended without an invoice, call `GenerateInvoice` with `ForPeriod`. `ErrAlreadyExists` marks the ones already billed.
 
-A billing run is the automated process that generates invoices for subscriptions at the end of their billing period:
+`ForPeriod` only accepts the current period or earlier ones on the subscription's cadence, so a reconciliation can't invent periods. A period from before an older pause, which Ledger no longer remembers, is refused.
 
-```go
-type BillingRun struct {
-    ID              RunID     `json:"id"` // run_...
-    StartedAt       time.Time `json:"started_at"`
-    CompletedAt     *time.Time `json:"completed_at,omitempty"`
-    Status          string    `json:"status"` // running, completed, failed
+## What a renewal doesn't do
 
-    // Statistics
-    TotalSubscriptions int `json:"total_subscriptions"`
-    InvoicesGenerated  int `json:"invoices_generated"`
-    PaymentsProcessed  int `json:"payments_processed"`
-    FailedPayments     int `json:"failed_payments"`
-    TotalRevenue       Money `json:"total_revenue"`
-
-    // Errors
-    Errors []BillingError `json:"errors,omitempty"`
-}
-```
-
-## Automated billing cycle
-
-Ledger runs a scheduled job (typically hourly) to process subscriptions ending in the current period:
-
-```go
-func (s *BillingService) RunBillingCycle(ctx context.Context) (*BillingRun, error) {
-    run := &BillingRun{
-        ID:        id.NewRunID(),
-        StartedAt: time.Now(),
-        Status:    "running",
-    }
-
-    // Find subscriptions ending in the next hour
-    now := time.Now()
-    subs, err := s.store.ListSubscriptions(ctx, SubscriptionFilters{
-        PeriodEndBefore: now.Add(1 * time.Hour),
-        PeriodEndAfter:  now,
-        Status:          "active",
-    })
-
-    run.TotalSubscriptions = len(subs)
-
-    for _, sub := range subs {
-        // Generate invoice for subscription
-        invoice, err := s.GenerateInvoice(ctx, &sub)
-        if err != nil {
-            run.Errors = append(run.Errors, BillingError{
-                SubscriptionID: sub.ID,
-                Error:          err.Error(),
-            })
-            continue
-        }
-
-        run.InvoicesGenerated++
-        run.TotalRevenue += invoice.Total
-
-        // Attempt payment
-        payment, err := s.ProcessPayment(ctx, invoice.ID)
-        if err != nil {
-            run.FailedPayments++
-            continue
-        }
-
-        run.PaymentsProcessed++
-
-        // Advance subscription to next period
-        err = s.AdvanceSubscriptionPeriod(ctx, &sub)
-        if err != nil {
-            run.Errors = append(run.Errors, BillingError{
-                SubscriptionID: sub.ID,
-                Error:          err.Error(),
-            })
-        }
-    }
-
-    now = time.Now()
-    run.CompletedAt = &now
-    run.Status = "completed"
-
-    return run, nil
-}
-```
-
-## Invoice generation
-
-For each subscription, Ledger generates an invoice with:
-
-1. **Base subscription fee** — The plan's base price
-2. **Usage charges** — Metered usage during the period
-3. **Prorations** — Mid-period plan changes
-4. **One-time charges** — Add-ons, credits, adjustments
-
-```go
-func (s *BillingService) GenerateInvoice(ctx context.Context, sub *Subscription) (*Invoice, error) {
-    plan, err := s.store.GetPlan(ctx, sub.PlanID)
-    if err != nil {
-        return nil, err
-    }
-
-    invoice := &Invoice{
-        ID:             id.NewInvoiceID(),
-        CustomerID:     sub.CustomerID,
-        SubscriptionID: sub.ID,
-        Status:         "draft",
-        PeriodStart:    sub.CurrentPeriodStart,
-        PeriodEnd:      sub.CurrentPeriodEnd,
-        Currency:       plan.Currency,
-        Lines:          []InvoiceLine{},
-    }
-
-    // Add base subscription line
-    baseLine := InvoiceLine{
-        ID:          id.NewLineID().String(),
-        Description: fmt.Sprintf("%s - %s", plan.Name, formatPeriod(sub.CurrentPeriodStart, sub.CurrentPeriodEnd)),
-        Type:        "subscription",
-        Amount:      plan.BaseAmount,
-    }
-    invoice.Lines = append(invoice.Lines, baseLine)
-
-    // Add usage lines
-    usageLines, err := s.CalculateUsageLines(ctx, sub, plan)
-    if err != nil {
-        return nil, err
-    }
-    invoice.Lines = append(invoice.Lines, usageLines...)
-
-    // Calculate totals
-    invoice.Subtotal = calculateSubtotal(invoice.Lines)
-    invoice.Tax = calculateTax(invoice.Subtotal, sub.CustomerID)
-    invoice.Total = invoice.Subtotal + invoice.Tax
-    invoice.AmountDue = invoice.Total
-
-    // Save invoice
-    err = s.store.CreateInvoice(ctx, invoice)
-    return invoice, err
-}
-```
-
-## Period advancement
-
-After successful payment, advance the subscription to the next period:
-
-```go
-func (s *BillingService) AdvanceSubscriptionPeriod(ctx context.Context, sub *Subscription) error {
-    // Calculate next period
-    nextStart := sub.CurrentPeriodEnd
-    var nextEnd time.Time
-
-    plan, err := s.store.GetPlan(ctx, sub.PlanID)
-    if err != nil {
-        return err
-    }
-
-    switch plan.BillingPeriod {
-    case "month":
-        nextEnd = nextStart.AddDate(0, 1, 0)
-    case "year":
-        nextEnd = nextStart.AddDate(1, 0, 0)
-    case "quarter":
-        nextEnd = nextStart.AddDate(0, 3, 0)
-    case "week":
-        nextEnd = nextStart.AddDate(0, 0, 7)
-    case "day":
-        nextEnd = nextStart.AddDate(0, 0, 1)
-    }
-
-    // Update subscription
-    sub.CurrentPeriodStart = nextStart
-    sub.CurrentPeriodEnd = nextEnd
-
-    return s.store.UpdateSubscription(ctx, sub)
-}
-```
-
-## Proration
-
-When a subscription changes mid-period, Ledger prorates charges:
-
-```go
-func CalculateProration(oldAmount, newAmount Money, periodStart, periodEnd, changeTime time.Time) Money {
-    totalDays := periodEnd.Sub(periodStart).Hours() / 24
-    remainingDays := periodEnd.Sub(changeTime).Hours() / 24
-    fraction := remainingDays / totalDays
-
-    // Credit unused portion of old plan
-    oldCredit := Money(float64(oldAmount) * fraction)
-
-    // Charge for remaining portion of new plan
-    newCharge := Money(float64(newAmount) * fraction)
-
-    // Net proration (can be positive or negative)
-    return newCharge - oldCredit
-}
-```
-
-## Monitoring billing runs
-
-```go
-// Get recent billing runs
-runs, err := store.ListBillingRuns(ctx, BillingRunFilters{
-    Limit: 10,
-})
-
-// Check for errors
-for _, run := range runs {
-    if run.Status == "failed" || len(run.Errors) > 0 {
-        logger.Warn("billing run had errors",
-            "run_id", run.ID,
-            "errors", len(run.Errors),
-        )
-    }
-}
-```
+- It doesn't generate, finalize or collect an invoice.
+- It doesn't prorate. A plan change takes effect for the whole period the next invoice bills.
+- It doesn't reset quotas. Quota windows follow the calendar, not the period. See [Entitlements](/docs/subsystems/entitlements).
+- It doesn't move a subscription to `past_due` or `expired`, whatever its invoices look like.

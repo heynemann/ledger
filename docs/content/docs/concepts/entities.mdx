@@ -1,384 +1,273 @@
 ---
 title: Entities
-description: The core data types in Ledger — Plans, Subscriptions, Invoices, Usage Events, and more.
+description: The structs Ledger stores, field by field, and how they relate.
 ---
 
-All Ledger entities use TypeID identifiers for type-safe, sortable IDs. This page provides an overview of every entity and how they relate.
+Every stored entity has a TypeID and embeds `types.Entity` for its timestamps. The structs below are copied from the code with their JSON tags left off; the Go packages are the source of truth.
 
 ## Base entity
 
 ```go
+// package types
 type Entity struct {
-    ID        string    `json:"id"`
-    CreatedAt time.Time `json:"created_at"`
-    UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 ```
 
-Every entity struct embeds base timestamp tracking and a TypeID identifier.
+`types.NewEntity()` stamps both with the current UTC time, and `Touch()` moves `UpdatedAt`. The ID is a field on each entity, not on `Entity`.
 
-## Entity overview
-
-### Plan
-
-The top-level pricing entity. Defines features, pricing tiers, and billing configurations for customers.
+## Plan
 
 ```go
+// package plan
 type Plan struct {
-    Entity
-    ID          PlanID   `json:"id"` // pln_...
-    Name        string   `json:"name"`
-    Description string   `json:"description"`
-    Status      string   `json:"status"` // draft, active, archived
-
-    // Billing configuration
-    BillingPeriod   string `json:"billing_period"`   // month, year, etc
-    Currency        string `json:"currency"`         // USD, EUR, etc
-    TrialPeriodDays int    `json:"trial_period_days"`
-
-    // Features and pricing
-    Features     []Feature     `json:"features"`
-    PricingTiers []PricingTier `json:"pricing_tiers"`
-
-    // Metadata
-    Metadata map[string]any `json:"metadata"`
+	types.Entity
+	ID           id.PlanID
+	Name         string
+	Slug         string            // unique within the app
+	Description  string
+	Currency     string            // lowercase ISO 4217, fixed once created
+	Status       Status            // draft, active, archived
+	TrialDays    int
+	Features     []Feature
+	Pricing      *Pricing
+	AppID        string
+	ProviderID   string
+	ProviderName string
+	Metadata     map[string]string
 }
-```
 
-See [Plans](/docs/subsystems/plans) for details.
-
-### Feature
-
-A capability or resource included in a plan. Can be boolean (on/off) or metered (usage-based).
-
-```go
 type Feature struct {
-    ID          FeatureID `json:"id"` // fea_...
-    PlanID      PlanID    `json:"plan_id"`
-    Name        string    `json:"name"`
-    Key         string    `json:"key"` // unique identifier for code
-    Type        string    `json:"type"` // boolean, metered
+	types.Entity
+	ID        id.FeatureID
+	CatalogID id.FeatureID // optional link to a catalog feature
+	Key       string       // what Entitled and Meter name
+	Name      string
+	Type      FeatureType  // metered, boolean, seat
+	Limit     int64        // -1 for unlimited
+	Period    Period       // monthly, yearly, none: the quota window
+	SoftLimit bool
+	Metadata  map[string]string
+}
 
-    // For metered features
-    MeterType   string `json:"meter_type,omitempty"`   // counter, gauge, timer
-    Unit        string `json:"unit,omitempty"`         // api_calls, gb, minutes
-    Aggregation string `json:"aggregation,omitempty"`  // sum, max, unique_count
+type Pricing struct {
+	types.Entity
+	ID            id.PriceID
+	PlanID        id.PlanID
+	BaseAmount    types.Money
+	BillingPeriod Period // monthly or yearly; how often subscriptions roll
+	Tiers         []PriceTier
+}
 
-    // Limits
-    Limit       *int64 `json:"limit,omitempty"`        // max allowed usage
-    Overage     bool   `json:"overage"`                // allow usage above limit
-
-    Metadata map[string]any `json:"metadata"`
+type PriceTier struct {
+	FeatureKey string
+	Type       TierType    // graduated, volume, flat
+	UpTo       int64       // total usage this tier reaches; 0 or -1 is open-ended
+	UnitAmount types.Money // graduated and volume
+	FlatAmount types.Money // flat
+	Priority   int         // breaks ties between tiers with the same UpTo
 }
 ```
 
-### PricingTier
+See [Plans and pricing](/docs/subsystems/plans).
 
-Defines the pricing structure for a plan — flat fee, per-seat, usage-based, or hybrid.
+## Catalog feature
+
+The catalog is a separate list of reusable feature definitions, per app or global. A plan's quota checks and invoices read the plan's own `Features`, not the catalog.
 
 ```go
-type PricingTier struct {
-    ID         TierID  `json:"id"` // tier_...
-    PlanID     PlanID  `json:"plan_id"`
-    Name       string  `json:"name"`
-    Type       string  `json:"type"` // flat, per_unit, tiered, volume
-
-    // Flat pricing
-    FlatAmount Money `json:"flat_amount,omitempty"`
-
-    // Per-unit pricing
-    UnitAmount Money  `json:"unit_amount,omitempty"`
-    FeatureKey string `json:"feature_key,omitempty"` // which feature to meter
-
-    // Tiered pricing brackets
-    Brackets []PricingBracket `json:"brackets,omitempty"`
-
-    Metadata map[string]any `json:"metadata"`
-}
-
-type PricingBracket struct {
-    StartQuantity int64 `json:"start_quantity"`
-    EndQuantity   *int64 `json:"end_quantity,omitempty"` // nil = unlimited
-    UnitAmount    Money `json:"unit_amount"`
+// package feature
+type Feature struct {
+	types.Entity
+	ID           id.FeatureID
+	Key          string
+	Name         string
+	Description  string
+	Type         FeatureType // metered, boolean, seat
+	DefaultLimit int64
+	Period       Period
+	SoftLimit    bool
+	Status       Status      // draft, active, archived
+	AppID        string      // empty for a global feature
+	ProviderID   string
+	ProviderName string
+	Metadata     map[string]string
 }
 ```
 
-### Subscription
-
-A customer's active plan subscription with billing cycle and status tracking.
+## Subscription
 
 ```go
+// package subscription
 type Subscription struct {
-    Entity
-    ID         SubscriptionID `json:"id"` // sub_...
-    CustomerID CustomerID     `json:"customer_id"`
-    PlanID     PlanID         `json:"plan_id"`
-    Status     string         `json:"status"` // trialing, active, past_due, canceled, expired
-
-    // Billing cycle
-    CurrentPeriodStart time.Time  `json:"current_period_start"`
-    CurrentPeriodEnd   time.Time  `json:"current_period_end"`
-    TrialEnd           *time.Time `json:"trial_end,omitempty"`
-
-    // Cancellation
-    CanceledAt       *time.Time `json:"canceled_at,omitempty"`
-    CancelAtPeriodEnd bool      `json:"cancel_at_period_end"`
-
-    // Payment
-    PaymentMethodID string `json:"payment_method_id,omitempty"`
-
-    // Entitlements (cached)
-    Entitlements map[string]Entitlement `json:"entitlements"`
-
-    Metadata map[string]any `json:"metadata"`
+	types.Entity
+	ID                 id.SubscriptionID
+	TenantID           string
+	PlanID             id.PlanID
+	Status             Status // active, trialing, past_due, canceled, expired, paused
+	CurrentPeriodStart time.Time
+	CurrentPeriodEnd   time.Time
+	TrialStart         *time.Time
+	TrialEnd           *time.Time
+	CanceledAt         *time.Time
+	CancelAt           *time.Time // a scheduled cancel
+	EndedAt            *time.Time
+	PausedAt           *time.Time
+	Stretch            *Stretch   // the latest pause's effect on the period; not in JSON
+	AppID              string
+	ProviderID         string
+	ProviderName       string
+	Metadata           map[string]string
+	Quantity           map[string]int64 // seat counts, by seat feature key
 }
 ```
 
-See [Subscriptions](/docs/subsystems/subscriptions) for lifecycle details.
+See [Subscriptions](/docs/subsystems/subscriptions).
 
-### Customer
-
-Represents a billable entity (person, organization, team).
+## Usage event
 
 ```go
-type Customer struct {
-    Entity
-    ID    CustomerID `json:"id"` // cus_...
-    Email string     `json:"email"`
-    Name  string     `json:"name"`
-
-    // Organization (for B2B)
-    CompanyName string `json:"company_name,omitempty"`
-    TaxID       string `json:"tax_id,omitempty"`
-
-    // Billing details
-    BillingAddress Address `json:"billing_address"`
-    Currency       string  `json:"currency"` // default: USD
-
-    // Payment provider
-    StripeCustomerID string `json:"stripe_customer_id,omitempty"`
-    PaddleCustomerID string `json:"paddle_customer_id,omitempty"`
-
-    Metadata map[string]any `json:"metadata"`
-}
-```
-
-### Invoice
-
-A billing document for a subscription period, including usage charges.
-
-```go
-type Invoice struct {
-    Entity
-    ID             InvoiceID      `json:"id"` // inv_...
-    CustomerID     CustomerID     `json:"customer_id"`
-    SubscriptionID SubscriptionID `json:"subscription_id"`
-    Status         string         `json:"status"` // draft, open, paid, void, uncollectible
-
-    // Amounts (in cents)
-    Subtotal      Money `json:"subtotal"`
-    Tax           Money `json:"tax"`
-    Total         Money `json:"total"`
-    AmountPaid    Money `json:"amount_paid"`
-    AmountDue     Money `json:"amount_due"`
-    Currency      string `json:"currency"`
-
-    // Line items
-    Lines []InvoiceLine `json:"lines"`
-
-    // Dates
-    PeriodStart time.Time  `json:"period_start"`
-    PeriodEnd   time.Time  `json:"period_end"`
-    DueDate     time.Time  `json:"due_date"`
-    PaidAt      *time.Time `json:"paid_at,omitempty"`
-
-    // Payment
-    PaymentIntentID string `json:"payment_intent_id,omitempty"`
-
-    Metadata map[string]any `json:"metadata"`
-}
-
-type InvoiceLine struct {
-    ID          string `json:"id"`
-    Description string `json:"description"`
-    Quantity    int64  `json:"quantity"`
-    UnitAmount  Money  `json:"unit_amount"`
-    Amount      Money  `json:"amount"`
-    Type        string `json:"type"` // subscription, usage, one_time
-
-    // For usage lines
-    FeatureKey string     `json:"feature_key,omitempty"`
-    PeriodStart time.Time `json:"period_start,omitempty"`
-    PeriodEnd   time.Time `json:"period_end,omitempty"`
-}
-```
-
-See [Invoicing](/docs/subsystems/invoicing) for generation and payment flow.
-
-### UsageEvent
-
-A metered event submitted for billing calculation.
-
-```go
+// package meter
 type UsageEvent struct {
-    Entity
-    ID         EventID    `json:"id"` // evt_...
-    CustomerID CustomerID `json:"customer_id"`
-
-    // Event identification
-    EventName  string    `json:"event_name"` // e.g., "api_call", "storage_gb"
-    EventTime  time.Time `json:"event_time"`
-    IdempotencyKey string `json:"idempotency_key,omitempty"`
-
-    // Value
-    Value      float64           `json:"value"` // e.g., 1 for count, 2.5 for GB
-    Unit       string            `json:"unit"`  // api_calls, gb, minutes
-
-    // Context
-    Properties map[string]any `json:"properties,omitempty"`
-
-    // Processing
-    Processed   bool       `json:"processed"`
-    ProcessedAt *time.Time `json:"processed_at,omitempty"`
+	ID             id.UsageEventID
+	TenantID       string
+	AppID          string
+	FeatureKey     string
+	Quantity       int64
+	Timestamp      time.Time
+	IdempotencyKey string
+	Metadata       map[string]string
 }
 ```
 
-See [Metering](/docs/subsystems/metering) for high-throughput event ingestion.
+`Meter` fills in everything but `IdempotencyKey` and `Metadata`. See [Metering](/docs/subsystems/metering).
 
-### Entitlement
+## Entitlement result
 
-Cached access rights for sub-millisecond checks.
+A result is computed, not stored, apart from its cache entry.
 
 ```go
-type Entitlement struct {
-    FeatureKey string `json:"feature_key"`
-    Enabled    bool   `json:"enabled"`
-
-    // For metered features
-    Limit       *int64 `json:"limit,omitempty"`
-    Usage       int64  `json:"usage"`
-    Remaining   *int64 `json:"remaining,omitempty"`
-    HasOverage  bool   `json:"has_overage"`
+// package entitlement
+type Result struct {
+	Allowed   bool
+	Feature   string
+	Used      int64
+	Limit     int64
+	Remaining int64
+	SoftLimit bool
+	Reason    string
 }
 ```
 
-Entitlements are computed from subscription + plan + usage and cached for fast access checks.
+See [Entitlements](/docs/subsystems/entitlements).
 
-### Payment
-
-Records a payment transaction.
+## Invoice
 
 ```go
-type Payment struct {
-    Entity
-    ID             PaymentID  `json:"id"` // pay_...
-    InvoiceID      InvoiceID  `json:"invoice_id"`
-    CustomerID     CustomerID `json:"customer_id"`
-    Amount         Money      `json:"amount"`
-    Currency       string     `json:"currency"`
-    Status         string     `json:"status"` // pending, succeeded, failed, refunded
+// package invoice
+type Invoice struct {
+	types.Entity
+	ID             id.InvoiceID
+	TenantID       string
+	SubscriptionID id.SubscriptionID
+	Status         Status // draft, pending, paid, past_due, voided
+	Currency       string
+	Subtotal       types.Money
+	TaxAmount      types.Money
+	DiscountAmount types.Money
+	Total          types.Money
+	LineItems      []LineItem
+	PeriodStart    time.Time
+	PeriodEnd      time.Time
+	DueDate        *time.Time
+	PaidAt         *time.Time
+	VoidedAt       *time.Time
+	VoidReason     string
+	PaymentRef     string
+	ProviderID     string
+	ProviderName   string
+	AppID          string
+	Metadata       map[string]string
+}
 
-    // Provider details
-    ProviderID     string    `json:"provider_id"` // Stripe payment intent ID, etc
-    Provider       string    `json:"provider"`    // stripe, paddle
-    PaymentMethod  string    `json:"payment_method"` // card, bank_transfer, etc
-
-    // Timestamps
-    ProcessedAt *time.Time `json:"processed_at,omitempty"`
-    FailedAt    *time.Time `json:"failed_at,omitempty"`
-    FailureReason string   `json:"failure_reason,omitempty"`
-
-    Metadata map[string]any `json:"metadata"`
+type LineItem struct {
+	ID          id.LineItemID
+	InvoiceID   id.InvoiceID
+	FeatureKey  string
+	Description string
+	Quantity    int64
+	UnitAmount  types.Money
+	Amount      types.Money
+	Type        LineItemType // base, usage, overage, seat, discount, tax
+	Metadata    map[string]string
 }
 ```
 
-## Entity relationship diagram
+`GenerateInvoice` writes `base`, `overage`, `seat`, `discount` and `tax` lines. `usage` is declared but the engine doesn't produce it. See [Invoicing](/docs/subsystems/invoicing).
 
-```
-Customer
-  ├── Subscription[] ──→ Plan
-  │         │              ├── Feature[]
-  │         │              └── PricingTier[]
-  │         │                    └── PricingBracket[]
-  │         │
-  │         ├── Entitlements (cached from Plan + Usage)
-  │         └── Invoice[]
-  │               ├── InvoiceLine[] (computed from Plan + Usage)
-  │               └── Payment[]
-  │
-  └── UsageEvent[] ──→ aggregated → Invoice Lines
-```
-
-## TypeID prefixes
-
-All entities use TypeIDs with consistent prefixes:
-
-| Entity | Prefix | Example |
-|--------|--------|---------|
-| Plan | `pln_` | `pln_01h2xcejqtf2nbrexx3vqjhp41` |
-| Feature | `fea_` | `fea_01h2xcejqtf2nbrexx3vqjhp42` |
-| Pricing Tier | `tier_` | `tier_01h2xcejqtf2nbrexx3vqjhp43` |
-| Subscription | `sub_` | `sub_01h2xcejqtf2nbrexx3vqjhp44` |
-| Customer | `cus_` | `cus_01h2xcejqtf2nbrexx3vqjhp45` |
-| Invoice | `inv_` | `inv_01h2xcejqtf2nbrexx3vqjhp46` |
-| Usage Event | `evt_` | `evt_01h2xcejqtf2nbrexx3vqjhp47` |
-| Payment | `pay_` | `pay_01h2xcejqtf2nbrexx3vqjhp48` |
-
-TypeIDs are:
-- **Type-safe** — Prefix indicates entity type
-- **Sortable** — Encodes timestamp for chronological ordering
-- **Globally unique** — 128-bit UUID-like collision resistance
-- **URL-safe** — Base32 encoding without special characters
-
-## Money type
-
-All monetary values use the `Money` type (integer cents) to avoid floating-point precision errors:
+## Coupon
 
 ```go
-type Money int64 // Amount in smallest currency unit (cents)
+// package coupon
+type Coupon struct {
+	types.Entity
+	ID             id.CouponID
+	Code           string // unique within the app
+	Name           string
+	Type           CouponType  // percentage, amount
+	Amount         types.Money // for amount coupons
+	Percentage     int         // for percentage coupons, 0 to 100
+	Currency       string
+	MaxRedemptions int         // 0 or less means unlimited
+	TimesRedeemed  int
+	ValidFrom      *time.Time
+	ValidUntil     *time.Time
+	AppID          string
+	Metadata       map[string]string
+}
 
-// Examples:
-amount := Money(1000) // $10.00
-amount := Money(99)   // $0.99
-amount := Money(12345) // $123.45
+type Application struct {
+	ID             id.CouponApplicationID
+	CouponID       id.CouponID
+	SubscriptionID id.SubscriptionID
+	AppliedAt      time.Time
+}
 ```
 
-Helper functions:
+See [Coupons](/docs/subsystems/coupons).
+
+## How they relate
+
+```
+Plan (AppID)
+  ├── Feature[]        quota and allowance per feature key
+  └── Pricing          base fee, billing period, PriceTier[] per feature key
+
+Subscription (TenantID, AppID) ──> Plan
+  ├── Quantity         seat counts
+  ├── Coupon[]         through coupon applications
+  └── Invoice[]        one live invoice per billed period
+        └── LineItem[]
+
+UsageEvent (TenantID, AppID, FeatureKey)
+  totalled per feature for quota checks and invoices
+```
+
+There's no customer entity. The tenant ID on a subscription is the customer, and anything else you know about them stays in your own tables or in `Metadata`.
+
+## Money
+
 ```go
-money.FromDollars(10.50)  // → Money(1050)
-money.ToDollars(Money(1050)) // → 10.50
-money.Format(Money(1050), "USD") // → "$10.50"
+// package types
+type Money struct {
+	Amount   int64  // smallest currency unit: cents, pence, yen
+	Currency string // lowercase ISO 4217: "usd", "eur", "gbp"
+}
 ```
+
+Constructors: `types.USD`, `EUR`, `GBP`, `JPY`, `CAD`, `AUD` and `Zero(currency)`. The root package re-exports them as `ledger.USD` and so on. `Add`, `Subtract`, `Min`, `Max`, `LessThan` and `GreaterThan` panic when the currencies differ; the `Checked*` variants return an error instead and also catch `int64` overflow. `String()` gives `"$49.99"`, `FormatMajor()` gives `"49.99"`, and JSON adds a `display` field next to `amount` and `currency`.
 
 ## Store interfaces
 
-Each entity type defines its own store interface. These are composed into a single composite store:
-
-```go
-type Store interface {
-    PlanStore
-    FeatureStore
-    SubscriptionStore
-    CustomerStore
-    InvoiceStore
-    UsageEventStore
-    PaymentStore
-
-    Migrate(ctx context.Context) error
-    Ping(ctx context.Context) error
-    Close() error
-}
-```
-
-Example store methods:
-
-```go
-type PlanStore interface {
-    CreatePlan(ctx context.Context, plan *Plan) error
-    GetPlan(ctx context.Context, id PlanID) (*Plan, error)
-    GetPlanByName(ctx context.Context, name string) (*Plan, error)
-    UpdatePlan(ctx context.Context, plan *Plan) error
-    DeletePlan(ctx context.Context, id PlanID) error
-    ListPlans(ctx context.Context, filters PlanFilters) ([]Plan, error)
-}
-```
+Each entity package defines a store interface for its own methods (`plan.Store`, `subscription.Store`, `meter.Store` and so on). The one a store has to implement is `store.Store`, which lists every method with entity-prefixed names (`CreatePlan`, `IngestBatch`, `GetCached`, `CreateInvoice`, `RedeemCoupon` and the rest), the lifecycle queries, and `Migrate`, `Ping` and `Close`. See [Custom store](/docs/guides/custom-store).

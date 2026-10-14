@@ -1,227 +1,184 @@
 ---
 title: Architecture
-description: How Ledger's billing packages fit together.
+description: How Ledger's packages fit together, and what runs in the background.
 ---
 
-Ledger is organized as a set of focused Go packages for usage-based billing. The `ledger` package provides the main engine that coordinates all billing operations. Other packages define domain models, stores, and providers.
+Ledger is one engine, `ledger.Ledger`, in front of one storage interface, `store.Store`. The engine holds the billing rules: validation, quota checks, pricing, invoice assembly and the subscription lifecycle. Each entity package (`plan`, `subscription`, `invoice` and so on) defines a model and its slice of the store interface. The stores persist those models, and plugins hook into what the engine does.
 
 ## Package diagram
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                        ledger.Ledger                              │
-│  CreatePlan / UpdatePlan / GetPlan / ListPlans                    │
-│  CreateSubscription / UpdateSubscription / CancelSubscription     │
-│  Meter / Entitled / GenerateInvoice / CollectPayment              │
-│  CreateCoupon / ApplyCoupon / CreateCustomer / UpdateCustomer     │
-├──────────────────────────────────────────────────────────────────┤
-│                     Billing flow                                  │
-│  1. Define plans with features and pricing tiers                  │
-│  2. Create customer subscriptions to plans                        │
-│  3. Check entitlements with sub-millisecond cache                 │
-│  4. Meter usage events with high-throughput batching              │
-│  5. Generate invoices with line items and taxes                   │
-│  6. Process payments through providers (Stripe, Paddle, etc)      │
-├──────────────────────┬───────────────────────────────────────────┤
-│  plugin.Registry      │  meter.Buffer                             │
-│  OnMeterEvent         │  10K+ events/second ingestion             │
-│  OnInvoiceGenerated   │  Automatic batching and flushing           │
-│  OnPaymentProcessed   │  Configurable batch size and interval      │
-│  OnSubscriptionChange │  Non-blocking API                          │
-│  (16 lifecycle hooks) │                                           │
-├──────────────────────┴───────────────────────────────────────────┤
-│                        store.Store                                │
-│  Plans / Features / Subscriptions / Customers / Invoices          │
-│  Usage events / Entitlements / Coupons / Tax rates                │
-│  Audit trail / Webhooks / Migrations                              │
-├──────────────────────────────────────────────────────────────────┤
-│              PostgreSQL / SQLite / Redis / Memory                 │
-│  Production-ready stores with TypeID identifiers                  │
-│  Multi-tenancy with context-based isolation                       │
-└──────────────────────────────────────────────────────────────────┘
+ledger.Ledger
+  plans          CreatePlan, UpdatePlan, ActivatePlan, ArchivePlan, DeletePlan
+  catalog        CreateFeature, UpdateFeature, ArchiveFeature, ListFeatures
+  subscriptions  CreateSubscription, ChangePlan, PauseSubscription,
+                 ResumeSubscription, CancelSubscription
+  usage          Meter, Entitled, Remaining, InspectEntitlement
+  invoices       GenerateInvoice, FinalizeInvoice, MarkInvoicePaid,
+                 MarkInvoiceVoided, ExportInvoice
+  coupons        CreateCoupon, ApplyCoupon, ListAppliedCoupons
+  providers      Sync*ToProvider, Import*FromProvider, HandleWebhook
+  lifecycle      Advance (periods, cancels, trials, past-due invoices)
+      │
+      ├── plugin.Registry      typed hooks (OnPlanCreated, OnInvoicePaid, ...)
+      │                        strategy plugins (pricing, aggregation, tax,
+      │                        export formats, coupon validation, providers)
+      │
+      ├── background workers   meter flush (batch size or interval)
+      │                        lifecycle clock (Advance every minute by default)
+      │
+      └── store.Store          plans, catalog features, subscriptions, usage,
+                               entitlement cache, invoices, coupons and their
+                               applications, lifecycle queries,
+                               Migrate, Ping, Close
+            │
+            ├── store/postgres ─┐
+            ├── store/sqlite   ─┼─ on a *grove.DB
+            ├── store/mongo    ─┘
+            └── store/memory
 ```
+
+The diagram is a summary. "Sync\*ToProvider" stands for `SyncPlanToProvider`, `SyncFeatureToProvider`, `SyncSubscriptionToProvider` and `SyncInvoiceToProvider`, and the import methods follow the same pattern. [Go packages](/docs/api-reference/go-packages) has the full list.
 
 ## Engine construction
 
-`ledger.New` accepts functional options:
+`ledger.New` takes the store and functional options:
 
 ```go
 engine := ledger.New(store,
-    // Metering configuration
-    ledger.WithMeterConfig(
-        100,              // Batch size
-        5*time.Second,    // Flush interval
-    ),
-
-    // Entitlement caching
-    ledger.WithEntitlementCacheTTL(30*time.Second),
-
-    // Payment provider
-    ledger.WithProvider(stripeProvider),
-
-    // Plugins for lifecycle hooks
-    ledger.WithPlugin(metricsPlugin),
-    ledger.WithPlugin(webhookPlugin),
-
-    // Structured logging
-    ledger.WithLogger(slog.Default()),
+	ledger.WithMeterConfig(100, 5*time.Second),     // batch size, flush interval
+	ledger.WithEntitlementCacheTTL(30*time.Second), // quota answer cache
+	ledger.WithLifecycleInterval(time.Minute),      // 0 turns the clock off
+	ledger.WithPlugin(auditPlugin),
+	ledger.WithLogger(logger),                      // a go-utils log.Logger
 )
 ```
 
-All components are interfaces — swap any with your own implementation.
+There's no `WithProvider`: a payment provider is a plugin that implements `plugin.PaymentProviderPlugin`. [Configuration](/docs/concepts/configuration) lists every option.
 
-## Billing flow
+## The billing flow
 
-When processing usage-based billing, Ledger follows this flow:
+1. You create plans. Each plan lists its features, a currency, a base fee and price tiers per feature. A plan starts as a draft and takes subscribers once it's active.
+2. You subscribe a tenant. The engine sets the first period from the plan's billing period and starts a trial if the plan has trial days.
+3. Your request path calls `Entitled` before the work and `Meter` after it.
+4. You call `GenerateInvoice` for a period. It reads usage from the store, prices it against the plan's tiers, subtracts applied coupons and adds tax from any tax plugin.
+5. You finalize the invoice and, once your payment provider has collected, mark it paid.
 
-1. **Plan definition** — Create plans with features (metered, licensed, or binary), pricing tiers, and billing intervals.
+Ledger never charges a card and never generates an invoice by itself. Steps 4 and 5 are calls you make, from your own scheduler or from a plugin hook such as `OnSubscriptionRenewed`.
 
-2. **Subscription creation** — Subscribe customers to plans with trials, discounts, and custom pricing overrides.
+## Background work
 
-3. **Entitlement checking** — Before allowing feature access, check entitlements with sub-millisecond latency using the cache layer.
+`Start` runs two goroutines. Both stop on `Stop`.
 
-4. **Usage metering** — Track usage events in a non-blocking, high-throughput buffer that batches and persists to the store.
-
-5. **Invoice generation** — At billing period end, aggregate usage, apply pricing tiers, calculate taxes, and generate detailed invoices.
-
-6. **Payment collection** — Process payments through integrated providers (Stripe, Paddle, custom) with retry logic and webhook handling.
-
-## Performance architecture
-
-### Sub-millisecond entitlements
+### Meter flush worker
 
 ```
-Request → Cache Check (0.01ms) → Hit? → Return
-              ↓ Miss
-         Store Query (1-2ms) → Cache Update → Return
+Meter() ──> buffered channel (10,000 events) ──> worker batch
+                                                   │
+                         batch full ───────────────┤
+                         flush interval ticks ─────┴──> store.IngestBatch
 ```
 
-- **In-memory LRU cache** with configurable TTL
-- **Tenant-scoped keys** prevent cache pollution
-- **Automatic invalidation** on subscription changes
+`Meter` returns as soon as the event is on the channel, or with `ErrMeterBufferFull` when the channel is full. The worker writes a batch when it reaches the batch size or when the interval ticks. A batch that fails to write is logged and dropped. On `Stop`, the worker writes the batch it holds.
 
-### High-throughput metering
+### Lifecycle clock
+
+Every interval (one minute by default) the clock calls `Advance(ctx, now)`, which runs four steps in order:
+
+1. `AdvancePeriods` moves every active, trialing or past-due subscription whose period has ended into the period that contains now.
+2. `EnactCancels` cancels subscriptions whose scheduled cancel date has passed.
+3. `EndTrials` makes trialing subscriptions active once their trial ends.
+4. `MarkInvoicesPastDue` moves pending invoices past their due date to `past_due`.
+
+Every change is a conditional store write, so several replicas can run the clock at once and only one of them reports each change and fires its hook. Turn the clock off with `WithLifecycleInterval(0)` and call `Advance` yourself if you'd rather drive it from your own scheduler.
+
+## Quota checks
 
 ```
-Meter() → Ring Buffer → Batch Full? → Flush to Store
-                           ↓ No
-                     Timer Elapsed? → Flush to Store
+Entitled(ctx, key) ──> store.GetCached ──hit──> return
+                            │ miss
+                            v
+         active subscription ─> plan ─> feature ─> store.Aggregate
+                            │
+                            v
+                   store.SetCached(ttl) ──> return
 ```
 
-- **Lock-free ring buffer** for event collection
-- **Configurable batching** (size and time thresholds)
-- **Non-blocking API** returns immediately
-- **10K+ events/second** sustained throughput
+The cache lives in the store: a table in PostgreSQL and SQLite, a collection in MongoDB, a map in the memory store. Entries are keyed by tenant, app and feature. The engine clears a tenant's entries when its subscription is created, changed, paused, resumed, canceled or moved by the lifecycle clock. Metering doesn't clear them, so a quota answer can lag new usage by up to the TTL.
 
-## Multi-tenancy
+## Tenancy
 
-`context.Context` carries tenant and app identifiers through every layer:
+Two identifiers scope the data. `TenantID` is the customer you bill, and it's set on subscriptions, usage events and invoices. `AppID` is the product or deployment, and plans, catalog features, coupons, subscriptions, usage and invoices all carry it. `Entitled`, `Remaining` and `Meter` read both from the context values `"tenant_id"` and `"app_id"`. Lookups by ID don't check either. See [Multi-tenancy](/docs/concepts/multi-tenancy).
 
-```go
-ctx = context.WithValue(ctx, "tenant_id", "acme_corp")
-ctx = context.WithValue(ctx, "app_id", "production")
-```
+## Plugins
 
-Isolation is enforced at multiple levels:
-
-- **Store layer** — All queries include `WHERE tenant_id = ?`
-- **Cache layer** — Keys prefixed with `tenant:{id}:`
-- **Metering buffer** — Separate buffers per tenant
-- **Plugin hooks** — Tenant context passed to all plugins
-
-Cross-tenant access is structurally impossible.
-
-## Plugin system
-
-Plugins implement lifecycle hooks for extensibility:
+A plugin implements `plugin.Plugin`, which is only `Name() string`, plus any hook interfaces it wants:
 
 ```go
 type Plugin interface {
-    Name() string
+	Name() string
 }
 
-// Optional hooks (implement any subset)
-type MeterPlugin interface {
-    OnMeterEvent(ctx context.Context, event meter.Event) error
-}
-
-type InvoicePlugin interface {
-    OnInvoiceGenerated(ctx context.Context, invoice Invoice) error
-}
-
-type PaymentPlugin interface {
-    OnPaymentProcessed(ctx context.Context, payment Payment) error
+type OnInvoiceGenerated interface {
+	Plugin
+	OnInvoiceGenerated(ctx context.Context, inv interface{}) error
 }
 ```
 
-Built-in plugins:
+Hooks are synchronous: the call that fires them waits for each plugin in turn, and most fire after the store write has landed. Each hook gets five seconds. An error or a timeout is logged and never fails the operation. The module ships two plugins, `audit_hook` and `observability`. See [Custom plugin](/docs/guides/custom-plugin).
 
-- `metrics.Plugin` — Prometheus metrics for all operations
-- `webhook.Plugin` — HTTP webhooks for billing events
-- `audit.Plugin` — Audit trail for compliance
-- `tax.Plugin` — Tax calculation integrations
+## Money
 
-## Type-safe money
-
-All currency amounts use integer cents to avoid floating-point errors:
+`types.Money` is an amount in the currency's smallest unit and a lowercase ISO 4217 code:
 
 ```go
-type Money struct {
-    Amount   int64    // Cents (or smallest currency unit)
-    Currency Currency // USD, EUR, GBP, etc
-}
-
-// Helper constructors
-amount := types.USD(4999)      // $49.99
-tax := amount.Multiply(0.08)   // 8% tax = $4.00
-total := amount.Add(tax)       // $53.99
-
-// Formatting
-fmt.Println(total.Format())    // "$53.99"
-fmt.Println(total.Cents())     // 5399
+price := types.USD(4999)            // $49.99
+seats := types.USD(1000).Multiply(3) // $30.00
+total := price.Add(seats)            // $79.99, panics if the currencies differ
+fmt.Println(total.String())          // "$79.99"
+fmt.Println(total.FormatMajor())     // "79.99"
 ```
 
-## TypeID identifiers
+`CheckedAdd`, `CheckedSubtract`, `CheckedMultiply` and `CheckedPercent` return an error wrapping `types.ErrOverflow` instead of wrapping around. Invoice generation uses them for every sum.
 
-All entities use type-prefixed, K-sortable identifiers:
+## TypeIDs
+
+Every entity ID is a [TypeID](https://github.com/jetify-com/typeid): a prefix, an underscore and a base32 UUIDv7, so IDs sort by creation time.
 
 ```
-pln_01hqx3qfz5ekth2h5y6z6r099x  // Plan
-sub_01hqx3qg8w5kjyhwkrp5j4wsy3  // Subscription
-inv_01hqx3qgf2c8mhwy9s6zwmf3yh  // Invoice
-cst_01hqx3qgn9v3rywqk8zxr7t9kj  // Customer
-cpn_01hqx3qgw4ekqhxyz6z6r099xa  // Coupon
-evt_01hqx3qh4r5kjyhwkrp5j4wsyb  // Event
+plan_01h455vb4pex5vsknk084sn02q   plan
+feat_01h455vb4pex5vsknk084sn02q   feature
+sub_01h455vb4pex5vsknk084sn02q    subscription
+inv_01h455vb4pex5vsknk084sn02q    invoice
+cpn_01h455vb4pex5vsknk084sn02q    coupon
+uevt_01h455vb4pex5vsknk084sn02q   usage event
 ```
 
-Benefits:
-- **Type safety** — Can't pass invoice ID where plan ID expected
-- **K-sortable** — Chronological ordering without timestamps
-- **URL safe** — No encoding needed
-- **Globally unique** — No collisions across systems
+[Identity](/docs/concepts/identity) has the full prefix list.
 
 ## Package index
 
 | Package | Import path | Purpose |
 |---------|-------------|---------|
-| `ledger` | `github.com/xraph/ledger` | Main engine and configuration |
-| `plan` | `.../plan` | Plan and feature definitions |
-| `subscription` | `.../subscription` | Subscription lifecycle management |
-| `meter` | `.../meter` | Usage event tracking and batching |
-| `entitlement` | `.../entitlement` | Feature access checking with cache |
-| `invoice` | `.../invoice` | Invoice generation and line items |
-| `payment` | `.../payment` | Payment processing and methods |
-| `customer` | `.../customer` | Customer profiles and metadata |
-| `coupon` | `.../coupon` | Discounts and promotional codes |
-| `tax` | `.../tax` | Tax calculation and rates |
-| `types` | `.../types` | Money, TypeID, and common types |
-| `store` | `.../store` | Storage interface |
-| `store/postgres` | `.../store/postgres` | PostgreSQL implementation |
-| `store/sqlite` | `.../store/sqlite` | SQLite implementation |
-| `store/redis` | `.../store/redis` | Redis cache layer |
-| `store/memory` | `.../store/memory` | In-memory for testing |
-| `provider` | `.../provider` | Payment provider interface |
-| `provider/stripe` | `.../provider/stripe` | Stripe integration |
-| `provider/paddle` | `.../provider/paddle` | Paddle integration |
-| `plugin` | `.../plugin` | Plugin system and registry |
-| `webhook` | `.../webhook` | Webhook delivery system |
+| `ledger` | `github.com/xraph/ledger` | The engine, its options, sentinel errors |
+| `plan` | `.../plan` | Plans, plan features, pricing and tiers |
+| `feature` | `.../feature` | The reusable feature catalog |
+| `subscription` | `.../subscription` | Subscriptions, periods, statuses |
+| `meter` | `.../meter` | Usage events and the usage store interface |
+| `entitlement` | `.../entitlement` | The quota check result and the cache interface |
+| `invoice` | `.../invoice` | Invoices, line items, tier pricing and validation |
+| `coupon` | `.../coupon` | Coupons and coupon applications |
+| `provider` | `.../provider` | The payment provider interface |
+| `plugin` | `.../plugin` | Hook and strategy interfaces, the registry |
+| `types` | `.../types` | `Money` and the `Entity` timestamps |
+| `id` | `.../id` | TypeID wrapper and prefixes |
+| `store` | `.../store` | The composite `store.Store` interface |
+| `store/postgres` | `.../store/postgres` | PostgreSQL store on Grove |
+| `store/sqlite` | `.../store/sqlite` | SQLite store on Grove |
+| `store/mongo` | `.../store/mongo` | MongoDB store on Grove |
+| `store/memory` | `.../store/memory` | In-memory store for tests and development |
+| `store/storetest` | `.../store/storetest` | The conformance suite every store passes |
+| `audit_hook` | `.../audit_hook` | Plugin that turns events into audit records (package `audithook`) |
+| `observability` | `.../observability` | Plugin that counts events through a metric factory |
+| `extension` | `.../extension` | The Forge extension |
+| `extension/contract` | `.../extension/contract` | The Forge dashboard contract contributor |

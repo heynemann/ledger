@@ -19,7 +19,6 @@ sdb := sqlitedriver.New()
 if err := sdb.Open(ctx, "file:ledger.db?_pragma=busy_timeout(5000)"); err != nil {
     log.Fatal(err)
 }
-defer sdb.Close()
 
 db, err := grove.Open(sdb)
 if err != nil {
@@ -36,7 +35,7 @@ engine := ledger.New(s,
 if err := engine.Start(ctx); err != nil {
     log.Fatal(err)
 }
-defer engine.Stop()
+defer engine.Stop() // closes the store, which closes db
 ```
 
 Keep the `busy_timeout` pragma in your DSN: without it, concurrent coupon redemptions fail with a raw `database is locked (SQLITE_BUSY)` error instead of waiting their turn and returning `ErrCouponExhausted` when the cap is reached.
@@ -51,7 +50,7 @@ Don't use `":memory:"`. The driver opens the database through a connection pool,
 
 ## Migrations
 
-Migrations run automatically when `engine.Start()` is called. For manual control:
+`engine.Start()` calls the store's `Migrate`, which runs the `sqlite.Migrations` group through Grove's migration orchestrator. Grove records which migrations have run, so it's safe on every start. To migrate on your own schedule, call `s.Migrate(ctx)` yourself and pass `ledger.WithoutMigrate()` to the engine:
 
 ```go
 if err := s.Migrate(ctx); err != nil {
@@ -59,7 +58,7 @@ if err := s.Migrate(ctx); err != nil {
 }
 ```
 
-Migrations are idempotent -- safe to run on every startup.
+The tables match the [PostgreSQL store](/docs/stores/postgres#tables), with SQLite column types.
 
 ## Implements `store.Store`
 
@@ -74,12 +73,13 @@ var _ store.Store = (*Store)(nil)
 |--------|--------|
 | Driver | grove ORM + sqlitedriver |
 | Migrations | grove orchestrator with programmatic migrations |
-| Transactions | SQLite-level transactions |
-| Concurrency | Multiple readers, single writer (WAL mode) |
+| Coupon redemption | Cap check, count and application written as one unit |
+| Concurrency | One writer at a time; `busy_timeout` makes other writers wait |
 | Persistence | File-based |
+| `Close` | Closes the `*grove.DB` |
 
 ## When to use
 
 - Development and local testing without external dependencies.
 - Single-process or embedded billing deployments.
-- CI pipelines where spinning up PostgreSQL is impractical.
+- CI pipelines where spinning up PostgreSQL is impractical. The conformance suite runs against SQLite on every `go test`.

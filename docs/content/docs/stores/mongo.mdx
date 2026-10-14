@@ -1,77 +1,70 @@
 ---
 title: MongoDB Store
-description: MongoDB store for document-oriented and horizontally-scalable Ledger deployments.
+description: The MongoDB store, on Grove's mongodriver.
 ---
 
-The `store/mongo` package implements Ledger's `store.Store` interface using the grove ORM with the MongoDB driver. Plans, subscriptions, invoices, and usage events are stored as documents, making it a natural fit for deployments that already run MongoDB.
+`store/mongo` implements `store.Store` on a `*grove.DB` opened with Grove's MongoDB driver. Each entity is a document in its own collection. It doesn't use multi-document transactions, so it runs against a standalone `mongod` as well as a replica set.
 
 ## Setup
 
 ```go
 import (
-    "github.com/xraph/grove"
-    "github.com/xraph/grove/drivers/mongodriver"
-    "github.com/xraph/ledger"
-    "github.com/xraph/ledger/store/mongo"
+	"github.com/xraph/grove"
+	"github.com/xraph/grove/drivers/mongodriver"
+	"github.com/xraph/ledger"
+	"github.com/xraph/ledger/store/mongo"
 )
 
-db, err := grove.Open(mongodriver.Open("mongodb://localhost:27017", "ledger"))
+mdb := mongodriver.New()
+if err := mdb.Open(ctx, "mongodb://localhost:27017/ledger"); err != nil {
+	log.Fatal(err)
+}
+
+db, err := grove.Open(mdb)
 if err != nil {
-    log.Fatal(err)
+	log.Fatal(err)
 }
 
-s := mongo.New(db)
-
-engine := ledger.New(s,
-    ledger.WithMeterConfig(100, 5*time.Second),
-)
-
-// Start runs migrations automatically
-if err := engine.Start(ctx); err != nil {
-    log.Fatal(err)
+engine := ledger.New(mongo.New(db))
+if err := engine.Start(ctx); err != nil { // creates indexes first
+	log.Fatal(err)
 }
-defer engine.Stop()
+defer engine.Stop() // closes the store, which closes db
 ```
+
+The database name comes from the URI's path. If the URI has none, pass `mongodriver.WithDatabase("ledger")` to `Open`.
 
 ## Migrations
 
-Migrations run automatically when `engine.Start()` is called. They create collections with JSON Schema validation (auto-generated from Grove model structs) and apply indexes on all Ledger collections. For manual control:
+`engine.Start` calls the store's `Migrate`, which creates the indexes every collection needs and then drops any index a newer one replaced. It doesn't install JSON Schema validation. Running it again is safe.
 
-```go
-if err := s.Migrate(ctx); err != nil {
-    log.Fatal(err)
-}
-```
+The package also exports `mongo.Migrations`, a Grove migration group that creates the collections and indexes. `Migrate` doesn't use it; it's there if you run Grove's migration orchestrator yourself.
 
-## Implements `store.Store`
+## Collections
 
-```go
-// Compile-time check
-var _ store.Store = (*Store)(nil)
-```
+`ledger_plans`, `ledger_features`, `ledger_subscriptions`, `ledger_usage_events`, `ledger_entitlement_cache`, `ledger_invoices`, `ledger_coupons` and `ledger_coupon_applications`.
+
+Usage events have a partial unique index on `idempotency_key` that only covers non-empty keys, so a repeated key is skipped and events without one never collide.
+
+## Coupon redemption
+
+Without a transaction, `RedeemCoupon` takes two writes: it inserts the application, then increments the redemption count with a conditional update that enforces the cap. If the increment fails, it deletes the application again. The SQL stores do both in one transaction. The gap matters only under heavy concurrent redemption of a capped coupon, or a crash between the two writes, which can leave an application with no matching count.
 
 ## Characteristics
 
 | Aspect | Detail |
 |--------|--------|
-| Driver | grove ORM + mongodriver |
-| Migrations | Grove migrations with JSON Schema validation + indexes |
-| Transactions | MongoDB sessions (replica-set required for multi-doc txns) |
-| Collections | `ledger_plans`, `ledger_subscriptions`, `ledger_usage_events`, `ledger_entitlement_cache`, `ledger_invoices`, `ledger_coupons` |
+| Driver | Grove with `mongodriver` |
+| Migrations | Index creation in `Migrate`; `mongo.Migrations` for Grove's orchestrator |
+| Transactions | None needed; single-document writes and conditional updates |
+| `Ping` | `db.Ping(ctx)` |
+| `Close` | Closes the `*grove.DB` |
 
-## Grove Migrations
+## Testing against it
 
-The store exports a `Migrations` group for use with Grove's migration orchestrator. This enables tracked, versioned migrations across all stores in your application:
-
-```go
-import mongostore "github.com/xraph/ledger/store/mongo"
-
-// mongostore.Migrations is a migrate.Group for the ledger mongo store.
-// Register it with the grove migration orchestrator for coordinated migrations.
-```
+The conformance suite in `store/storetest` runs against MongoDB when `LEDGER_TEST_MONGO_URI` is set, and skips otherwise.
 
 ## When to use
 
-- Document-oriented workloads where MongoDB is the primary data store.
-- Horizontally-scaled environments requiring sharding.
-- Teams already running MongoDB in their infrastructure.
+- MongoDB is already your primary database.
+- You want document storage for plans and invoices without a separate SQL server.

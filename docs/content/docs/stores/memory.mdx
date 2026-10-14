@@ -1,72 +1,62 @@
 ---
 title: Memory Store
-description: In-memory store implementation for testing and development.
+description: The in-memory store, for tests and local development.
 ---
 
-The **Memory Store** is Ledger's in-memory storage implementation. It stores all data in Go maps protected by a `sync.RWMutex`, making it thread-safe but non-persistent. It is designed for unit tests, integration tests, and local development.
+`store/memory` keeps everything in Go maps behind one `sync.RWMutex`. It's safe for concurrent use and loses everything when the process exits. Use it for unit tests, examples and local development, and as the reference behaviour when you write a store of your own: it passes the same conformance suite as the database stores.
 
 ## Setup
 
 ```go
 import "github.com/xraph/ledger/store/memory"
 
-memStore := memory.New()
-
-engine := ledger.New(memStore,
-    ledger.WithMeterConfig(1, 0), // Immediate flush for testing
-    ledger.WithEntitlementCacheTTL(0), // No caching for testing
+engine := ledger.New(memory.New(),
+	ledger.WithMeterConfig(1, 10*time.Millisecond), // write each event almost at once
+	ledger.WithEntitlementCacheTTL(0),               // cache entries expire immediately
 )
 ```
 
-## Internal structure
+Keep the flush interval positive: `Start` panics on a zero or negative one. Even with a batch size of 1, the flush runs on the worker goroutine, so a test that meters and then checks usage still has to wait for it.
 
-The memory store maintains separate maps for each entity type:
+## What it holds
 
 ```go
 type Store struct {
-    mu sync.RWMutex
+	mu sync.RWMutex
 
-    plans            map[string]*plan.Plan
-    subscriptions    map[string]*subscription.Subscription
-    usageEvents      []meter.UsageEvent
-    entitlementCache map[string]*entitlement.Result
-    cacheExpiry      map[string]time.Time
-    invoices         map[string]*invoice.Invoice
-    coupons          map[string]*coupon.Coupon
+	plans              map[string]*plan.Plan
+	subscriptions      map[string]*subscription.Subscription
+	usageEvents        []meter.UsageEvent
+	entitlementCache   map[string]*entitlement.Result
+	cacheExpiry        map[string]time.Time
+	invoices           map[string]*invoice.Invoice
+	coupons            map[string]*coupon.Coupon
+	couponApplications map[string][]*coupon.Application
+	features           map[string]*feature.Feature
 }
 ```
 
-All operations acquire the appropriate lock (read or write) before accessing data.
+The fields are unexported. The store copies plans, subscriptions and other entities on the way in and out, so editing a struct you got back doesn't change what's stored.
 
-## Implements `store.Store`
+## Behaviour
 
-The memory store implements the full `store.Store` interface including:
+It implements all of `store.Store`, including the lifecycle queries, so the lifecycle clock and `Advance` work against it. A few details:
 
-- **Plan methods** — `CreatePlan`, `GetPlan`, `GetPlanBySlug`, `ListPlans`, `UpdatePlan`, `DeletePlan`, `ArchivePlan`
-- **Subscription methods** — `CreateSubscription`, `GetSubscription`, `GetActiveSubscription`, `ListSubscriptions`, `UpdateSubscription`, `CancelSubscription`
-- **Meter methods** — `IngestBatch`, `Aggregate`, `AggregateMulti`, `QueryUsage`, `PurgeUsage`
-- **Entitlement methods** — `GetCached`, `SetCached`, `Invalidate`, `InvalidateFeature`
-- **Invoice methods** — `CreateInvoice`, `GetInvoice`, `ListInvoices`, `UpdateInvoice`, `GetInvoiceByPeriod`, `ListPendingInvoices`, `MarkInvoicePaid`, `MarkInvoiceVoided`
-- **Coupon methods** — `CreateCoupon`, `GetCoupon`, `GetCouponByID`, `ListCoupons`, `UpdateCoupon`, `DeleteCoupon`
-- **Core methods** — `Migrate` (no-op), `Ping` (always succeeds), `Close` (no-op)
+- `Migrate`, `Ping` and `Close` do nothing and return nil.
+- Usage totals for quota checks start at the beginning of the current UTC calendar month (or year, for a yearly feature), and cover all time for a feature with no period.
+- A usage event with a non-empty `IdempotencyKey` that's already stored is skipped.
+- The entitlement cache honours the TTL like the database stores do.
+- Coupon redemption checks the cap and records the application under the store's lock, as one step.
 
 ## Use cases
 
 | Use case | Recommended? |
 |----------|-------------|
-| Unit tests | Yes |
-| Integration tests | Yes |
-| Local development | Yes |
+| Unit and integration tests | Yes |
+| Examples and local development | Yes |
 | CI pipelines | Yes |
 | Production | No |
-| Multi-process environments | No |
-
-## Limitations
-
-- **No persistence** — Data is lost when the process exits.
-- **Single process only** — Cannot be shared across multiple instances.
-- **No real caching** — Entitlement cache uses the same process memory, so cache-miss behavior cannot be tested accurately.
-- **No SQL queries** — Cannot test SQL-specific behavior like indexes, constraints, or migrations.
+| More than one process | No |
 
 ## Testing patterns
 
@@ -74,56 +64,72 @@ The memory store implements the full `store.Store` interface including:
 
 ```go
 func TestBillingFlow(t *testing.T) {
-    store := memory.New()
-    engine := ledger.New(store)
+	engine := ledger.New(memory.New())
 
-    ctx := context.Background()
-    ctx = context.WithValue(ctx, "tenant_id", "test-tenant")
-    ctx = context.WithValue(ctx, "app_id", "test-app")
+	ctx := context.WithValue(t.Context(), "tenant_id", "test-tenant")
+	ctx = context.WithValue(ctx, "app_id", "test-app")
 
-    if err := engine.Start(ctx); err != nil {
-        t.Fatal(err)
-    }
-    defer engine.Stop()
+	if err := engine.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = engine.Stop() })
 
-    // Create plan
-    p := &plan.Plan{
-        ID:   id.NewPlanID(),
-        Name: "test-plan",
-        Features: []plan.Feature{
-            {Key: "api-calls", Type: plan.FeatureMetered, Limit: 100},
-        },
-    }
-    if err := engine.CreatePlan(ctx, p); err != nil {
-        t.Fatal(err)
-    }
+	p := &plan.Plan{
+		Name:     "Test",
+		Slug:     "test",
+		Currency: "usd",
+		Status:   plan.StatusActive,
+		AppID:    "test-app",
+		Features: []plan.Feature{
+			{Key: "api_calls", Type: plan.FeatureMetered, Limit: 100, Period: plan.PeriodMonthly},
+		},
+	}
+	if err := engine.CreatePlan(ctx, p); err != nil {
+		t.Fatal(err)
+	}
 
-    // Test entitlements, metering, invoicing...
+	// Subscribe, check entitlements, meter, invoice...
 }
 ```
 
-### Test with plugins
+A plan needs a name, a slug and a currency, and only an active plan takes subscribers.
+
+### Pinning the clock
+
+`ledger.WithClock` drives the lifecycle and period decisions, so a test can create a subscription and then call `Advance` with a time past its period end:
 
 ```go
-func TestPluginHooks(t *testing.T) {
-    store := memory.New()
-    recorder := &mockRecorder{}
+now := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+engine := ledger.New(memory.New(),
+	ledger.WithClock(func() time.Time { return now }),
+	ledger.WithLifecycleInterval(0), // drive Advance yourself
+)
 
-    engine := ledger.New(store,
-        ledger.WithPlugin(audithook.New(recorder)),
-    )
-
-    // Actions will trigger audit events through the plugin
-}
+// ... create a plan and a subscription, then:
+report, err := engine.Advance(ctx, now.AddDate(0, 1, 1))
 ```
 
-## Comparison with PostgreSQL store
+Usage events keep wall-clock timestamps and the store's quota windows use the wall clock, so `WithClock` doesn't move those.
 
-| Feature | Memory | PostgreSQL |
-|---------|--------|-----------|
+### Plugins in tests
+
+```go
+recorder := audithook.RecorderFunc(func(_ context.Context, ev *audithook.AuditEvent) error {
+	events = append(events, ev.Action)
+	return nil
+})
+
+engine := ledger.New(memory.New(),
+	ledger.WithPlugin(audithook.New(recorder)),
+)
+```
+
+## Compared with the PostgreSQL store
+
+| | Memory | PostgreSQL |
+|---|--------|-----------|
 | Persistence | None | Full |
-| Multi-process | No | Yes |
-| Migrations | No-op | Full schema migrations |
-| Performance | Very fast (no I/O) | Network I/O |
-| Setup required | None | Database connection |
-| Multi-tenancy | Map-based filtering | Row-level security |
+| More than one process | No | Yes |
+| Migrations | No-op | Grove migrations |
+| Setup | None | A database and a DSN |
+| Tenant and app filtering | In the map scans | In the SQL `WHERE` clauses |

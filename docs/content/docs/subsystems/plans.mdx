@@ -1,224 +1,137 @@
 ---
 title: Plans & Pricing
-description: Define what customers can access — features, usage limits, and graduated pricing tiers.
+description: Features, limits, the base fee and the three tier models, and how a plan moves from draft to archived.
 ---
 
-A **Plan** represents a product offering in your billing system. It bundles features, usage limits, and pricing rules into a named, reusable entity that customers subscribe to.
-
-## Structure
+A plan is what you sell. It lists the features a subscriber gets, each with a limit, and the pricing: a base fee per billing period plus price tiers for the features that bill by usage or by seat. Quota checks and invoices both read the same plan, so the limit you enforce is the allowance you bill against.
 
 ```go
-type Plan struct {
-    ledger.Entity
-    ID          id.PlanID
-    Name        string
-    Description string
-    AppID       string
-    TenantID    string
-    Features    []Feature
-    Pricing     Pricing
-    BillingCycle BillingCycle
-    TrialDays   int
-    Metadata    map[string]any
+pro := &plan.Plan{
+	Name:      "Pro",
+	Slug:      "pro",
+	Currency:  "usd",
+	Status:    plan.StatusActive,
+	AppID:     "my-app",
+	TrialDays: 14,
+	Features: []plan.Feature{
+		{Key: "api_calls", Name: "API calls", Type: plan.FeatureMetered, Limit: 10000, Period: plan.PeriodMonthly, SoftLimit: true},
+		{Key: "seats", Name: "Seats", Type: plan.FeatureSeat},
+		{Key: "sso", Name: "Single sign-on", Type: plan.FeatureBoolean, Limit: 1},
+	},
+	Pricing: &plan.Pricing{
+		BaseAmount:    types.USD(4900),
+		BillingPeriod: plan.PeriodMonthly,
+		Tiers: []plan.PriceTier{
+			{FeatureKey: "api_calls", Type: plan.TierGraduated, UpTo: 10000, UnitAmount: types.Zero("usd")},
+			{FeatureKey: "api_calls", Type: plan.TierGraduated, UpTo: -1, UnitAmount: types.USD(1)},
+			{FeatureKey: "seats", Type: plan.TierGraduated, UpTo: -1, UnitAmount: types.USD(1000)},
+		},
+	},
+}
+if err := engine.CreatePlan(ctx, pro); err != nil {
+	return err
 }
 ```
+
+[Entities](/docs/concepts/entities#plan) has every field.
 
 ## Features
 
-Each plan defines a list of features that customers get access to:
+Each plan feature has a `Key`, which is what `Entitled` and `Meter` name, and a `Type`:
 
-```go
-type Feature struct {
-    Name        string      // feature identifier
-    Type        FeatureType // boolean, metered, or licensed
-    Limit       int64       // usage limit (for metered features)
-    Description string      // human-readable description
-}
-```
-
-### Feature types
-
-| Type | Description | Example |
+| Type | Quota check | Invoice |
 |------|-------------|---------|
-| `FeatureBoolean` | Simple on/off access | "api-access", "sso-enabled" |
-| `FeatureMetered` | Usage-based with limit | "api-calls" (1000/month) |
-| `FeatureLicensed` | Seat-based with quantity | "team-members" (5 seats) |
+| `plan.FeatureMetered` | Usage in the quota window against `Limit` | Usage past `Limit` in the billed period, priced through the feature's tiers |
+| `plan.FeatureSeat` | Same as metered: usage events recorded under the key, against `Limit` | Every seat in `Subscription.Quantity[key]`, priced through the tiers. `Limit` isn't used |
+| `plan.FeatureBoolean` | Allowed when `Limit` is above 0 | Nothing |
 
-Example:
+`Limit` is `-1` for unlimited. A metered feature with `-1` never bills overage. `SoftLimit: true` lets usage pass the limit: the check still allows the request, with the reason `"over soft limit"`. Without it, the check denies with `"quota exceeded"`.
+
+`Period` sets the quota window for the check: `plan.PeriodMonthly` counts usage since the start of the current UTC calendar month, `plan.PeriodYearly` since the start of the year, and `plan.PeriodNone` or an empty period counts all usage ever recorded. The window doesn't follow the subscription's billing period, and invoices ignore it: an invoice always counts the usage inside the period it bills.
+
+## Pricing
+
+`Pricing` is optional. A plan without it bills nothing.
+
+- `BaseAmount` is charged once per billed period. Its currency must match the plan's, and an empty currency takes the plan's.
+- `BillingPeriod` decides how long a subscription's period is: `plan.PeriodMonthly` (the default when empty) or `plan.PeriodYearly`. `plan.PeriodNone` gives a first period of one month and then never rolls it.
+- `Tiers` price metered overage and seats, per feature key.
+
+### Tier models
+
+All tiers for one feature must share a `Type`. `UpTo` is the total usage a tier reaches in the period, not the usage past the allowance, and `0` or `-1` marks the open-ended top tier. A ladder without an open-ended tier extends its last tier to cover everything above it.
+
+For a metered feature, the invoice charges `price(usage) - price(allowance)`, where the allowance is the feature's `Limit`. That way a `$0` first tier for the allowance is never charged twice.
+
+Graduated tiers (`plan.TierGraduated`) charge each unit at the rate of the tier it falls in. With tiers of 0 cents up to 10,000, 2 cents up to 50,000 and 1 cent above, and a limit of 10,000, usage of 10,650 bills 650 units at 2 cents: $13.00.
+
+Volume tiers (`plan.TierVolume`) find the tier that total usage reaches and apply its rate to every billable unit. With tiers of 3 cents up to 50,000 and 2 cents above, a limit of 10,000 and usage of 60,000, the invoice bills 50,000 units at 2 cents: $1,000.00.
+
+Flat tiers (`plan.TierFlat`) charge the `FlatAmount` of the tier that usage reaches, less the fee for the tier the allowance sits in. Flat tiers carry no `UnitAmount`.
+
+Seat features price the full seat count with an allowance of zero, so for seats a single open-ended graduated tier is a plain per-seat price.
+
+### Validation
+
+`CreatePlan`, `UpdatePlan` and `ActivatePlan` validate the plan before writing it. They refuse:
+
+- a missing name, slug or currency, or an unknown status;
+- negative trial days;
+- a feature without a key, a duplicate key (`ErrDuplicateFeature`), an unknown type or period, or a limit below `-1`;
+- a negative base price, or one in another currency (`ErrInvalidPricing`);
+- a tier for a feature the plan doesn't have (`ErrInvalidPricing`);
+- a broken ladder (`invoice.ErrInvalidTiers`): mixed types, an unknown type, a currency that isn't the plan's, two tiers with the same `UpTo`, a negative amount, a graduated or volume tier with a `FlatAmount`, or a flat tier with a `UnitAmount`.
+
+`CreatePlan` also trims the name and slug, lowercases the currency, gives features and pricing their IDs, and refuses a slug the app already uses (`ErrAlreadyExists`).
+
+### Custom pricing
+
+A feature (or the whole plan) can name a pricing strategy plugin in its `Metadata` under `"pricing_strategy"`, and a metered feature can name a usage aggregator under `"aggregator"`. The engine hands the pricing or the usage total to that plugin. See [Custom plugin](/docs/guides/custom-plugin#strategy-plugins).
+
+## Status
+
+| Status | Meaning |
+|--------|---------|
+| `plan.StatusDraft` | The default. Can't take subscribers. |
+| `plan.StatusActive` | Takes subscribers. |
+| `plan.StatusArchived` | Takes no new subscribers. Existing subscriptions keep billing. |
 
 ```go
-Features: []plan.Feature{
-    {
-        Name:        "api-calls",
-        Type:        plan.FeatureMetered,
-        Limit:       10000,
-        Description: "API requests per month",
-    },
-    {
-        Name:        "team-members",
-        Type:        plan.FeatureLicensed,
-        Limit:       5,
-        Description: "Maximum team size",
-    },
-    {
-        Name:        "priority-support",
-        Type:        plan.FeatureBoolean,
-        Description: "24/7 priority support",
-    },
+engine.ActivatePlan(ctx, planID) // validates, then makes it active
+engine.ArchivePlan(ctx, planID)  // stops new subscriptions
+engine.DeletePlan(ctx, planID)   // only when no subscription uses it, or ErrPlanInUse
+```
+
+Activating an active plan, or archiving an archived one, does nothing.
+
+## Updating a plan
+
+`UpdatePlan` saves the plan you pass. The app and currency can't change once the plan exists, and a new slug must be free in the app. Every subscriber sees the change in their next invoice, and in quota checks once their cached answers expire: Ledger keeps no history of plans, and an invoice prices a period with the plan as it is when you generate it.
+
+## Reading plans
+
+```go
+p, err := engine.GetPlan(ctx, planID)
+p, err = engine.GetPlanBySlug(ctx, "pro", "my-app")
+plans, err := engine.Store().ListPlans(ctx, "my-app", plan.ListOpts{Status: plan.StatusActive})
+```
+
+## The feature catalog
+
+The catalog (`feature.Feature`) is a separate list of reusable feature definitions, per app or global (`AppID: ""`). The dashboard uses it to build plans. A plan feature can point at one through `CatalogID`, but quota checks and invoices only read the plan's own `Features`.
+
+```go
+f := &feature.Feature{Key: "api_calls", Name: "API calls", Type: feature.FeatureMetered, DefaultLimit: 10000, AppID: "my-app"}
+if err := ledger.ValidateFeature(f); err != nil { // CreateFeature doesn't validate
+	return err
+}
+if err := engine.CreateFeature(ctx, f); err != nil {
+	return err
 }
 ```
 
-## Pricing models
+The engine also has `GetFeature`, `GetFeatureByKey`, `ListFeatures`, `ListGlobalFeatures`, `UpdateFeature`, `ArchiveFeature` and `DeleteFeature`.
 
-Ledger supports four pricing models:
+## Remote access
 
-### 1. Flat rate
-
-Fixed monthly/yearly fee:
-
-```go
-Pricing: plan.Pricing{
-    Model: plan.PricingFlat,
-    Amount: money.Money{
-        Amount:   4999, // $49.99
-        Currency: "USD",
-    },
-}
-```
-
-### 2. Per-unit
-
-Linear pricing based on usage:
-
-```go
-Pricing: plan.Pricing{
-    Model:     plan.PricingPerUnit,
-    UnitPrice: 100, // $1.00 per unit
-    Currency:  "USD",
-}
-```
-
-### 3. Graduated (tiered)
-
-Different rates for usage tiers:
-
-```go
-Pricing: plan.Pricing{
-    Model: plan.PricingGraduated,
-    Tiers: []plan.Tier{
-        {UpTo: 1000, UnitPrice: 0},      // First 1K free
-        {UpTo: 10000, UnitPrice: 10},    // Next 9K at $0.01
-        {UpTo: 100000, UnitPrice: 5},    // Next 90K at $0.005
-        {UpTo: -1, UnitPrice: 2},        // Everything above at $0.002
-    },
-    Currency: "USD",
-}
-```
-
-### 4. Volume-based
-
-Apply single rate based on total usage:
-
-```go
-Pricing: plan.Pricing{
-    Model: plan.PricingVolume,
-    Tiers: []plan.Tier{
-        {UpTo: 1000, UnitPrice: 100},    // $1.00 per unit for 0-1000
-        {UpTo: 10000, UnitPrice: 75},    // $0.75 per unit for 1001-10000
-        {UpTo: -1, UnitPrice: 50},       // $0.50 per unit for 10001+
-    },
-    Currency: "USD",
-}
-```
-
-## Billing cycles
-
-| Cycle | Description |
-|-------|-------------|
-| `BillingMonthly` | Bill every month on subscription start day |
-| `BillingYearly` | Bill every year on subscription start day |
-| `BillingQuarterly` | Bill every 3 months |
-| `BillingUsageBased` | Bill based on metered usage (e.g., pay-as-you-go) |
-
-```go
-BillingCycle: plan.BillingMonthly
-```
-
-## Trial periods
-
-Plans can include a free trial:
-
-```go
-TrialDays: 14 // 14-day free trial
-```
-
-When a subscription is created with this plan, billing starts after the trial period.
-
-## Complete example: SaaS starter plan
-
-```go
-starterPlan := &plan.Plan{
-    ID:          id.NewPlanID(),
-    Name:        "starter",
-    Description: "Perfect for small teams getting started",
-    AppID:       "myapp",
-    TenantID:    "platform",
-    Features: []plan.Feature{
-        {
-            Name:        "api-calls",
-            Type:        plan.FeatureMetered,
-            Limit:       10000,
-            Description: "API requests per month",
-        },
-        {
-            Name:        "team-members",
-            Type:        plan.FeatureLicensed,
-            Limit:       5,
-            Description: "Team member seats",
-        },
-        {
-            Name:        "email-support",
-            Type:        plan.FeatureBoolean,
-            Description: "Email support included",
-        },
-    },
-    Pricing: plan.Pricing{
-        Model: plan.PricingGraduated,
-        Tiers: []plan.Tier{
-            {UpTo: 5000, UnitPrice: 0},       // 5K free calls
-            {UpTo: 10000, UnitPrice: 10},     // Next 5K at $0.01
-            {UpTo: -1, UnitPrice: 5},         // Overage at $0.005
-        },
-        Currency: "USD",
-        BaseAmount: money.Money{
-            Amount:   2999, // $29.99 base fee
-            Currency: "USD",
-        },
-    },
-    BillingCycle: plan.BillingMonthly,
-    TrialDays:    14,
-}
-```
-
-## Store interface
-
-```go
-type Store interface {
-    CreatePlan(ctx context.Context, plan *Plan) error
-    GetPlan(ctx context.Context, planID id.PlanID) (*Plan, error)
-    GetPlanByName(ctx context.Context, appID, name string) (*Plan, error)
-    UpdatePlan(ctx context.Context, plan *Plan) error
-    DeletePlan(ctx context.Context, planID id.PlanID) error
-    ListPlans(ctx context.Context, filter *ListFilter) ([]*Plan, error)
-}
-```
-
-## API routes
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/ledger/plans` | Create a plan |
-| `GET` | `/ledger/plans` | List plans |
-| `GET` | `/ledger/plans/{name}` | Get a plan by name |
-| `PUT` | `/ledger/plans/{name}` | Update a plan |
-| `DELETE` | `/ledger/plans/{id}` | Delete a plan |
+Ledger has no HTTP routes for plans. The Forge dashboard reaches them through the contract intents `plans.list`, `plans.detail`, `plans.create`, `plans.update`, `plans.archive`, `plans.activate` and `plans.delete`. See [HTTP API](/docs/api-reference/http-api).

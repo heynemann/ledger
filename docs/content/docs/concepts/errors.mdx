@@ -1,218 +1,116 @@
 ---
 title: Error Handling
-description: Sentinel errors returned by Ledger operations.
+description: The sentinel errors in the ledger package, which ones the engine actually returns, and how to check them.
 ---
 
-Ledger defines sentinel errors in the root `ledger` package. All errors are created with `errors.New` and can be checked with `errors.Is`.
-
-## Store errors
-
-| Error | Description |
-|-------|-------------|
-| `ErrNoStore` | No store was configured |
-| `ErrStoreClosed` | The store has been closed |
-| `ErrMigrationFailed` | Database migration failed |
-| `ErrDatabaseConnection` | Database connection failed |
-
-## Not-found errors
-
-| Error | Description |
-|-------|-------------|
-| `ErrPlanNotFound` | Plan with the given ID does not exist |
-| `ErrSubscriptionNotFound` | Subscription with the given ID does not exist |
-| `ErrCustomerNotFound` | Customer with the given ID does not exist |
-| `ErrInvoiceNotFound` | Invoice with the given ID does not exist |
-| `ErrUsageEventNotFound` | Usage event with the given ID does not exist |
-| `ErrPaymentNotFound` | Payment with the given ID does not exist |
-| `ErrFeatureNotFound` | Feature with the given ID does not exist |
-
-## Conflict errors
-
-| Error | Description |
-|-------|-------------|
-| `ErrAlreadyExists` | A resource with the same identifier already exists |
-| `ErrDuplicateCustomerEmail` | Customer with this email already exists |
-| `ErrDuplicatePlanName` | Plan with this name already exists |
-| `ErrDuplicateIdempotencyKey` | Usage event with this idempotency key already exists |
-
-## State errors
-
-| Error | Description |
-|-------|-------------|
-| `ErrInvalidState` | Invalid state transition (e.g., activating a canceled subscription) |
-| `ErrSubscriptionCanceled` | The subscription has been canceled |
-| `ErrSubscriptionExpired` | The subscription has expired |
-| `ErrInvoiceAlreadyPaid` | The invoice has already been paid |
-| `ErrInvoiceVoided` | The invoice has been voided |
-| `ErrTrialExpired` | The trial period has expired |
-| `ErrPaymentFailed` | Payment processing failed |
-
-## Billing errors
-
-| Error | Description |
-|-------|-------------|
-| `ErrNoPaymentMethod` | No payment method attached to customer |
-| `ErrInsufficientFunds` | Payment failed due to insufficient funds |
-| `ErrCardDeclined` | Payment card was declined |
-| `ErrUsageLimitExceeded` | Usage limit exceeded and overage not allowed |
-| `ErrInvalidAmount` | Invalid monetary amount (must be positive) |
-| `ErrInvalidCurrency` | Unsupported currency code |
-| `ErrMissingPrice` | Plan has no pricing tiers configured |
-
-## Entitlement errors
-
-| Error | Description |
-|-------|-------------|
-| `ErrFeatureNotEnabled` | Feature is not available in customer's plan |
-| `ErrQuotaExceeded` | Feature usage quota exceeded |
-| `ErrNoActiveSubscription` | Customer has no active subscription |
-| `ErrEntitlementExpired` | Entitlement has expired |
-
-## Provider errors
-
-| Error | Description |
-|-------|-------------|
-| `ErrProviderNotConfigured` | Payment provider not configured |
-| `ErrProviderAPIError` | Payment provider API returned an error |
-| `ErrProviderTimeout` | Payment provider request timed out |
-| `ErrWebhookVerificationFailed` | Webhook signature verification failed |
-| `ErrInvalidWebhookPayload` | Webhook payload is invalid or malformed |
-
-## Validation errors
-
-| Error | Description |
-|-------|-------------|
-| `ErrInvalidEmail` | Email address format is invalid |
-| `ErrInvalidPlanID` | Plan ID format is invalid |
-| `ErrInvalidCustomerID` | Customer ID format is invalid |
-| `ErrInvalidTypeID` | TypeID format or prefix is invalid |
-| `ErrMissingRequiredField` | Required field is missing |
-| `ErrInvalidDateRange` | Invalid date range (end before start) |
-
-## Error wrapping
-
-Store implementations wrap these sentinel errors with additional context:
+The root `ledger` package declares its sentinel errors with `errors.New`. The engine and the stores usually wrap them with `%w` and some context, so check them with `errors.Is`:
 
 ```go
-return fmt.Errorf("postgres: get subscription %s: %w", subID, ledger.ErrSubscriptionNotFound)
+sub, err := engine.GetSubscription(ctx, subID)
+switch {
+case errors.Is(err, ledger.ErrSubscriptionNotFound):
+	// unknown ID
+case err != nil:
+	return err
+}
 ```
 
-Check errors using `errors.Is`:
+Some sentinels are declared but nothing in the module returns them yet. The tables say which.
+
+## General
+
+| Error | Returned when |
+|-------|---------------|
+| `ErrInvalidInput` | Most validation failures: a plan without a name, slug or currency; a subscription without a tenant or plan; a plan in another app or not active; `Meter` without tenant or app context; a status transition that isn't allowed, such as resuming a subscription that isn't paused; a `ForPeriod` period that doesn't fit the subscription. The wrapped message says which. |
+| `ErrAlreadyExists` | A plan slug or coupon code already used in the app, or a second live invoice for a period. |
+| `ErrNotFound` | Not returned by the engine. The dashboard contract maps it, and `IsNotFound` checks it. |
+| `ErrUnauthorized`, `ErrForbidden` | Declared only. |
+
+## Plans and features
+
+| Error | Returned when |
+|-------|---------------|
+| `ErrPlanNotFound` | A plan lookup by ID or slug finds nothing. |
+| `ErrPlanInUse` | `DeletePlan` on a plan a subscription still uses. Archive it instead. |
+| `ErrInvalidPricing` | A negative base price, a base price in another currency, or a tier for a feature the plan doesn't have. |
+| `ErrDuplicateFeature` | Two plan features share a key. |
+| `ErrFeatureNotFound` | A catalog feature lookup finds nothing. |
+| `ErrPlanArchived`, `ErrFeatureArchived` | Declared only. Subscribing to an archived plan fails with `ErrInvalidInput`. |
+
+A broken tier ladder fails with `invoice.ErrInvalidTiers`, from the `invoice` package, both in `CreatePlan` and in `GenerateInvoice`.
+
+## Subscriptions
+
+| Error | Returned when |
+|-------|---------------|
+| `ErrSubscriptionNotFound` | A subscription lookup by ID finds nothing. |
+| `ErrNoActiveSubscription` | `GetActiveSubscription` finds no active or trialing subscription for the tenant and app. |
+| `ErrSubscriptionCanceled`, `ErrSubscriptionExpired` | Canceling or changing the plan of a subscription that has already ended. |
+| `ErrInvalidQuantity` | A negative seat count. |
+| `ErrSubscriptionExists`, `ErrInvalidUpgrade`, `ErrInvalidDowngrade`, `ErrTrialExpired` | Declared only. |
+
+## Usage and entitlements
+
+| Error | Returned when |
+|-------|---------------|
+| `ErrMeterBufferFull` | `Meter` when the 10,000-event buffer is full. Retry later or slow down. |
+| `ErrCacheMiss` | A store's `GetCached` has no live entry. The engine treats it as a miss and computes the answer; you only see it if you call the store yourself. |
+| `ErrQuotaExceeded`, `ErrHardLimitReached`, `ErrSoftLimitReached`, `ErrNoEntitlement`, `ErrFeatureDisabled` | Declared only. A denied quota check isn't an error: `Entitled` returns a result with `Allowed: false` and a `Reason`. |
+| `ErrDuplicateEvent`, `ErrEventTooOld`, `ErrCacheInvalidate` | Declared only. A store skips a usage event whose idempotency key it has already seen, without an error. |
+
+## Invoices
+
+| Error | Returned when |
+|-------|---------------|
+| `ErrInvoiceNotFound` | An invoice lookup by ID finds nothing. |
+| `ErrInvoiceFinalized` | `FinalizeInvoice` on an invoice that isn't a draft. |
+| `ErrInvoicePaid` | Paying or voiding an invoice that's already paid. |
+| `ErrInvoiceVoided` | Paying or voiding an invoice that's already voided. |
+| `ErrInvoiceIncomplete`, `ErrInvalidDiscount` | Declared only. |
+
+An invoice whose sums overflow an `int64` fails with an error wrapping `types.ErrOverflow`, and nothing is stored.
+
+## Coupons
+
+| Error | Returned when |
+|-------|---------------|
+| `ErrCouponNotFound` | No coupon with that code in the app, or that ID. |
+| `ErrCouponInvalid` | A coupon without a code, an unknown type, a percentage outside 0 to 100, a negative amount, an amount coupon without a currency, a currency that doesn't match the plan's, an attempt to change a coupon's code, type, value, currency or app, or a `CouponValidator` plugin refusing it. |
+| `ErrCouponNotStarted` | Applying a coupon before its `ValidFrom`. |
+| `ErrCouponExpired` | Applying a coupon after its `ValidUntil`. |
+| `ErrCouponExhausted` | The coupon has reached `MaxRedemptions`. |
+| `ErrCouponAlreadyApplied` | The coupon is already on that subscription. |
+
+## Providers
+
+| Error | Returned when |
+|-------|---------------|
+| `ErrProviderNotConfigured` | A sync, import or webhook call with no payment provider plugin registered. `ListPaymentMethods` returns an empty list instead. |
+| `ErrProviderNotFound` | No provider registered under the name asked for. |
+| `ErrProviderSync` | A provider refused or failed an import. |
+| `ErrProviderWebhook` | The provider's `HandleWebhook` returned an error. Both errors are wrapped. |
+
+## Store
+
+| Error | Returned when |
+|-------|---------------|
+| `ErrStoreNotReady`, `ErrStoreClosed`, `ErrTransactionFailed`, `ErrMigrationFailed` | Declared only. A failed migration comes back as the store's own error, such as `ledger/postgres: migration failed: ...`. |
+
+## Helpers
 
 ```go
-sub, err := store.GetSubscription(ctx, subID)
-if errors.Is(err, ledger.ErrSubscriptionNotFound) {
-    // handle not found
-}
+ledger.IsNotFound(err)  // ErrNotFound, ErrPlanNotFound, ErrSubscriptionNotFound,
+                        // ErrFeatureNotFound, ErrInvoiceNotFound, ErrCouponNotFound
+ledger.IsQuotaError(err) // ErrQuotaExceeded, ErrHardLimitReached, ErrSoftLimitReached,
+                         // ErrNoEntitlement, ErrFeatureDisabled
+ledger.IsRetryable(err)  // ErrMeterBufferFull, ErrStoreNotReady, ErrTransactionFailed,
+                         // ErrProviderSync, ErrCacheInvalidate
 ```
 
-## API error mapping
+`IsQuotaError` matches only declared-only errors, so it's false for anything the engine returns today. Of the `IsRetryable` set, the engine returns `ErrMeterBufferFull` and `ErrProviderSync`.
 
-The HTTP API maps sentinel errors to HTTP status codes:
+The package also has two error types for your own code. `ValidationError{Field, Message}` formats as `ledger: validation failed for <field>: <message>`, and `MultiError` collects errors with `Add`, `HasErrors` and `First`. The engine doesn't return either.
 
-| Sentinel error | HTTP status |
-|----------------|-------------|
-| `ErrPlanNotFound`, `ErrSubscriptionNotFound`, etc. | `404 Not Found` |
-| `ErrAlreadyExists`, `ErrDuplicate*` | `409 Conflict` |
-| `ErrInvalidState`, `ErrInvalid*`, validation errors | `400 Bad Request` |
-| `ErrPaymentFailed`, `ErrCardDeclined` | `402 Payment Required` |
-| `ErrFeatureNotEnabled`, `ErrQuotaExceeded` | `403 Forbidden` |
-| `ErrNoStore`, `ErrProviderAPIError` | `500 Internal Server Error` |
-| `ErrProviderTimeout` | `504 Gateway Timeout` |
+## HTTP status codes
 
-## Error response format
-
-All API errors follow a consistent JSON structure:
-
-```json
-{
-  "error": {
-    "code": "subscription_not_found",
-    "message": "Subscription sub_01h2xcejqtf2nbrexx3vqjhp44 does not exist",
-    "type": "not_found",
-    "param": "subscription_id",
-    "details": {}
-  }
-}
-```
-
-Fields:
-- `code` — Machine-readable error code (snake_case)
-- `message` — Human-readable error message
-- `type` — Error category: `validation`, `not_found`, `conflict`, `payment`, `provider`, `server`
-- `param` — The parameter that caused the error (optional)
-- `details` — Additional context (optional)
-
-## Custom error handling
-
-Application code can define custom error types by embedding the base error:
-
-```go
-type InsufficientCreditsError struct {
-    CustomerID CustomerID
-    Required   int64
-    Available  int64
-}
-
-func (e *InsufficientCreditsError) Error() string {
-    return fmt.Sprintf("customer %s has %d credits, but %d required",
-        e.CustomerID, e.Available, e.Required)
-}
-```
-
-## Error logging
-
-Ledger logs errors with structured fields for observability:
-
-```go
-logger.Error("subscription creation failed",
-    "error", err,
-    "customer_id", customerID,
-    "plan_id", planID,
-    "trace_id", traceID,
-)
-```
-
-Integration with OpenTelemetry for distributed tracing is supported.
-
-## Retry logic
-
-Certain errors are retryable:
-
-| Error | Retryable | Strategy |
-|-------|-----------|----------|
-| `ErrDatabaseConnection` | Yes | Exponential backoff |
-| `ErrProviderTimeout` | Yes | Fixed delay (1s) |
-| `ErrProviderAPIError` | Sometimes | Check provider status code |
-| `ErrPaymentFailed` | No | User intervention required |
-| `ErrInvalidState` | No | Logic error |
-
-Example retry implementation:
-
-```go
-func CreateSubscriptionWithRetry(ctx context.Context, sub *Subscription) error {
-    backoff := []time.Duration{100*time.Millisecond, 500*time.Millisecond, 1*time.Second}
-
-    for i := 0; i < len(backoff); i++ {
-        err := store.CreateSubscription(ctx, sub)
-        if err == nil {
-            return nil
-        }
-
-        if !isRetryable(err) {
-            return err
-        }
-
-        if i < len(backoff)-1 {
-            time.Sleep(backoff[i])
-        }
-    }
-
-    return fmt.Errorf("max retries exceeded")
-}
-
-func isRetryable(err error) bool {
-    return errors.Is(err, ledger.ErrDatabaseConnection) ||
-           errors.Is(err, ledger.ErrProviderTimeout)
-}
-```
+Ledger serves no HTTP API, so there's no status mapping in the engine. The Forge dashboard contributor maps these errors to contract error codes for the dashboard; see `extension/contract/errors.go`.

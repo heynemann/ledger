@@ -1,237 +1,121 @@
 ---
 title: Coupons
-description: Percentage and fixed-amount discounts with redemption tracking and validity windows.
+description: Percentage and fixed-amount coupons, how they're applied to a subscription, and how they discount its invoices.
 ---
 
-**Coupons** provide discount mechanisms for subscriptions and invoices. Ledger supports both percentage-based and fixed-amount discounts with configurable validity windows, redemption limits, and per-app scoping.
+A coupon is a discount you attach to a subscription by its code. Once applied, it discounts every invoice that subscription gets until you delete the coupon.
 
 ## Structure
 
 ```go
 type Coupon struct {
-    types.Entity
-    ID             id.CouponID       `json:"id"`
-    Code           string            `json:"code"`
-    Name           string            `json:"name"`
-    Type           CouponType        `json:"type"`
-    Amount         types.Money       `json:"amount,omitempty"`
-    Percentage     int               `json:"percentage,omitempty"`
-    Currency       string            `json:"currency"`
-    MaxRedemptions int               `json:"max_redemptions"`
-    TimesRedeemed  int               `json:"times_redeemed"`
-    ValidFrom      *time.Time        `json:"valid_from,omitempty"`
-    ValidUntil     *time.Time        `json:"valid_until,omitempty"`
-    AppID          string            `json:"app_id"`
-    Metadata       map[string]string `json:"metadata,omitempty"`
+	types.Entity
+	ID             id.CouponID
+	Code           string // unique within the app
+	Name           string
+	Type           CouponType  // percentage or amount
+	Amount         types.Money // for amount coupons
+	Percentage     int         // for percentage coupons, 0 to 100
+	Currency       string
+	MaxRedemptions int         // 0 or less means unlimited
+	TimesRedeemed  int
+	ValidFrom      *time.Time
+	ValidUntil     *time.Time
+	AppID          string
+	Metadata       map[string]string
 }
-```
-
-## Coupon types
-
-| Type | Description | Example |
-|------|-------------|---------|
-| `CouponTypePercentage` | Percentage discount off subtotal | 20% off |
-| `CouponTypeAmount` | Fixed amount discount | $10 off |
-
-```go
-type CouponType string
-
-const (
-    CouponTypePercentage CouponType = "percentage"
-    CouponTypeAmount     CouponType = "amount"
-)
 ```
 
 ## Creating coupons
 
-### Percentage discount
+### Percentage
 
 ```go
-coupon := &coupon.Coupon{
-    ID:             id.NewCouponID(),
-    Code:           "SUMMER20",
-    Name:           "Summer Sale - 20% Off",
-    Type:           coupon.CouponTypePercentage,
-    Percentage:     20,
-    MaxRedemptions: 100,
-    ValidFrom:      ptrTime(time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)),
-    ValidUntil:     ptrTime(time.Date(2024, 9, 1, 0, 0, 0, 0, time.UTC)),
-    AppID:          "myapp",
+c := &coupon.Coupon{
+	Code:       "LAUNCH20",
+	Name:       "Launch discount",
+	Type:       coupon.CouponTypePercentage,
+	Percentage: 20,
+	AppID:      "my-app",
 }
-
-if err := store.CreateCoupon(ctx, coupon); err != nil {
-    log.Fatal(err)
+if err := engine.CreateCoupon(ctx, c); err != nil {
+	return err
 }
 ```
 
-### Fixed amount discount
+### Fixed amount
 
 ```go
-coupon := &coupon.Coupon{
-    ID:             id.NewCouponID(),
-    Code:           "SAVE10",
-    Name:           "$10 Off First Month",
-    Type:           coupon.CouponTypeAmount,
-    Amount:         types.USD(1000), // $10.00
-    Currency:       "USD",
-    MaxRedemptions: 500,
-    AppID:          "myapp",
+c := &coupon.Coupon{
+	Code:           "TENOFF",
+	Name:           "$10 off",
+	Type:           coupon.CouponTypeAmount,
+	Amount:         types.USD(1000),
+	MaxRedemptions: 100,
+	AppID:          "my-app",
 }
 ```
+
+An amount coupon needs a currency: the `Amount`'s own, or `Currency` when the amount carries none.
+
+`CreateCoupon` trims the code, lowercases the currencies, assigns a `cpn_` ID, sets `TimesRedeemed` to 0, and refuses:
+
+- a missing code, an unknown type, a percentage outside 0 to 100, a negative amount, or an amount coupon with no currency (`ErrCouponInvalid`);
+- a `ValidUntil` before `ValidFrom` (`ErrCouponInvalid`);
+- a code the app already uses (`ErrAlreadyExists`).
 
 ## Validity windows
 
-Coupons can have optional start and end dates:
+`ValidFrom` and `ValidUntil` are optional. They're checked when you apply the coupon, against the engine's clock. Applying it before `ValidFrom` fails with `ErrCouponNotStarted`, and after `ValidUntil` with `ErrCouponExpired`.
+
+The window limits when a coupon can be applied, not how long it discounts. A coupon applied inside its window keeps discounting after `ValidUntil`.
+
+## Applying a coupon
 
 ```go
-// Always valid (no window)
-coupon.ValidFrom = nil
-coupon.ValidUntil = nil
-
-// Valid for a specific period
-coupon.ValidFrom = ptrTime(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
-coupon.ValidUntil = ptrTime(time.Date(2024, 12, 31, 23, 59, 59, 0, time.UTC))
-
-// Valid starting from a date (no end)
-coupon.ValidFrom = ptrTime(time.Now())
-coupon.ValidUntil = nil
+applied, err := engine.ApplyCoupon(ctx, sub.ID, "LAUNCH20")
 ```
 
-When validating a coupon:
+`ApplyCoupon` looks the code up in the subscription's app and checks, before writing anything:
+
+1. the validity window;
+2. the redemption cap (`ErrCouponExhausted`);
+3. the coupon's shape, as `CreateCoupon` does;
+4. the currency: an amount coupon must be in the plan's currency, and a percentage coupon with a `Currency` set must match it too (`ErrCouponInvalid`);
+5. every `CouponValidator` plugin (a refusal wraps `ErrCouponInvalid`).
+
+Then the store records the application and increments `TimesRedeemed` as one unit, enforcing the cap again so two concurrent redemptions can't both take the last slot. Applying the same coupon to the same subscription twice fails with `ErrCouponAlreadyApplied`. It returns the coupon with its new count.
+
+A coupon can sit on many subscriptions, and a subscription can carry many coupons. `ListAppliedCoupons(ctx, subID)` returns a subscription's coupons, oldest first.
+
+## How a coupon discounts an invoice
+
+`GenerateInvoice` adds one `discount` line per applied coupon, as a negative amount:
+
+- A percentage coupon takes its percentage of the subtotal (base, overage and seats) before any discount. Two percentage coupons each take their share of the same subtotal, so 10% and 20% give 30% off, not 28%. The amount is rounded down to the cent.
+- An amount coupon takes its amount off.
+
+The discounts are summed into `DiscountAmount`, and the total never drops below zero. Tax is computed after discounts. Each coupon is validated again at that point, so a coupon whose currency no longer matches the plan fails the invoice with `ErrCouponInvalid`.
+
+## Changing and removing coupons
 
 ```go
-now := time.Now()
-
-if coupon.ValidFrom != nil && now.Before(*coupon.ValidFrom) {
-    return ErrCouponNotStarted
-}
-
-if coupon.ValidUntil != nil && now.After(*coupon.ValidUntil) {
-    return ErrCouponExpired
-}
+c.Name = "Spring launch"
+c.MaxRedemptions = 500
+err := engine.UpdateCoupon(ctx, c)
 ```
 
-## Redemption tracking
+`UpdateCoupon` changes the name, the redemption cap, the validity window and the metadata. The code, type, value, currency and app are fixed once created, and changing any of them fails with `ErrCouponInvalid`. The redemption count is never written by an update.
 
-Each coupon tracks how many times it has been used:
-
-```go
-// Check if coupon is still available
-if coupon.MaxRedemptions > 0 && coupon.TimesRedeemed >= coupon.MaxRedemptions {
-    return ErrCouponExhausted
-}
-
-// Redeem the coupon
-coupon.TimesRedeemed++
-store.UpdateCoupon(ctx, coupon)
-```
-
-Set `MaxRedemptions` to `0` for unlimited redemptions.
-
-## Applying coupons to invoices
-
-When generating an invoice, apply the coupon discount:
-
-```go
-func applyCoupon(invoice *invoice.Invoice, cpn *coupon.Coupon) {
-    var discount types.Money
-
-    switch cpn.Type {
-    case coupon.CouponTypePercentage:
-        discount = invoice.Subtotal.Multiply(int64(cpn.Percentage)).Divide(100)
-    case coupon.CouponTypeAmount:
-        discount = cpn.Amount
-        if discount.GreaterThan(invoice.Subtotal) {
-            discount = invoice.Subtotal // Don't discount more than subtotal
-        }
-    }
-
-    invoice.LineItems = append(invoice.LineItems, invoice.LineItem{
-        ID:          id.NewLineItemID(),
-        InvoiceID:   invoice.ID,
-        Type:        invoice.LineItemDiscount,
-        Description: fmt.Sprintf("Coupon: %s", cpn.Code),
-        Amount:      discount.Negate(),
-    })
-
-    invoice.DiscountAmount = discount
-    invoice.Total = invoice.Subtotal.Add(invoice.TaxAmount).Subtract(discount)
-}
-```
-
-## Coupon validation
-
-Use the `CouponValidator` plugin interface for custom validation logic:
-
-```go
-type CouponValidator interface {
-    plugin.Plugin
-    ValidateCoupon(ctx context.Context, coupon interface{}, sub interface{}) error
-}
-```
-
-Example: Limit coupons to new customers only:
-
-```go
-type NewCustomerOnly struct{}
-
-func (v *NewCustomerOnly) Name() string { return "new-customer-coupon-validator" }
-
-func (v *NewCustomerOnly) ValidateCoupon(ctx context.Context, cpn interface{}, sub interface{}) error {
-    subscription := sub.(*subscription.Subscription)
-
-    // Check if customer already had a subscription
-    existing, _ := store.ListSubscriptions(ctx, subscription.TenantID, subscription.AppID, subscription.ListOpts{})
-    if len(existing) > 0 {
-        return fmt.Errorf("coupon only valid for new customers")
-    }
-
-    return nil
-}
-```
+`DeleteCoupon(ctx, couponID)` removes the coupon, and the subscriptions it was applied to stop getting its discount from their next invoice. There's no way to detach a coupon from one subscription only.
 
 ## Listing coupons
 
 ```go
-coupons, err := store.ListCoupons(ctx, "myapp", coupon.ListOpts{
-    Active: true,  // Only active coupons
-    Limit:  20,
-    Offset: 0,
-})
-
-for _, cpn := range coupons {
-    fmt.Printf("%s (%s): %d/%d redeemed\n",
-        cpn.Code, cpn.Name, cpn.TimesRedeemed, cpn.MaxRedemptions)
-}
+all, err := engine.Store().ListCoupons(ctx, "my-app", coupon.ListOpts{})
+byCode, err := engine.Store().GetCoupon(ctx, "LAUNCH20", "my-app")
 ```
 
-## Store interface
+## Remote access
 
-```go
-type Store interface {
-    Create(ctx context.Context, c *Coupon) error
-    Get(ctx context.Context, code string, appID string) (*Coupon, error)
-    GetByID(ctx context.Context, couponID id.CouponID) (*Coupon, error)
-    List(ctx context.Context, appID string, opts ListOpts) ([]*Coupon, error)
-    Update(ctx context.Context, c *Coupon) error
-    Delete(ctx context.Context, couponID id.CouponID) error
-}
-
-type ListOpts struct {
-    Active bool
-    Limit  int
-    Offset int
-}
-```
-
-## API routes
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/ledger/coupons` | Create a coupon |
-| `GET` | `/ledger/coupons` | List coupons |
-| `GET` | `/ledger/coupons/{code}` | Get coupon by code |
-| `GET` | `/ledger/coupons/id/{id}` | Get coupon by ID |
-| `PUT` | `/ledger/coupons/{id}` | Update a coupon |
-| `DELETE` | `/ledger/coupons/{id}` | Delete a coupon |
-| `POST` | `/ledger/coupons/{code}/redeem` | Redeem a coupon |
+Ledger has no HTTP routes for coupons. The Forge dashboard uses the contract intents `coupons.list`, `coupons.detail`, `coupons.create`, `coupons.update`, `coupons.delete` and `coupons.apply`. See [HTTP API](/docs/api-reference/http-api).

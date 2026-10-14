@@ -1,35 +1,42 @@
 // Package ledger provides a composable usage-based billing engine for Go applications.
 //
 // Ledger is designed as a library, not a service. Import it directly into your Go
-// application for maximum performance and flexibility. It provides:
+// application and run it against your own database. It provides:
 //
-//   - Sub-millisecond entitlement checks with multi-layer caching
-//   - High-throughput usage metering with batched ingestion
+//   - Entitlement checks against a plan's limits, cached in the store
+//   - Usage metering with buffered, batched ingestion
 //   - Flexible pricing models (graduated, volume, flat tiers)
-//   - Automated invoice generation with line-item detail
-//   - Pluggable payment provider integration (Stripe built-in)
-//   - Comprehensive audit trail via Chronicle
-//   - Production metrics via go-utils MetricFactory
+//   - Invoice generation with base, overage, seat, discount and tax lines
+//   - Pluggable payment provider integration through provider.Provider (no
+//     provider implementation ships with the module)
+//   - An audit trail bridge (package audithook) for Chronicle or any recorder
+//   - Metrics through a small MetricFactory interface (package observability)
 //
 // # Quick Start
 //
 // Create a ledger instance with your preferred store:
 //
 //	import (
+//	    "github.com/xraph/grove"
+//	    "github.com/xraph/grove/drivers/pgdriver"
 //	    "github.com/xraph/ledger"
 //	    "github.com/xraph/ledger/store/postgres"
 //	)
 //
-//	// Initialize store
-//	store, err := postgres.New(databaseURL)
+//	// Open a Grove database
+//	pg := pgdriver.New()
+//	if err := pg.Open(ctx, databaseURL); err != nil {
+//	    log.Fatal(err)
+//	}
+//	db, err := grove.Open(pg)
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
 //
 //	// Create ledger
-//	l := ledger.New(store)
+//	l := ledger.New(postgres.New(db))
 //
-//	// Start the ledger (begins background workers)
+//	// Start the ledger (migrates the store, then starts background workers)
 //	if err := l.Start(ctx); err != nil {
 //	    log.Fatal(err)
 //	}
@@ -39,20 +46,26 @@
 //
 // Plans define what features are available and at what limits:
 //
-//	plan := &plan.Plan{
-//	    Name: "Pro",
+//	p := &plan.Plan{
+//	    Name:     "Pro",
+//	    Slug:     "pro",
+//	    Currency: "usd",
+//	    Status:   plan.StatusActive,
 //	    Features: []plan.Feature{
-//	        {Key: "api_calls", Limit: 10000, Type: plan.FeatureMetered},
+//	        {Key: "api_calls", Limit: 10000, Type: plan.FeatureMetered, Period: plan.PeriodMonthly},
 //	        {Key: "seats", Limit: 5, Type: plan.FeatureSeat},
 //	        {Key: "sso", Limit: 1, Type: plan.FeatureBoolean},
 //	    },
 //	}
+//	err := l.CreatePlan(ctx, p)
 //
 // Subscriptions connect tenants to plans:
 //
-//	sub, err := l.CreateSubscription(ctx, tenantID, planID)
+//	sub := &subscription.Subscription{TenantID: tenantID, PlanID: p.ID}
+//	err := l.CreateSubscription(ctx, sub)
 //
-// Entitlements check if a tenant can use a feature:
+// Entitlements check if a tenant can use a feature. Entitled and Meter read
+// the tenant and app from the context values "tenant_id" and "app_id":
 //
 //	result, err := l.Entitled(ctx, "api_calls")
 //	if result.Allowed {
@@ -60,26 +73,18 @@
 //	    l.Meter(ctx, "api_calls", 1)
 //	}
 //
-// # Performance
-//
-// Ledger is optimized for production workloads:
-//
-//   - Entitlement checks: < 1ms with cache hit, < 10ms with cache miss
-//   - Usage ingestion: > 10,000 events/second with batching
-//   - Invoice generation: < 100ms for 1000 line items
-//
 // All monetary calculations use integer arithmetic to avoid floating-point
 // precision issues. The Money type represents amounts in the smallest currency
 // unit (cents for USD, pence for GBP, etc).
 //
 // # Integration
 //
-// Ledger integrates seamlessly with the Forgery ecosystem:
+// Ledger works with the rest of the Forgery ecosystem:
 //
-//   - Forge: Scope extraction and tenant isolation
-//   - Chronicle: Audit trail for all billing events
-//   - Authsome: Billing module for authentication
-//   - go-utils: Production metrics and observability
+//   - Forge: the extension package registers the engine as a Forge extension
+//   - Grove: the PostgreSQL, SQLite and MongoDB stores run on a *grove.DB
+//   - Chronicle: package audithook turns billing events into audit records
+//   - go-utils: logging, and metrics through package observability
 //
 // # TypeID
 //

@@ -1,300 +1,112 @@
 ---
 title: Invoice Generation
-description: Automated billing calculations from usage, subscriptions, and pricing rules.
+description: What GenerateInvoice puts on an invoice, the invoice's statuses, and how to export it.
 ---
 
-**Invoice Generation** transforms subscription and usage data into detailed invoices with line items, taxes, and payment instructions. It runs automatically at billing period boundaries and supports manual generation for prorations and adjustments.
-
-## Structure
+`GenerateInvoice` bills one period of one subscription. It reads the plan as it is now, counts the usage inside the period, and writes a draft invoice with its line items.
 
 ```go
-type Invoice struct {
-    ledger.Entity
-    ID             id.InvoiceID
-    SubscriptionID id.SubscriptionID
-    CustomerID     id.CustomerID
-    TenantID       string
-    AppID          string
-    Number         string // Human-readable: INV-2024-001234
-    Status         InvoiceStatus
-    PeriodStart    time.Time
-    PeriodEnd      time.Time
-    LineItems      []LineItem
-    Subtotal       money.Money
-    Tax            money.Money
-    Total          money.Money
-    AmountDue      money.Money
-    DueDate        time.Time
-    PaidAt         *time.Time
-    Metadata       map[string]any
-}
+inv, err := engine.GenerateInvoice(ctx, sub.ID)                           // the current period
+inv, err = engine.GenerateInvoice(ctx, sub.ID, ledger.ForPeriod(start, end)) // a period that has ended
 ```
 
-## Invoice lifecycle
-
-```go
-type InvoiceStatus string
-
-const (
-    StatusDraft    InvoiceStatus = "draft"
-    StatusOpen     InvoiceStatus = "open"
-    StatusPaid     InvoiceStatus = "paid"
-    StatusVoid     InvoiceStatus = "void"
-    StatusUncollectible InvoiceStatus = "uncollectible"
-)
-```
-
-| Status | Description |
-|--------|-------------|
-| `draft` | Being assembled, not finalized |
-| `open` | Finalized and awaiting payment |
-| `paid` | Payment received |
-| `void` | Canceled before payment |
-| `uncollectible` | Payment collection failed permanently |
+Ledger never calls it for you. You decide when a period gets billed: usually from an `OnSubscriptionRenewed` hook, which lists the periods that just ended, or from your own scheduled job. See [Billing cycles](/docs/subsystems/billing-cycles).
 
 ## Line items
 
-Each invoice contains multiple line items:
+The lines are built in a fixed order:
+
+| Order | Type | Description | Amount |
+|-------|------|-------------|--------|
+| 1 | `base` | "Base subscription fee" | `Pricing.BaseAmount`, when it's above zero |
+| 2 | `overage` | "&lt;feature name&gt; overage" | One per metered feature whose usage in the period passed its `Limit`, priced by its tiers. `Quantity` is the units past the limit |
+| 3 | `seat` | the feature name | One per seat feature with a seat count above zero, priced by its tiers. `Quantity` is the seat count |
+| 4 | `discount` | "Discount &lt;code&gt;" | One per applied coupon, as a negative amount |
+| 5 | `tax` | "Tax" | The sum from every `TaxCalculator` plugin, when it's above zero |
+
+A line that prices at zero is left off. Overage and seat lines carry the feature key, and their `UnitAmount` is zero, because a tiered price has no single unit rate. `invoice.LineItemUsage` is declared but never used.
+
+The totals:
+
+- `Subtotal` is base plus overage plus seats.
+- `DiscountAmount` is the sum of the coupons. A percentage coupon takes its share of the subtotal before any discount, rounded down to the cent, so two percentage coupons don't compound.
+- Tax is computed on the subtotal less discounts, never below zero.
+- `Total` is that net amount plus `TaxAmount`. A discount larger than the bill gives a zero total, never a negative one.
+
+Every amount is in the plan's currency, lowercased. Every sum is overflow-checked: an amount that doesn't fit in an `int64` fails generation with an error wrapping `types.ErrOverflow`, and nothing is stored.
+
+## What gets billed
+
+- Usage is the period's own: the events from its start to its end, or to now while it's still running.
+- Everything else is current: the plan, its prices, the seat counts and the applied coupons are read as they are when you call it. Ledger keeps no history of them, so a plan change in the middle of a period prices the whole period on the new plan. There's no proration.
+- A metered feature with `Limit: -1` never bills, and its tiers aren't checked.
+- Trials aren't skipped. A period inside a trial bills its base fee if you invoice it.
+
+## When it refuses
+
+| Error | Why |
+|-------|-----|
+| `ErrInvalidInput` | The subscription has no tenant; it's paused (its current period's end will still move); or the `ForPeriod` period isn't one the subscription has had |
+| `ErrAlreadyExists` | A live (not voided) invoice already covers this subscription and period |
+| `ErrInvalidPricing` | The base price is negative or in another currency |
+| `invoice.ErrInvalidTiers` | A feature's tiers are broken |
+| `ErrCouponInvalid` | An applied coupon no longer fits: wrong currency, bad percentage, unknown type |
+| `types.ErrOverflow` | A sum doesn't fit in an `int64` |
+
+Voiding an invoice frees its period, so you can generate a replacement.
+
+## Billing a past period
+
+`ForPeriod(start, end)` bills a period the subscription has already had: the one the lifecycle clock just rolled past, or one a catch-up skipped. The period has to be the current one or one before it on the subscription's cadence, it has to have started, and it has to end after the subscription was created. Anything else fails with `ErrInvalidInput`.
 
 ```go
-type LineItem struct {
-    ID          string
-    Type        LineItemType
-    Description string
-    Quantity    float64
-    UnitPrice   money.Money
-    Amount      money.Money
-    Period      *Period
-    Metadata    map[string]any
-}
-
-type LineItemType string
-
-const (
-    LineItemSubscription LineItemType = "subscription"
-    LineItemUsage        LineItemType = "usage"
-    LineItemProration    LineItemType = "proration"
-    LineItemOneTime      LineItemType = "one_time"
-    LineItemTax          LineItemType = "tax"
-    LineItemDiscount     LineItemType = "discount"
-)
-```
-
-### Example: Monthly invoice with usage
-
-```go
-LineItems: []invoice.LineItem{
-    {
-        Type:        invoice.LineItemSubscription,
-        Description: "Starter Plan - Monthly",
-        Quantity:    1,
-        UnitPrice:   money.Money{Amount: 2999, Currency: "USD"},
-        Amount:      money.Money{Amount: 2999, Currency: "USD"},
-        Period:      &Period{Start: periodStart, End: periodEnd},
-    },
-    {
-        Type:        invoice.LineItemUsage,
-        Description: "API Calls (10,000 - 15,000)",
-        Quantity:    5000,
-        UnitPrice:   money.Money{Amount: 10, Currency: "USD"}, // $0.01
-        Amount:      money.Money{Amount: 50000, Currency: "USD"}, // $500
-        Period:      &Period{Start: periodStart, End: periodEnd},
-    },
-    {
-        Type:        invoice.LineItemTax,
-        Description: "Sales Tax (8.5%)",
-        Quantity:    1,
-        Amount:      money.Money{Amount: 28491, Currency: "USD"}, // $284.91
-    },
-}
-```
-
-## Automatic generation
-
-Invoices are generated automatically at billing period boundaries:
-
-```go
-// Background job runs daily
-func generateDueInvoices(ctx context.Context) {
-    subs, _ := store.GetSubscriptionsDueForBilling(ctx, time.Now())
-
-    for _, sub := range subs {
-        invoice, err := generator.Generate(ctx, &generator.Request{
-            SubscriptionID: sub.ID,
-            PeriodStart:    sub.CurrentPeriodStart,
-            PeriodEnd:      sub.CurrentPeriodEnd,
-        })
-
-        if err != nil {
-            log.Error("invoice generation failed", "sub", sub.ID, "error", err)
-            continue
-        }
-
-        // Finalize and send to payment processor
-        invoice.Status = invoice.StatusOpen
-        store.UpdateInvoice(ctx, invoice)
-
-        payment.CollectPayment(ctx, invoice)
-    }
+func (b *biller) OnSubscriptionRenewed(ctx context.Context, renewal interface{}) error {
+	r := renewal.(*subscription.Renewal)
+	for _, p := range r.Ended {
+		_, err := b.engine.GenerateInvoice(ctx, r.Subscription.ID, ledger.ForPeriod(p.Start, p.End))
+		if err != nil && !errors.Is(err, ledger.ErrAlreadyExists) {
+			return err
+		}
+	}
+	return nil
 }
 ```
 
-## Manual generation
+## Statuses
 
-Generate invoices manually for upgrades, downgrades, or adjustments:
-
-```go
-// Generate prorated invoice for plan change
-invoice, err := generator.Generate(ctx, &generator.Request{
-    SubscriptionID: subscription.ID,
-    PeriodStart:    changeDate,
-    PeriodEnd:      subscription.CurrentPeriodEnd,
-    Type:           generator.TypeProration,
-    Reason:         "Plan upgrade: Starter → Pro",
-})
+```
+draft ──FinalizeInvoice──> pending ──MarkInvoicePaid──> paid
+  │                          │
+  │                          └── due date passes (lifecycle clock) ──> past_due
+  │
+  └──────── MarkInvoiceVoided (from draft, pending or past_due) ──> voided
 ```
 
-## Graduated pricing calculation
+| Call | From | Effect | Hook |
+|------|------|--------|------|
+| `FinalizeInvoice(ctx, invID)` | `draft` only, else `ErrInvoiceFinalized` | `pending`, `DueDate` 30 days out | `OnInvoiceFinalized` |
+| `MarkInvoicePaid(ctx, invID, paidAt, paymentRef)` | anything but `paid` or `voided` | `paid`, with `PaidAt` and `PaymentRef` | `OnInvoicePaid` |
+| `MarkInvoiceVoided(ctx, invID, reason)` | anything but `paid` or `voided` | `voided`, with `VoidedAt` and `VoidReason` | `OnInvoiceVoided` |
+| lifecycle clock | `pending` past its due date | `past_due` | `OnInvoicePastDue` |
 
-For plans with graduated tiers, line items are split:
+`MarkInvoicePaid` also accepts a `past_due` or even a `draft` invoice. `OnInvoiceFailed` is declared in the plugin package but never fires: Ledger doesn't collect payments, so it never sees one fail.
 
-```go
-// Plan: First 5K free, next 5K at $0.01, rest at $0.005
-// Usage: 15,000 calls
+## Exporting
 
-LineItems: []invoice.LineItem{
-    {
-        Description: "API Calls (0 - 5,000)",
-        Quantity:    5000,
-        UnitPrice:   money.Money{Amount: 0, Currency: "USD"},
-        Amount:      money.Money{Amount: 0, Currency: "USD"},
-    },
-    {
-        Description: "API Calls (5,001 - 10,000)",
-        Quantity:    5000,
-        UnitPrice:   money.Money{Amount: 10, Currency: "USD"},
-        Amount:      money.Money{Amount: 50000, Currency: "USD"}, // $500
-    },
-    {
-        Description: "API Calls (10,001 - 15,000)",
-        Quantity:    5000,
-        UnitPrice:   money.Money{Amount: 5, Currency: "USD"},
-        Amount:      money.Money{Amount: 25000, Currency: "USD"}, // $250
-    },
-}
-```
-
-## Proration
-
-When a subscription changes mid-period, generate a prorated invoice:
+`ExportInvoice(ctx, invID, format)` renders an invoice through the `InvoiceFormatter` plugin registered for that format, and `InvoiceFormats()` lists the formats you've registered. No formatter ships with the module, so with none registered, export fails with `ErrInvalidInput`.
 
 ```go
-// Customer upgrades from Starter ($29.99) to Pro ($99.99) on day 15 of 30
-unusedDays := 15
-proratedCredit := (2999 * unusedDays) / 30  // -$14.995
-proratedCharge := (9999 * unusedDays) / 30  // +$49.995
-netCharge := proratedCharge - proratedCredit // $35
-
-LineItems: []invoice.LineItem{
-    {
-        Type:        invoice.LineItemProration,
-        Description: "Unused time on Starter Plan",
-        Amount:      money.Money{Amount: -1500, Currency: "USD"}, // -$15.00
-    },
-    {
-        Type:        invoice.LineItemProration,
-        Description: "Pro Plan (15 days)",
-        Amount:      money.Money{Amount: 5000, Currency: "USD"}, // $50.00
-    },
-}
+pdf, err := engine.ExportInvoice(ctx, inv.ID, "pdf")
 ```
 
-## Tax calculation
-
-Taxes are computed based on customer location and product taxability:
+## Reading invoices
 
 ```go
-type TaxCalculator interface {
-    Calculate(ctx context.Context, invoice *Invoice) (money.Money, error)
-}
-
-// Stripe Tax integration
-taxCalculator := tax.NewStripeTax(stripeClient)
-taxAmount, err := taxCalculator.Calculate(ctx, invoice)
-
-invoice.Tax = taxAmount
-invoice.Total = invoice.Subtotal.Add(taxAmount)
+inv, err := engine.Store().GetInvoice(ctx, invID)
+invs, err := engine.Store().ListInvoices(ctx, "acme", "my-app", invoice.ListOpts{Status: invoice.StatusPending})
+pending, err := engine.Store().ListPendingInvoices(ctx, "my-app")
 ```
 
-## Discounts and credits
+## Remote access
 
-Apply discounts or account credits:
-
-```go
-LineItems: []invoice.LineItem{
-    {
-        Type:        invoice.LineItemSubscription,
-        Description: "Pro Plan - Monthly",
-        Amount:      money.Money{Amount: 9999, Currency: "USD"},
-    },
-    {
-        Type:        invoice.LineItemDiscount,
-        Description: "20% off for 3 months",
-        Amount:      money.Money{Amount: -2000, Currency: "USD"},
-    },
-}
-```
-
-## Payment collection
-
-After generating an invoice, initiate payment:
-
-```go
-invoice.Status = invoice.StatusOpen
-store.CreateInvoice(ctx, invoice)
-
-// Attempt payment collection
-payment, err := processor.Charge(ctx, &payment.ChargeRequest{
-    InvoiceID:        invoice.ID,
-    CustomerID:       invoice.CustomerID,
-    Amount:           invoice.Total,
-    PaymentMethodID:  customer.DefaultPaymentMethod,
-})
-
-if err != nil {
-    // Payment failed - mark past due
-    subscription.Status = subscription.StatusPastDue
-} else {
-    // Payment succeeded
-    invoice.Status = invoice.StatusPaid
-    invoice.PaidAt = &payment.CompletedAt
-}
-```
-
-## Store interface
-
-```go
-type Store interface {
-    CreateInvoice(ctx context.Context, inv *Invoice) error
-    GetInvoice(ctx context.Context, invID id.InvoiceID) (*Invoice, error)
-    GetInvoiceByNumber(ctx context.Context, number string) (*Invoice, error)
-    GetInvoicesByCustomer(ctx context.Context, customerID id.CustomerID) ([]*Invoice, error)
-    GetInvoicesBySubscription(ctx context.Context, subID id.SubscriptionID) ([]*Invoice, error)
-    UpdateInvoice(ctx context.Context, inv *Invoice) error
-    VoidInvoice(ctx context.Context, invID id.InvoiceID) error
-    ListInvoices(ctx context.Context, filter *ListFilter) ([]*Invoice, error)
-}
-```
-
-## API routes
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/ledger/invoices` | Generate invoice manually |
-| `GET` | `/ledger/invoices` | List invoices |
-| `GET` | `/ledger/invoices/{id}` | Get invoice by ID |
-| `GET` | `/ledger/invoices/{number}` | Get invoice by number |
-| `POST` | `/ledger/invoices/{id}/finalize` | Finalize draft invoice |
-| `POST` | `/ledger/invoices/{id}/void` | Void an open invoice |
-| `POST` | `/ledger/invoices/{id}/pay` | Mark invoice as paid |
-| `GET` | `/ledger/invoices/{id}/pdf` | Download PDF invoice |
+Ledger has no HTTP routes for invoices. The Forge dashboard uses the contract intents `invoices.list`, `invoices.detail`, `invoices.pending`, `invoices.export`, `invoices.generate`, `invoices.finalize`, `invoices.markPaid` and `invoices.void`. See [HTTP API](/docs/api-reference/http-api).

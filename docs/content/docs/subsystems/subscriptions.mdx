@@ -1,217 +1,106 @@
 ---
 title: Subscriptions
-description: Track customer commitments, lifecycle states, and plan associations.
+description: Create, change, pause, resume and cancel a tenant's subscription, and what each status means.
 ---
 
-A **Subscription** represents a customer's commitment to a plan. It tracks the lifecycle from trial through active billing to cancellation, managing state transitions, billing periods, and usage entitlements.
-
-## Structure
+A subscription puts one tenant on one plan in one app. It carries the current billing period, the trial, any scheduled cancel, the pause state and the seat counts.
 
 ```go
-type Subscription struct {
-    ledger.Entity
-    ID               id.SubscriptionID
-    CustomerID       id.CustomerID
-    PlanID           id.PlanID
-    TenantID         string
-    AppID            string
-    Status           SubscriptionStatus
-    CurrentPeriodStart time.Time
-    CurrentPeriodEnd   time.Time
-    TrialStart       *time.Time
-    TrialEnd         *time.Time
-    CanceledAt       *time.Time
-    CancellationReason string
-    Metadata         map[string]any
+sub := &subscription.Subscription{
+	TenantID: "acme",
+	AppID:    "my-app",
+	PlanID:   pro.ID,
+	Quantity: map[string]int64{"seats": 5},
+}
+if err := engine.CreateSubscription(ctx, sub); err != nil {
+	return err
 }
 ```
 
-## Lifecycle states
+[Entities](/docs/concepts/entities#subscription) has every field.
 
-Subscriptions transition through well-defined states:
+## Creating a subscription
+
+`CreateSubscription` checks the input, fills in what you left empty, and writes it:
+
+- `TenantID` is required. An empty one fails with `ErrInvalidInput`.
+- The plan must exist, be in the subscription's app and be active.
+- Every key in `Quantity` must be one of the plan's seat features, with a count of zero or more.
+- `ID` gets a `sub_` TypeID if it's empty.
+- The first period starts at the creation time and ends one billing period later, on the same day of the month. A yearly plan gives a one-year period. If you set `CurrentPeriodStart` yourself, the end is worked out from it.
+- With no `Status`, a plan with `TrialDays` makes it `trialing`, with `TrialStart` at the period start and `TrialEnd` that many days later. Otherwise it's `active`. If you set `Status` yourself, no trial is set up.
+
+It then clears the tenant's cached quota answers and fires `OnSubscriptionCreated`.
+
+## Statuses
+
+| Status | Entitled? | Set by |
+|--------|-----------|--------|
+| `trialing` | yes | `CreateSubscription` on a plan with trial days; `ResumeSubscription` while the trial has time left |
+| `active` | yes | `CreateSubscription`; `EndTrials` once the trial ends; `ResumeSubscription` |
+| `paused` | no | `PauseSubscription` |
+| `canceled` | no | `CancelSubscription(..., true)`; `EnactCancels` once a scheduled cancel is due |
+| `past_due` | no | Not set by the engine. An import or your own store write can set it. |
+| `expired` | no | Not set by the engine, as above. |
+
+Quota checks use the tenant's newest `active` or `trialing` subscription in the app. Anything else answers `"no active subscription"`.
+
+A past-due invoice doesn't change the subscription's status: the lifecycle clock marks the invoice and leaves the subscription, and its entitlements, alone. If you want to cut access for unpaid invoices, do it from an `OnInvoicePastDue` hook.
+
+## Trials
+
+A trial is a period during which the subscription is `trialing`. The lifecycle clock's `EndTrials` step makes it `active` once `TrialEnd` passes and fires `OnSubscriptionTrialEnded`. Nothing else changes at the end of a trial: there's no payment-method check.
+
+`GenerateInvoice` doesn't look at the trial. If you call it for a period that falls inside a trial, it bills the base fee like any other period, so skip trial periods in your own billing run.
+
+## Changing plans
 
 ```go
-type SubscriptionStatus string
-
-const (
-    StatusTrialing     SubscriptionStatus = "trialing"
-    StatusActive       SubscriptionStatus = "active"
-    StatusPastDue      SubscriptionStatus = "past_due"
-    StatusCanceled     SubscriptionStatus = "canceled"
-    StatusUnpaid       SubscriptionStatus = "unpaid"
-    StatusPaused       SubscriptionStatus = "paused"
-)
+updated, err := engine.ChangePlan(ctx, sub.ID, enterprise.ID, nil) // nil keeps the seat counts
 ```
 
-### State diagram
+The new plan must be active and in the same app, and the subscription must not be canceled or expired. Only the plan and the seat counts change. The period stays where it is, nothing is prorated, and the next invoice prices the whole period on the new plan. `OnSubscriptionChanged` fires with the subscription and both plans.
 
-```
-trialing → active → past_due → unpaid
-   ↓         ↓         ↓          ↓
-          canceled ← ← ← ← ← ← ← ←
-                  ↕
-               paused
+## Pausing and resuming
+
+```go
+paused, err := engine.PauseSubscription(ctx, sub.ID)   // from active or trialing
+resumed, err := engine.ResumeSubscription(ctx, sub.ID) // from paused
 ```
 
-| Status | Description |
-|--------|-------------|
-| `trialing` | In trial period, no billing |
-| `active` | Actively billed, entitlements enabled |
-| `past_due` | Payment failed, grace period active |
-| `unpaid` | Payment collection failed, limited access |
-| `paused` | Temporarily suspended by customer |
-| `canceled` | Terminated, no further billing |
+A pause records `PausedAt` and stops the clock: the lifecycle clock won't roll a paused subscription's period or end its trial, and quota checks deny while it's paused. `GenerateInvoice` refuses the current period of a paused subscription, because its end will move.
+
+Resume stretches the period by the length of the pause: `CurrentPeriodEnd` moves on by now minus `PausedAt`, and the start stays. A trial that still had time left resumes as a trial, with its end moved by the same amount. A scheduled cancel at the period end moves with it. A subscription the clock canceled while it was paused stays canceled.
+
+Neither call fires a plugin hook.
+
+## Canceling
+
+```go
+err := engine.CancelSubscription(ctx, sub.ID, false) // at the end of the current period
+err = engine.CancelSubscription(ctx, sub.ID, true)   // now
+```
+
+A scheduled cancel sets `CancelAt` to the current period end and leaves the status alone, then fires `OnSubscriptionCancelScheduled`. The lifecycle clock's `EnactCancels` step cancels it once that time passes, sets `CanceledAt` and fires `OnSubscriptionCanceled`. Calling it again while a cancel is scheduled sets `CancelAt` to the current period end once more.
+
+An immediate cancel sets the status to `canceled` and `CanceledAt` to now, and fires `OnSubscriptionCanceled`. Canceling a subscription that's already canceled or expired fails with `ErrSubscriptionCanceled` or `ErrSubscriptionExpired`.
+
+There's no reason field and no un-cancel. To keep a record of why, put it in `Metadata` before you cancel.
 
 ## Billing periods
 
-Each subscription tracks its current billing cycle:
+The lifecycle clock moves every running subscription whose period has ended into the period that contains now. See [Billing cycles](/docs/subsystems/billing-cycles) for how periods are worked out and how to bill the ones that ended.
+
+## Reading subscriptions
 
 ```go
-CurrentPeriodStart: time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
-CurrentPeriodEnd:   time.Date(2024, 2, 15, 0, 0, 0, 0, time.UTC)
+sub, err := engine.GetSubscription(ctx, subID)
+live, err := engine.GetActiveSubscription(ctx, "acme", "my-app")
+all, err := engine.Store().ListSubscriptions(ctx, "acme", "my-app", subscription.ListOpts{})
 ```
 
-When an invoice is generated, the billing period advances:
+`GetSubscription` doesn't check the tenant. See [Multi-tenancy](/docs/concepts/multi-tenancy).
 
-- **Monthly**: `CurrentPeriodEnd` moves forward 1 month
-- **Yearly**: `CurrentPeriodEnd` moves forward 1 year
-- **Usage-based**: Period defined by billing schedule (e.g., monthly)
+## Remote access
 
-## Trial periods
-
-Trials are tracked separately from billing periods:
-
-```go
-TrialStart: &time.Time{...} // Trial started
-TrialEnd:   &time.Time{...} // Trial ends (becomes active or canceled)
-```
-
-When `time.Now()` is before `TrialEnd`:
-- Status is `trialing`
-- No invoices are generated
-- Full plan entitlements are granted
-
-When trial expires:
-- Status transitions to `active` (if payment method on file) or `unpaid`
-- First invoice is generated
-
-## Cancellation
-
-Subscriptions can be canceled immediately or at period end:
-
-### Immediate cancellation
-
-```go
-subscription.Status = subscription.StatusCanceled
-subscription.CanceledAt = &now
-subscription.CancellationReason = "customer_request"
-```
-
-Entitlements are revoked immediately.
-
-### Cancel at period end
-
-```go
-subscription.CancelAtPeriodEnd = true
-```
-
-The subscription remains `active` until `CurrentPeriodEnd`, then transitions to `canceled`.
-
-## Plan changes (upgrades/downgrades)
-
-When a customer changes plans:
-
-### Immediate change
-
-```go
-subscription.PlanID = newPlan.ID
-subscription.CurrentPeriodStart = time.Now()
-subscription.CurrentPeriodEnd = time.Now().AddDate(0, 1, 0) // restart billing cycle
-```
-
-A prorated invoice is generated for the unused portion of the old plan.
-
-### At period end
-
-```go
-subscription.ScheduledPlanChange = &ScheduledChange{
-    NewPlanID:     newPlan.ID,
-    EffectiveDate: subscription.CurrentPeriodEnd,
-}
-```
-
-The plan change applies at the end of the current billing period.
-
-## Usage tracking
-
-Subscriptions accumulate usage events for metered features:
-
-```go
-// Usage is stored separately and aggregated during invoice generation
-meter.Record(ctx, &meter.Event{
-    SubscriptionID: subscription.ID,
-    Meter:          "api-calls",
-    Value:          1,
-    Timestamp:      time.Now(),
-})
-```
-
-See [Usage Metering](/docs/subsystems/metering) for details.
-
-## Complete example: Creating a subscription
-
-```go
-subscription := &subscription.Subscription{
-    ID:                 id.NewSubscriptionID(),
-    CustomerID:         customer.ID,
-    PlanID:             starterPlan.ID,
-    TenantID:           "acme-corp",
-    AppID:              "saas-platform",
-    Status:             subscription.StatusTrialing,
-    CurrentPeriodStart: time.Now(),
-    CurrentPeriodEnd:   time.Now().AddDate(0, 1, 0), // 1 month
-    TrialStart:         ptrTime(time.Now()),
-    TrialEnd:           ptrTime(time.Now().AddDate(0, 0, 14)), // 14 days
-}
-
-if err := store.CreateSubscription(ctx, subscription); err != nil {
-    log.Fatal(err)
-}
-```
-
-## Scheduled jobs
-
-Ledger runs background jobs to manage subscription lifecycle:
-
-| Job | Frequency | Action |
-|-----|-----------|--------|
-| Trial expiration | Hourly | Transition `trialing` → `active` or `unpaid` |
-| Period rollover | Daily | Advance billing periods, generate invoices |
-| Dunning management | Daily | Retry failed payments, transition `past_due` → `unpaid` |
-| Scheduled changes | Daily | Apply plan changes at `EffectiveDate` |
-
-## Store interface
-
-```go
-type Store interface {
-    CreateSubscription(ctx context.Context, sub *Subscription) error
-    GetSubscription(ctx context.Context, subID id.SubscriptionID) (*Subscription, error)
-    GetSubscriptionsByCustomer(ctx context.Context, customerID id.CustomerID) ([]*Subscription, error)
-    UpdateSubscription(ctx context.Context, sub *Subscription) error
-    CancelSubscription(ctx context.Context, subID id.SubscriptionID, reason string) error
-    ListSubscriptions(ctx context.Context, filter *ListFilter) ([]*Subscription, error)
-}
-```
-
-## API routes
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/ledger/subscriptions` | Create a subscription |
-| `GET` | `/ledger/subscriptions` | List subscriptions |
-| `GET` | `/ledger/subscriptions/{id}` | Get subscription by ID |
-| `PUT` | `/ledger/subscriptions/{id}` | Update subscription |
-| `POST` | `/ledger/subscriptions/{id}/cancel` | Cancel subscription |
-| `POST` | `/ledger/subscriptions/{id}/pause` | Pause subscription |
-| `POST` | `/ledger/subscriptions/{id}/resume` | Resume subscription |
-| `POST` | `/ledger/subscriptions/{id}/change-plan` | Upgrade/downgrade plan |
+Ledger has no HTTP routes for subscriptions. The Forge dashboard uses the contract intents `subscriptions.list`, `subscriptions.detail`, `subscriptions.usage`, `subscriptions.create`, `subscriptions.changePlan`, `subscriptions.pause`, `subscriptions.resume` and `subscriptions.cancel`. See [HTTP API](/docs/api-reference/http-api).

@@ -1,695 +1,357 @@
 ---
 title: Custom Plugin
-description: Write custom plugins to extend Ledger with lifecycle hooks.
+description: Hook into billing events, replace pricing, usage totals, tax or export formats, and use the two plugins that ship with Ledger.
 ---
 
-Ledger's plugin system lets you hook into every lifecycle event in the billing pipeline -- from plan creation to invoice payment. Plugins are non-blocking, timeout-protected, and dispatched in O(1) time via a type-cached registry.
+A plugin is any value with a `Name()` method. It opts into events by implementing hook interfaces from the `plugin` package, and into parts of the billing logic by implementing strategy interfaces. You register it with `ledger.WithPlugin`.
 
 ## Plugin basics
-
-Every plugin implements the `plugin.Plugin` interface, which has a single method:
 
 ```go
 package plugin
 
 type Plugin interface {
-    Name() string
+	Name() string
 }
 ```
 
-`Name()` returns a unique string identifying the plugin. The registry rejects duplicate names.
+`Name()` must be unique. Registering a second plugin with the same name does nothing: `WithPlugin` drops it without an error, so check your names.
 
-To add behaviour, implement one or more optional hook interfaces alongside `Plugin`. The plugin system uses Go interface assertion to discover which hooks your plugin supports -- you only pay for what you implement.
+The registry looks at each plugin once, at registration, and files it under every hook and strategy interface it implements. Implement only what you need.
 
-## Lifecycle hooks overview
+## Hooks
 
-Ledger defines 21 hook interfaces organized into 6 categories:
+Hook arguments are typed `interface{}` so the `plugin` package doesn't import the entity packages. The table lists what the engine actually passes, so you can type-assert.
 
-### System lifecycle
+### System
 
-| Interface | Method | When it fires |
-|-----------|--------|---------------|
-| `OnInit` | `OnInit(ctx, ledger)` | Engine starts (`engine.Start`) |
-| `OnShutdown` | `OnShutdown(ctx)` | Engine stops (`engine.Stop`) |
+| Interface | Method | Fires | Argument |
+|-----------|--------|-------|----------|
+| `OnInit` | `OnInit(ctx, l)` | In `Start`, after migration | `*ledger.Ledger` |
+| `OnShutdown` | `OnShutdown(ctx)` | In `Stop`, after the workers stop | |
 
-### Plan lifecycle
+### Plans and catalog features
 
-| Interface | Method | When it fires |
-|-----------|--------|---------------|
-| `OnPlanCreated` | `OnPlanCreated(ctx, plan)` | A new plan is created |
-| `OnPlanUpdated` | `OnPlanUpdated(ctx, oldPlan, newPlan)` | A plan is updated |
-| `OnPlanArchived` | `OnPlanArchived(ctx, planID)` | A plan is archived |
+| Interface | Method | Fires | Argument |
+|-----------|--------|-------|----------|
+| `OnPlanCreated` | `OnPlanCreated(ctx, plan)` | `CreatePlan`, and a plan import | `*plan.Plan` |
+| `OnPlanUpdated` | `OnPlanUpdated(ctx, oldPlan, newPlan)` | `UpdatePlan`, `ActivatePlan` | `*plan.Plan` twice |
+| `OnPlanArchived` | `OnPlanArchived(ctx, planID)` | `ArchivePlan` | `string` |
+| `OnFeatureCreated` | `OnFeatureCreated(ctx, f)` | `CreateFeature` | `*feature.Feature` |
+| `OnFeatureUpdated` | `OnFeatureUpdated(ctx, oldF, newF)` | `UpdateFeature` | `*feature.Feature` twice |
+| `OnFeatureArchived` | `OnFeatureArchived(ctx, featureID)` | `ArchiveFeature` | `string` |
+| `OnFeatureDeleted` | `OnFeatureDeleted(ctx, featureID)` | `DeleteFeature` | `string` |
 
-### Subscription lifecycle
+### Subscriptions
 
-| Interface | Method | When it fires |
-|-----------|--------|---------------|
-| `OnSubscriptionCreated` | `OnSubscriptionCreated(ctx, sub)` | A new subscription is created |
-| `OnSubscriptionChanged` | `OnSubscriptionChanged(ctx, sub, oldPlan, newPlan)` | Subscription changes plans (upgrade/downgrade) |
-| `OnSubscriptionCanceled` | `OnSubscriptionCanceled(ctx, sub)` | A subscription is canceled |
-| `OnSubscriptionExpired` | `OnSubscriptionExpired(ctx, sub)` | A subscription expires |
+| Interface | Method | Fires | Argument |
+|-----------|--------|-------|----------|
+| `OnSubscriptionCreated` | `OnSubscriptionCreated(ctx, sub)` | `CreateSubscription` | `*subscription.Subscription` |
+| `OnSubscriptionChanged` | `OnSubscriptionChanged(ctx, sub, oldPlan, newPlan)` | `ChangePlan` | subscription, then two `*plan.Plan` |
+| `OnSubscriptionCancelScheduled` | `OnSubscriptionCancelScheduled(ctx, sub)` | `CancelSubscription(..., false)` | `*subscription.Subscription` |
+| `OnSubscriptionCanceled` | `OnSubscriptionCanceled(ctx, sub)` | An immediate cancel, or the clock enacting a scheduled one | `*subscription.Subscription` |
+| `OnSubscriptionRenewed` | `OnSubscriptionRenewed(ctx, renewal)` | The clock moving a period forward | `*subscription.Renewal` |
+| `OnSubscriptionTrialEnded` | `OnSubscriptionTrialEnded(ctx, sub)` | The clock ending a trial | `*subscription.Subscription` |
+| `OnSubscriptionExpired` | `OnSubscriptionExpired(ctx, sub)` | Never. Declared, not fired. | |
 
-### Usage / metering
+Pause and resume fire no hook.
 
-| Interface | Method | When it fires |
-|-----------|--------|---------------|
-| `OnUsageIngested` | `OnUsageIngested(ctx, events)` | Usage events are ingested |
-| `OnUsageFlushed` | `OnUsageFlushed(ctx, count, elapsed)` | A batch is flushed to the store |
+### Usage and entitlements
 
-### Entitlements
+| Interface | Method | Fires | Argument |
+|-----------|--------|-------|----------|
+| `OnUsageFlushed` | `OnUsageFlushed(ctx, count, elapsed)` | After each meter batch is written | `int`, `time.Duration` |
+| `OnEntitlementChecked` | `OnEntitlementChecked(ctx, result)` | A metered or seat answer is computed (not a cache hit) | `*entitlement.Result` |
+| `OnQuotaExceeded` | `OnQuotaExceeded(ctx, tenantID, featureKey, used, limit)` | A computed answer is `"quota exceeded"` | |
+| `OnUsageIngested` | `OnUsageIngested(ctx, events)` | Never. Declared, not fired. | |
+| `OnSoftLimitReached` | `OnSoftLimitReached(ctx, tenantID, featureKey, used, limit)` | Never. Declared, not fired. | |
 
-| Interface | Method | When it fires |
-|-----------|--------|---------------|
-| `OnEntitlementChecked` | `OnEntitlementChecked(ctx, result)` | An entitlement check completes |
-| `OnQuotaExceeded` | `OnQuotaExceeded(ctx, tenantID, featureKey, used, limit)` | A hard limit is reached |
-| `OnSoftLimitReached` | `OnSoftLimitReached(ctx, tenantID, featureKey, used, limit)` | A soft limit is reached (overage) |
+### Invoices
 
-### Invoice lifecycle
+| Interface | Method | Fires | Argument |
+|-----------|--------|-------|----------|
+| `OnInvoiceGenerated` | `OnInvoiceGenerated(ctx, inv)` | `GenerateInvoice`, and an invoice import | `*invoice.Invoice` |
+| `OnInvoiceFinalized` | `OnInvoiceFinalized(ctx, inv)` | `FinalizeInvoice` | `*invoice.Invoice` |
+| `OnInvoicePaid` | `OnInvoicePaid(ctx, inv)` | `MarkInvoicePaid` | `*invoice.Invoice` |
+| `OnInvoiceVoided` | `OnInvoiceVoided(ctx, inv, reason)` | `MarkInvoiceVoided` | `*invoice.Invoice`, `string` |
+| `OnInvoicePastDue` | `OnInvoicePastDue(ctx, inv)` | The clock marking an invoice past due | `*invoice.Invoice` |
+| `OnInvoiceFailed` | `OnInvoiceFailed(ctx, inv, err)` | Never. Declared, not fired. | |
 
-| Interface | Method | When it fires |
-|-----------|--------|---------------|
-| `OnInvoiceGenerated` | `OnInvoiceGenerated(ctx, inv)` | An invoice is generated |
-| `OnInvoiceFinalized` | `OnInvoiceFinalized(ctx, inv)` | An invoice is finalized |
-| `OnInvoicePaid` | `OnInvoicePaid(ctx, inv)` | An invoice is paid |
-| `OnInvoiceFailed` | `OnInvoiceFailed(ctx, inv, err)` | Invoice payment fails |
-| `OnInvoiceVoided` | `OnInvoiceVoided(ctx, inv, reason)` | An invoice is voided |
+### Providers
 
-### Payment provider
+| Interface | Method | Fires |
+|-----------|--------|-------|
+| `OnProviderSync` | `OnProviderSync(ctx, provider, success, err)` | After each sync, and after a failed or successful import |
+| `OnWebhookReceived` | `OnWebhookReceived(ctx, provider, payload)` | In `HandleWebhook`, before the provider sees the payload |
 
-| Interface | Method | When it fires |
-|-----------|--------|---------------|
-| `OnProviderSync` | `OnProviderSync(ctx, provider, success, err)` | Provider sync completes |
-| `OnWebhookReceived` | `OnWebhookReceived(ctx, provider, payload)` | A webhook is received |
+## How hooks run
+
+- Synchronously. The call that fires a hook waits for each plugin in turn, so a slow hook slows `CreatePlan`, the meter flush or the lifecycle clock.
+- With a timeout. The registry stops waiting on a hook after five seconds, or when the caller's context is done, and moves on. The hook keeps running in its goroutine.
+- Without consequences for the caller. A hook's error or timeout is logged at warn level and never fails the operation, which has already been written by then.
+- Without panic recovery. Each hook runs in its own goroutine and nothing recovers a panic there, so a panicking hook takes the process down. Recover inside your hook if it can panic.
+- Lifecycle hooks (renewed, canceled by the clock, trial ended, past due) run on a context without the run's cancel or deadline, so a `Stop` during a deploy doesn't cut them off.
+
+If a hook does slow work, such as an HTTP call, hand it to a goroutine or a queue and return.
 
 ## Implementing hooks
-
-Create a struct that implements `plugin.Plugin` plus whichever hook interfaces you need:
 
 ```go
 package myplugin
 
 import (
-    "context"
-    "log/slog"
+	"context"
+	"log/slog"
 
-    "github.com/xraph/ledger/plugin"
+	"github.com/xraph/ledger/invoice"
+	"github.com/xraph/ledger/plugin"
 )
 
-// Compile-time interface checks
 var (
-    _ plugin.Plugin             = (*MyPlugin)(nil)
-    _ plugin.OnPlanCreated      = (*MyPlugin)(nil)
-    _ plugin.OnInvoiceGenerated = (*MyPlugin)(nil)
+	_ plugin.Plugin        = (*MyPlugin)(nil)
+	_ plugin.OnInvoicePaid = (*MyPlugin)(nil)
 )
 
 type MyPlugin struct {
-    logger *slog.Logger
+	logger *slog.Logger
 }
 
-func New(logger *slog.Logger) *MyPlugin {
-    return &MyPlugin{logger: logger}
-}
+func New(logger *slog.Logger) *MyPlugin { return &MyPlugin{logger: logger} }
 
 func (p *MyPlugin) Name() string { return "my-plugin" }
 
-func (p *MyPlugin) OnPlanCreated(ctx context.Context, plan interface{}) error {
-    p.logger.Info("plan created", "plan", plan)
-    return nil
-}
-
-func (p *MyPlugin) OnInvoiceGenerated(ctx context.Context, inv interface{}) error {
-    p.logger.Info("invoice generated", "invoice", inv)
-    return nil
-}
-```
-
-The `var _ plugin.OnPlanCreated = (*MyPlugin)(nil)` lines are compile-time checks. If you forget to implement a method, the compiler tells you.
-
-## Registering plugins
-
-Pass plugins to the engine with `ledger.WithPlugin()`:
-
-```go
-engine := ledger.New(store,
-    ledger.WithPlugin(myplugin.New(logger)),
-    ledger.WithPlugin(anotherPlugin),
-)
-```
-
-You can register as many plugins as you need. Each plugin is registered once; duplicate names are rejected.
-
-## Error handling
-
-Plugins are designed to never block the billing pipeline:
-
-- **Non-blocking execution**: Each hook call runs in a separate goroutine.
-- **5-second timeout**: If a plugin does not return within 5 seconds, the call is abandoned and a warning is logged.
-- **Error logging**: If a plugin returns an error, the registry logs it as a warning and continues. The billing operation (plan creation, invoice generation, etc.) is not affected.
-- **No panics**: If a plugin panics, the goroutine recovers and logs the panic. The engine continues operating.
-
-This means your plugin should handle its own errors gracefully. If you need to retry a failed notification, do so asynchronously within your plugin:
-
-```go
-func (p *SlackNotifier) OnInvoicePaid(ctx context.Context, inv interface{}) error {
-    // Fire and forget with retry
-    go func() {
-        for attempt := 0; attempt < 3; attempt++ {
-            if err := p.sendSlackMessage(inv); err == nil {
-                return
-            }
-            time.Sleep(time.Duration(attempt+1) * time.Second)
-        }
-        p.logger.Error("slack notification failed after 3 retries")
-    }()
-    return nil
+func (p *MyPlugin) OnInvoicePaid(ctx context.Context, v interface{}) error {
+	inv, ok := v.(*invoice.Invoice)
+	if !ok {
+		return nil
+	}
+	p.logger.InfoContext(ctx, "invoice paid", "invoice", inv.ID.String(), "total", inv.Total.String())
+	return nil
 }
 ```
 
-## Example: Slack notifier
-
-A plugin that sends Slack notifications when invoices are paid or when a tenant exceeds their quota:
-
-```go
-package slacknotifier
-
-import (
-    "bytes"
-    "context"
-    "encoding/json"
-    "fmt"
-    "log/slog"
-    "net/http"
-
-    "github.com/xraph/ledger/plugin"
-)
-
-var (
-    _ plugin.Plugin         = (*Notifier)(nil)
-    _ plugin.OnInvoicePaid  = (*Notifier)(nil)
-    _ plugin.OnQuotaExceeded = (*Notifier)(nil)
-)
-
-type Notifier struct {
-    webhookURL string
-    channel    string
-    logger     *slog.Logger
-}
-
-func New(webhookURL, channel string, logger *slog.Logger) *Notifier {
-    return &Notifier{
-        webhookURL: webhookURL,
-        channel:    channel,
-        logger:     logger,
-    }
-}
-
-func (n *Notifier) Name() string { return "slack-notifier" }
-
-func (n *Notifier) OnInvoicePaid(ctx context.Context, inv interface{}) error {
-    msg := fmt.Sprintf("Invoice paid: %v", inv)
-    return n.send(ctx, msg)
-}
-
-func (n *Notifier) OnQuotaExceeded(ctx context.Context, tenantID, featureKey string, used, limit int64) error {
-    msg := fmt.Sprintf("Quota exceeded: tenant=%s feature=%s used=%d limit=%d",
-        tenantID, featureKey, used, limit)
-    return n.send(ctx, msg)
-}
-
-func (n *Notifier) send(_ context.Context, text string) error {
-    payload := map[string]string{
-        "channel": n.channel,
-        "text":    text,
-    }
-    body, _ := json.Marshal(payload)
-
-    resp, err := http.Post(n.webhookURL, "application/json", bytes.NewReader(body))
-    if err != nil {
-        n.logger.Warn("slack send failed", "error", err)
-        return err
-    }
-    defer resp.Body.Close()
-
-    if resp.StatusCode != http.StatusOK {
-        return fmt.Errorf("slack: status %d", resp.StatusCode)
-    }
-    return nil
-}
-```
+The `var _ plugin.OnInvoicePaid = (*MyPlugin)(nil)` lines make the compiler check that the methods match.
 
 Register it:
 
 ```go
 engine := ledger.New(store,
-    ledger.WithPlugin(slacknotifier.New(
-        "https://hooks.slack.com/services/T00/B00/xxx",
-        "#billing-alerts",
-        logger,
-    )),
+	ledger.WithPlugin(myplugin.New(slog.Default())),
 )
 ```
 
-## Example: Custom metrics collector
-
-A plugin that tracks billing metrics using your own metrics library:
+## Example: quota alerts to Slack
 
 ```go
-package metrics
-
-import (
-    "context"
-    "time"
-
-    "github.com/xraph/ledger/plugin"
-)
-
-var (
-    _ plugin.Plugin                = (*Collector)(nil)
-    _ plugin.OnSubscriptionCreated = (*Collector)(nil)
-    _ plugin.OnSubscriptionCanceled = (*Collector)(nil)
-    _ plugin.OnUsageFlushed        = (*Collector)(nil)
-    _ plugin.OnInvoiceGenerated    = (*Collector)(nil)
-    _ plugin.OnQuotaExceeded       = (*Collector)(nil)
-)
-
-type Collector struct {
-    subsCreated  func()
-    subsCanceled func()
-    flushLatency func(float64)
-    invoices     func()
-    quotaBlocks  func()
+type SlackAlerts struct {
+	webhookURL string
+	client     *http.Client
 }
 
-func New(
-    subsCreated, subsCanceled func(),
-    flushLatency func(float64),
-    invoices, quotaBlocks func(),
-) *Collector {
-    return &Collector{
-        subsCreated:  subsCreated,
-        subsCanceled: subsCanceled,
-        flushLatency: flushLatency,
-        invoices:     invoices,
-        quotaBlocks:  quotaBlocks,
-    }
+func (s *SlackAlerts) Name() string { return "slack-alerts" }
+
+func (s *SlackAlerts) OnQuotaExceeded(_ context.Context, tenantID, featureKey string, used, limit int64) error {
+	text := fmt.Sprintf("%s hit its %s quota: %d of %d", tenantID, featureKey, used, limit)
+	go s.post(text) // don't hold up the quota check
+	return nil
 }
 
-func (c *Collector) Name() string { return "custom-metrics" }
-
-func (c *Collector) OnSubscriptionCreated(_ context.Context, _ interface{}) error {
-    c.subsCreated()
-    return nil
-}
-
-func (c *Collector) OnSubscriptionCanceled(_ context.Context, _ interface{}) error {
-    c.subsCanceled()
-    return nil
-}
-
-func (c *Collector) OnUsageFlushed(_ context.Context, _ int, elapsed time.Duration) error {
-    c.flushLatency(float64(elapsed.Milliseconds()))
-    return nil
-}
-
-func (c *Collector) OnInvoiceGenerated(_ context.Context, _ interface{}) error {
-    c.invoices()
-    return nil
-}
-
-func (c *Collector) OnQuotaExceeded(_ context.Context, _, _ string, _, _ int64) error {
-    c.quotaBlocks()
-    return nil
+func (s *SlackAlerts) post(text string) {
+	body, _ := json.Marshal(map[string]string{"text": text})
+	resp, err := s.client.Post(s.webhookURL, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	_ = resp.Body.Close()
 }
 ```
 
-## Example: Webhook emitter
+`OnQuotaExceeded` fires each time a "quota exceeded" answer is computed, not on cache hits, so you get at most one alert per tenant and feature per cache TTL.
 
-A plugin that emits HTTP webhooks for billing events to an external URL:
+## Example: billing on renewal
 
-```go
-package webhookemitter
-
-import (
-    "bytes"
-    "context"
-    "crypto/hmac"
-    "crypto/sha256"
-    "encoding/hex"
-    "encoding/json"
-    "fmt"
-    "log/slog"
-    "net/http"
-    "time"
-
-    "github.com/xraph/ledger/plugin"
-)
-
-var (
-    _ plugin.Plugin                 = (*Emitter)(nil)
-    _ plugin.OnSubscriptionCreated  = (*Emitter)(nil)
-    _ plugin.OnSubscriptionCanceled = (*Emitter)(nil)
-    _ plugin.OnInvoiceGenerated     = (*Emitter)(nil)
-    _ plugin.OnInvoicePaid          = (*Emitter)(nil)
-    _ plugin.OnQuotaExceeded        = (*Emitter)(nil)
-)
-
-type WebhookEvent struct {
-    Type      string    `json:"type"`
-    Timestamp time.Time `json:"timestamp"`
-    Data      any       `json:"data"`
-}
-
-type Emitter struct {
-    endpoint string
-    secret   string
-    client   *http.Client
-    logger   *slog.Logger
-}
-
-func New(endpoint, secret string, logger *slog.Logger) *Emitter {
-    return &Emitter{
-        endpoint: endpoint,
-        secret:   secret,
-        client:   &http.Client{Timeout: 10 * time.Second},
-        logger:   logger,
-    }
-}
-
-func (e *Emitter) Name() string { return "webhook-emitter" }
-
-func (e *Emitter) OnSubscriptionCreated(ctx context.Context, sub interface{}) error {
-    return e.emit(ctx, "subscription.created", sub)
-}
-
-func (e *Emitter) OnSubscriptionCanceled(ctx context.Context, sub interface{}) error {
-    return e.emit(ctx, "subscription.canceled", sub)
-}
-
-func (e *Emitter) OnInvoiceGenerated(ctx context.Context, inv interface{}) error {
-    return e.emit(ctx, "invoice.generated", inv)
-}
-
-func (e *Emitter) OnInvoicePaid(ctx context.Context, inv interface{}) error {
-    return e.emit(ctx, "invoice.paid", inv)
-}
-
-func (e *Emitter) OnQuotaExceeded(_ context.Context, tenantID, featureKey string, used, limit int64) error {
-    return e.emit(context.Background(), "quota.exceeded", map[string]any{
-        "tenant_id":   tenantID,
-        "feature_key": featureKey,
-        "used":        used,
-        "limit":       limit,
-    })
-}
-
-func (e *Emitter) emit(_ context.Context, eventType string, data any) error {
-    event := WebhookEvent{
-        Type:      eventType,
-        Timestamp: time.Now().UTC(),
-        Data:      data,
-    }
-
-    body, err := json.Marshal(event)
-    if err != nil {
-        return err
-    }
-
-    // Sign the payload with HMAC-SHA256
-    mac := hmac.New(sha256.New, []byte(e.secret))
-    mac.Write(body)
-    signature := hex.EncodeToString(mac.Sum(nil))
-
-    req, err := http.NewRequest("POST", e.endpoint, bytes.NewReader(body))
-    if err != nil {
-        return err
-    }
-    req.Header.Set("Content-Type", "application/json")
-    req.Header.Set("X-Ledger-Signature", signature)
-    req.Header.Set("X-Ledger-Event", eventType)
-
-    resp, err := e.client.Do(req)
-    if err != nil {
-        e.logger.Warn("webhook delivery failed", "event", eventType, "error", err)
-        return err
-    }
-    defer resp.Body.Close()
-
-    if resp.StatusCode >= 400 {
-        return fmt.Errorf("webhook: %s returned %d", e.endpoint, resp.StatusCode)
-    }
-    return nil
-}
-```
-
-Register it:
-
-```go
-engine := ledger.New(store,
-    ledger.WithPlugin(webhookemitter.New(
-        "https://api.example.com/webhooks/billing",
-        "whsec_your_secret_here",
-        logger,
-    )),
-)
-```
+[Billing cycles](/docs/subsystems/billing-cycles#billing-ended-periods) has a plugin that generates and finalizes an invoice for every period the lifecycle clock ends.
 
 ## Strategy plugins
 
-Beyond lifecycle hooks, Ledger defines strategy interfaces for customizing core billing logic. These are called synchronously during billing operations:
+Strategy plugins replace part of the billing calculation. They're called synchronously, without the hook timeout, and an error or a wrong result fails the operation.
 
 ### PricingStrategy
 
-Implement custom pricing calculation (e.g. usage-based, tiered, dynamic):
-
 ```go
 type PricingStrategy interface {
-    Plugin
-    StrategyName() string
-    Compute(tiers []interface{}, usage, included int64, currency string) interface{}
+	Plugin
+	StrategyName() string
+	Compute(tiers []interface{}, usage, included int64, currency string) interface{} // returns types.Money
 }
 ```
 
-```go
-type PercentageDiscount struct{}
+A plan feature names a strategy in its `Metadata` under `"pricing_strategy"`; failing that, the plan's own `Metadata` can name one for all its features. `GenerateInvoice` then calls `Compute` instead of the built-in tier models, for metered overage and for seats. It passes the feature's tiers sorted (as `plan.PriceTier` values), the total usage, the allowance (the feature's `Limit`, or 0 for seats) and the plan's currency, and only calls it when usage is above the allowance. The result must be a non-negative `types.Money` in that currency. An unregistered name logs a warning and falls back to the tiers.
 
-func (p *PercentageDiscount) Name() string         { return "percentage-discount" }
-func (p *PercentageDiscount) StrategyName() string  { return "percentage" }
-func (p *PercentageDiscount) Compute(tiers []interface{}, usage, included int64, currency string) interface{} {
-    // Custom pricing calculation
-    // Return a types.Money value
-    return types.USD(usage * 10) // example: $0.10 per unit
+```go
+type PerUnit struct{ cents int64 }
+
+func (p *PerUnit) Name() string         { return "per-unit-pricing" }
+func (p *PerUnit) StrategyName() string { return "per-unit" }
+func (p *PerUnit) Compute(_ []interface{}, usage, included int64, currency string) interface{} {
+	return types.Money{Amount: (usage - included) * p.cents, Currency: currency}
 }
 ```
 
 ### UsageAggregator
 
-Custom logic for aggregating raw usage events into a single number:
-
 ```go
 type UsageAggregator interface {
-    Plugin
-    AggregatorName() string
-    Aggregate(ctx context.Context, events []interface{}) (int64, error)
+	Plugin
+	AggregatorName() string
+	Aggregate(ctx context.Context, events []interface{}) (int64, error)
 }
 ```
 
-Useful for unique counting (e.g. unique active users), percentile-based metering, or weighted aggregation.
+A metered plan feature names an aggregator in its `Metadata` under `"aggregator"`. `GenerateInvoice` then passes it the period's events for that feature (each a `*meter.UsageEvent`) and bills the total it returns, instead of the sum. The subscription must have an app ID, and a negative total fails the invoice. Quota checks don't use aggregators: they always sum.
+
+```go
+type Peak struct{}
+
+func (Peak) Name() string           { return "peak-usage" }
+func (Peak) AggregatorName() string { return "max" }
+func (Peak) Aggregate(_ context.Context, events []interface{}) (int64, error) {
+	var peak int64
+	for _, e := range events {
+		if ev, ok := e.(*meter.UsageEvent); ok && ev.Quantity > peak {
+			peak = ev.Quantity
+		}
+	}
+	return peak, nil
+}
+```
 
 ### TaxCalculator
 
-Calculate tax amounts for invoices:
-
 ```go
 type TaxCalculator interface {
-    Plugin
-    CalculateTax(ctx context.Context, subtotal interface{}, tenantID string) (interface{}, error)
+	Plugin
+	CalculateTax(ctx context.Context, subtotal interface{}, tenantID string) (interface{}, error) // returns types.Money
 }
 ```
 
-```go
-type SimpleTax struct {
-    rate float64 // e.g. 0.08 for 8%
-}
+Every registered tax calculator is called, and their amounts are added up into one tax line. The amount passed in is a `types.Money`: the subtotal less discounts, never below zero. Return a non-negative `types.Money` in the same currency, or nil for no tax. Keep the arithmetic in integers:
 
-func (t *SimpleTax) Name() string { return "simple-tax" }
-func (t *SimpleTax) CalculateTax(_ context.Context, subtotal interface{}, _ string) (interface{}, error) {
-    money := subtotal.(types.Money)
-    taxCents := int64(float64(money.Amount) * t.rate)
-    return types.Money{Amount: taxCents, Currency: money.Currency}, nil
+```go
+type FlatRateTax struct{ basisPoints int64 } // 800 = 8%
+
+func (t *FlatRateTax) Name() string { return "flat-rate-tax" }
+func (t *FlatRateTax) CalculateTax(_ context.Context, v interface{}, _ string) (interface{}, error) {
+	net, ok := v.(types.Money)
+	if !ok {
+		return nil, fmt.Errorf("unexpected amount type %T", v)
+	}
+	return types.Money{Amount: net.Amount * t.basisPoints / 10000, Currency: net.Currency}, nil
 }
 ```
 
 ### InvoiceFormatter
 
-Render invoices in custom formats (PDF, HTML, CSV):
-
 ```go
 type InvoiceFormatter interface {
-    Plugin
-    Format() string
-    Render(ctx context.Context, inv interface{}, w interface{}) error
+	Plugin
+	Format() string                                                   // "pdf", "html", "csv"
+	Render(ctx context.Context, inv interface{}, w interface{}) error // inv is *invoice.Invoice, w is an io.Writer
 }
 ```
 
-The `Format()` method returns a format name (e.g. `"pdf"`, `"html"`). The registry indexes formatters by name so they can be looked up by format.
+Formatters are filed by `Format()`. `engine.ExportInvoice(ctx, invID, format)` renders through the matching one, and `engine.InvoiceFormats()` lists them. No formatter ships with Ledger.
 
 ### CouponValidator
 
-Custom coupon validation logic beyond the built-in checks:
-
 ```go
 type CouponValidator interface {
-    Plugin
-    ValidateCoupon(ctx context.Context, coupon interface{}, sub interface{}) error
+	Plugin
+	ValidateCoupon(ctx context.Context, coupon interface{}, sub interface{}) error
 }
 ```
 
-Return `nil` to approve the coupon, or an error to reject it.
+`ApplyCoupon` calls every validator after its own checks, with the `*coupon.Coupon` and the `*subscription.Subscription`. Returning an error refuses the coupon, wrapped in `ErrCouponInvalid`. Validators don't run again at invoice time.
 
-## Plugin registry internals
-
-The plugin registry uses **type-cached dispatch** for O(1) hook invocation:
-
-1. When you call `registry.Register(plugin)`, the registry checks each hook interface with Go type assertion (`plugin.(OnPlanCreated)`).
-2. Matching plugins are appended to typed slices (e.g. `registry.onPlanCreated`).
-3. When the engine emits an event (e.g. `EmitPlanCreated`), it iterates only the pre-filtered slice -- no reflection, no interface discovery at call time.
-
-Strategy plugins (PricingStrategy, UsageAggregator, InvoiceFormatter) are stored in maps keyed by their strategy/format name for direct lookup.
+### PaymentProviderPlugin
 
 ```go
-// Internals of the registry (simplified)
-type Registry struct {
-    plugins           []Plugin
-    onPlanCreated     []OnPlanCreated     // pre-filtered at registration
-    onInvoicePaid     []OnInvoicePaid     // pre-filtered at registration
-    pricingStrategies map[string]PricingStrategy  // keyed by StrategyName()
-    invoiceFormatters map[string]InvoiceFormatter // keyed by Format()
-    // ... etc
+type PaymentProviderPlugin interface {
+	Plugin
+	Provider() provider.Provider
 }
 ```
 
-Each hook call is wrapped in `callWithTimeout`:
-
-```go
-func (r *Registry) callWithTimeout(ctx context.Context, pluginName string, fn func() error) error {
-    done := make(chan error, 1)
-    go func() { done <- fn() }()
-
-    select {
-    case err := <-done:
-        return err
-    case <-time.After(5 * time.Second):
-        return fmt.Errorf("plugin timeout: %s", pluginName)
-    case <-ctx.Done():
-        return ctx.Err()
-    }
-}
-```
+See [Payment providers](/docs/subsystems/payments).
 
 ## Built-in plugins
 
-Ledger ships with two production-ready plugins:
-
 ### audithook
 
-The `audit_hook` package bridges Ledger lifecycle events to an audit trail backend. It implements 13 hook interfaces covering plans, subscriptions, invoices, entitlements, and quota events.
+`github.com/xraph/ledger/audit_hook` (package `audithook`) turns billing events into audit records and hands each to a `Recorder` you provide. The interface matches Chronicle's emitter, so a small adapter over [Chronicle](https://github.com/xraph/chronicle) works, as does a plain function:
 
 ```go
-import audithook "github.com/xraph/ledger/audit_hook"
-
-recorder := audithook.RecorderFunc(func(ctx context.Context, event *audithook.AuditEvent) error {
-    // Forward to your audit trail (Chronicle, database, file, etc.)
-    log.Printf("[AUDIT] %s %s %s", event.Action, event.Resource, event.Outcome)
-    return nil
+recorder := audithook.RecorderFunc(func(ctx context.Context, ev *audithook.AuditEvent) error {
+	log.Printf("audit %s %s %s", ev.Action, ev.ResourceID, ev.Outcome)
+	return nil
 })
 
-auditPlugin := audithook.New(recorder,
-    audithook.WithLogger(logger),
-    audithook.WithEnabledActions(             // optional: only audit specific actions
-        audithook.ActionInvoicePaid,
-        audithook.ActionQuotaExceeded,
-        audithook.ActionSubscriptionCanceled,
-    ),
-)
-
-engine := ledger.New(store, ledger.WithPlugin(auditPlugin))
+engine := ledger.New(store, ledger.WithPlugin(audithook.New(recorder,
+	audithook.WithEnabledActions(audithook.ActionInvoicePaid, audithook.ActionQuotaExceeded),
+)))
 ```
 
-The audit hook supports filtering by action. Use `WithEnabledActions` to audit only specific events, or `WithDisabledActions` to exclude noisy ones like `entitlement.checked`.
+`WithEnabledActions` records only the actions you list, and `WithDisabledActions` records everything but those. `WithLogger` takes a go-utils `log.Logger`.
 
-Available audit actions:
+It records these actions:
 
-| Constant | Value |
-|----------|-------|
-| `ActionPlanCreated` | `plan.created` |
-| `ActionPlanUpdated` | `plan.updated` |
-| `ActionPlanArchived` | `plan.archived` |
-| `ActionSubscriptionCreated` | `subscription.created` |
-| `ActionSubscriptionUpgraded` | `subscription.upgraded` |
-| `ActionSubscriptionDowngraded` | `subscription.downgraded` |
-| `ActionSubscriptionCanceled` | `subscription.canceled` |
-| `ActionSubscriptionExpired` | `subscription.expired` |
-| `ActionUsageIngested` | `usage.ingested` |
-| `ActionUsageFlushed` | `usage.flushed` |
-| `ActionEntitlementChecked` | `entitlement.checked` |
-| `ActionEntitlementDenied` | `entitlement.denied` |
-| `ActionQuotaExceeded` | `quota.exceeded` |
-| `ActionSoftLimitReached` | `soft_limit.reached` |
-| `ActionInvoiceGenerated` | `invoice.generated` |
-| `ActionInvoiceFinalized` | `invoice.finalized` |
-| `ActionInvoicePaid` | `invoice.paid` |
-| `ActionInvoiceFailed` | `invoice.failed` |
-| `ActionInvoiceVoided` | `invoice.voided` |
-| `ActionProviderSync` | `provider.sync` |
-| `ActionWebhookReceived` | `webhook.received` |
-| `ActionWebhookProcessed` | `webhook.processed` |
+| Action | From |
+|--------|------|
+| `plan.created`, `plan.updated`, `plan.archived` | The plan hooks |
+| `subscription.created` | `OnSubscriptionCreated` |
+| `subscription.upgraded` | `OnSubscriptionChanged`, for every plan change: it doesn't compare the plans |
+| `subscription.canceled`, `subscription.cancel_scheduled` | The cancel hooks |
+| `subscription.renewed`, `subscription.trial_ended` | The lifecycle hooks |
+| `invoice.generated`, `invoice.finalized`, `invoice.paid`, `invoice.voided`, `invoice.past_due` | The invoice hooks |
+| `quota.exceeded` | `OnQuotaExceeded` |
+
+The package declares more action constants (`subscription.downgraded`, `subscription.expired`, `usage.ingested`, `usage.flushed`, `entitlement.checked`, `entitlement.denied`, `soft_limit.reached`, `invoice.failed`, `provider.sync`, `webhook.received`, `webhook.processed`), but nothing records them today.
 
 ### observability
 
-The `observability` package provides a metrics extension that tracks counters and histograms for all lifecycle events. It implements 16 hook interfaces.
-
-```go
-import "github.com/xraph/ledger/observability"
-
-metricsPlugin := observability.NewMetricsExtension(metricsFactory)
-
-engine := ledger.New(store, ledger.WithPlugin(metricsPlugin))
-```
-
-The `MetricFactory` interface is simple:
+`github.com/xraph/ledger/observability` counts billing events through a factory you provide:
 
 ```go
 type MetricFactory interface {
-    Counter(name string) Counter
-    Histogram(name string) Histogram
+	Counter(name string) Counter     // Counter: Inc(), Add(float64)
+	Histogram(name string) Histogram // Histogram: Observe(float64)
 }
+
+engine := ledger.New(store, ledger.WithPlugin(observability.NewMetricsExtension(factory)))
 ```
 
-Metrics emitted:
+These metrics move:
 
-| Metric | Type | Description |
-|--------|------|-------------|
-| `ledger.plan.created` | Counter | Plans created |
-| `ledger.plan.updated` | Counter | Plans updated |
-| `ledger.plan.archived` | Counter | Plans archived |
-| `ledger.subscription.created` | Counter | Subscriptions created |
-| `ledger.subscription.upgraded` | Counter | Subscription upgrades |
-| `ledger.subscription.downgraded` | Counter | Subscription downgrades |
-| `ledger.subscription.canceled` | Counter | Subscriptions canceled |
-| `ledger.subscription.expired` | Counter | Subscriptions expired |
-| `ledger.usage.events.ingested` | Counter | Total usage events ingested |
-| `ledger.usage.batch.size` | Histogram | Batch sizes per flush |
-| `ledger.usage.flush.latency_ms` | Histogram | Flush latency in milliseconds |
-| `ledger.entitlement.checks` | Counter | Entitlement checks performed |
-| `ledger.entitlement.denied` | Counter | Entitlement checks denied |
-| `ledger.invoice.generated` | Counter | Invoices generated |
-| `ledger.invoice.finalized` | Counter | Invoices finalized |
-| `ledger.invoice.paid` | Counter | Invoices paid |
-| `ledger.provider.sync.success` | Counter | Successful provider syncs |
-| `ledger.provider.sync.failure` | Counter | Failed provider syncs |
+| Metric | Type | Counts |
+|--------|------|--------|
+| `ledger.plan.created`, `ledger.plan.updated`, `ledger.plan.archived` | counter | Plan hooks |
+| `ledger.subscription.created` | counter | New subscriptions |
+| `ledger.subscription.upgraded` | counter | Every plan change, whichever direction |
+| `ledger.subscription.canceled` | counter | Cancels that took effect |
+| `ledger.subscription.cancel_scheduled` | counter | Scheduled cancels |
+| `ledger.subscription.renewed` | counter | Period moves by the clock |
+| `ledger.subscription.trial_ended` | counter | Trials the clock ended |
+| `ledger.usage.flush.latency_ms` | histogram | Meter batch write time |
+| `ledger.entitlement.checks` | counter | Computed metered and seat answers |
+| `ledger.entitlement.denied` | counter | "quota exceeded" answers |
+| `ledger.invoice.generated`, `ledger.invoice.finalized`, `ledger.invoice.paid` | counter | Invoice hooks |
+| `ledger.invoice.past_due` | counter | Invoices the clock marked past due |
+| `ledger.provider.sync.success`, `ledger.provider.sync.failure` | counter | Provider syncs and imports |
+
+It also creates `ledger.subscription.downgraded`, `ledger.subscription.expired`, `ledger.usage.events.ingested`, `ledger.usage.batch.size`, `ledger.entitlement.cache.hits`, `ledger.entitlement.cache.misses`, `ledger.entitlement.latency_ms`, `ledger.invoice.voided`, `ledger.invoice.total_amount`, `ledger.webhook.received`, `ledger.webhook.processed`, `ledger.store.errors` and `ledger.plugin.errors`, which stay at zero: no hook it implements updates them, or the hook that would never fires.
 
 ## Next steps
 
-- [End-to-End Billing Example](/docs/guides/full-example) -- see plugins in action in the full billing pipeline.
-- [Custom Store](/docs/guides/custom-store) -- implement a production storage backend.
-- [Forge Extension](/docs/guides/forge-extension) -- mount Ledger into a Forge application.
+- [End-to-end example](/docs/guides/full-example): the whole pipeline in one program.
+- [Custom store](/docs/guides/custom-store): implement `store.Store`.
+- [Forge extension](/docs/guides/forge-extension): register plugins through the extension.

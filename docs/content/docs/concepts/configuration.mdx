@@ -1,342 +1,86 @@
 ---
 title: Configuration
-description: Configuring Ledger for production deployment and development environments.
+description: The engine's functional options, and the YAML keys the Forge extension reads.
 ---
 
-## Overview
+Ledger has no config file, environment variables or config package of its own. You configure the engine with functional options passed to `ledger.New`. If you run it through the Forge extension, the extension reads a few YAML keys and turns them into those same options.
 
-Ledger is configured through environment variables and a structured configuration system. The configuration controls database connections, payment provider integrations, API settings, and operational parameters.
-
-## Configuration structure
+## Engine options
 
 ```go
-type Config struct {
-    // Database configuration
-    Database DatabaseConfig
-
-    // HTTP server configuration
-    Server ServerConfig
-
-    // Payment provider configuration
-    Payments PaymentConfig
-
-    // Metering configuration
-    Metering MeteringConfig
-
-    // Feature flags
-    Features FeatureConfig
-}
+engine := ledger.New(store,
+	ledger.WithLogger(logger),                      // a go-utils log.Logger
+	ledger.WithMeterConfig(100, 5*time.Second),     // batch size, flush interval
+	ledger.WithEntitlementCacheTTL(30*time.Second),
+	ledger.WithLifecycleInterval(time.Minute),
+	ledger.WithPlugin(myPlugin),
+)
 ```
 
-## Database configuration
+| Option | Default | What it does |
+|--------|---------|--------------|
+| `WithLogger(log.Logger)` | a no-op logger | Sets the logger for the engine and the plugin registry. It takes a `github.com/xraph/go-utils/log` `Logger`, not a `*slog.Logger`. |
+| `WithPlugin(plugin.Plugin)` | none | Registers a plugin. A second plugin with the same `Name()` is dropped without an error. |
+| `WithMeterConfig(batchSize int, flushInterval time.Duration)` | `100`, `5s` | The flush worker writes a batch once it holds `batchSize` events, or every `flushInterval`, whichever comes first. Keep both positive: `Start` panics on a zero or negative interval. |
+| `WithEntitlementCacheTTL(time.Duration)` | `30s` | How long a quota answer stays in the store's entitlement cache. `0` makes every entry expire at once. |
+| `WithLifecycleInterval(time.Duration)` | `1m` | How often the background lifecycle clock calls `Advance`. Zero or less turns the clock off. |
+| `WithClock(func() time.Time)` | `time.Now` | Where the engine reads the time for lifecycle runs, new subscription periods and trials, invoice periods, coupon validity and due dates. Tests use it. A nil clock is ignored. |
+| `WithoutMigrate()` | migrate on | `Start` skips `store.Migrate` and only starts the workers. Use it when you migrate the schema separately. |
 
-```go
-type DatabaseConfig struct {
-    // PostgreSQL connection string
-    URL string // required
+A few things aren't configurable. The meter buffer holds 10,000 events, and `Meter` returns `ledger.ErrMeterBufferFull` once it's full. `FinalizeInvoice` always sets a due date 30 days out. Each plugin hook gets 5 seconds before the registry stops waiting on it.
 
-    // Connection pool settings
-    MaxOpenConns    int           // default: 25
-    MaxIdleConns    int           // default: 5
-    ConnMaxLifetime time.Duration // default: 5m
-    ConnMaxIdleTime time.Duration // default: 5m
+## Forge extension config
 
-    // Migration settings
-    AutoMigrate bool // default: true in dev, false in prod
-}
+The [Forge extension](/docs/guides/forge-extension) reads YAML under `extensions.ledger`, and falls back to a top-level `ledger` key:
+
+```yaml
+extensions:
+  ledger:
+    grove_database: ""          # named grove.DB in the container; empty uses the default one
+    disable_migrate: false
+    meter_batch_size: 100
+    meter_flush_interval: 5s
+    entitlement_cache_ttl: 30s
+    lifecycle_interval: 1m
+    disable_lifecycle: false
+    app_id: ""                  # scopes the dashboard contributor to one app
+    require_app_claim: false
 ```
 
-### Environment variables
-
-```bash
-# Database
-DATABASE_URL=postgres://user:pass@localhost:5432/ledger?sslmode=disable
-DATABASE_MAX_OPEN_CONNS=25
-DATABASE_MAX_IDLE_CONNS=5
-DATABASE_AUTO_MIGRATE=true
-```
-
-## Server configuration
-
-```go
-type ServerConfig struct {
-    // HTTP server settings
-    Host string // default: "0.0.0.0"
-    Port int    // default: 8080
-
-    // Request limits
-    MaxRequestSize  int64         // default: 10MB
-    ReadTimeout     time.Duration // default: 30s
-    WriteTimeout    time.Duration // default: 30s
-    IdleTimeout     time.Duration // default: 120s
-
-    // CORS settings
-    AllowedOrigins []string
-    AllowedMethods []string
-    AllowedHeaders []string
-
-    // Rate limiting
-    RateLimit int // requests per minute, default: 1000
-}
-```
-
-### Environment variables
-
-```bash
-# Server
-SERVER_HOST=0.0.0.0
-SERVER_PORT=8080
-SERVER_MAX_REQUEST_SIZE=10485760
-SERVER_READ_TIMEOUT=30s
-SERVER_WRITE_TIMEOUT=30s
-
-# CORS
-CORS_ALLOWED_ORIGINS=https://app.example.com,https://dashboard.example.com
-CORS_ALLOWED_METHODS=GET,POST,PUT,DELETE,PATCH
-CORS_ALLOWED_HEADERS=Content-Type,Authorization
-
-# Rate limiting
-RATE_LIMIT_PER_MINUTE=1000
-```
-
-## Payment provider configuration
-
-Ledger supports multiple payment providers (Stripe, Paddle, etc.).
-
-```go
-type PaymentConfig struct {
-    // Active provider: "stripe", "paddle", or "mock"
-    Provider string // required
-
-    // Stripe configuration
-    Stripe StripeConfig
-
-    // Paddle configuration
-    Paddle PaddleConfig
-
-    // Webhook configuration
-    WebhookSecret string // required for production
-}
-
-type StripeConfig struct {
-    SecretKey      string // required
-    PublishableKey string // optional, for client-side
-    WebhookSecret  string // required for webhooks
-
-    // API settings
-    APIVersion string // default: latest
-    Timeout    time.Duration // default: 30s
-}
-```
-
-### Environment variables
-
-```bash
-# Stripe
-PAYMENT_PROVIDER=stripe
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_PUBLISHABLE_KEY=pk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-STRIPE_API_VERSION=2024-11-20.acacia
-
-# Paddle (alternative)
-PAYMENT_PROVIDER=paddle
-PADDLE_VENDOR_ID=12345
-PADDLE_API_KEY=...
-PADDLE_WEBHOOK_SECRET=...
-```
-
-## Metering configuration
-
-Controls usage event ingestion and processing.
-
-```go
-type MeteringConfig struct {
-    // Buffer settings for high-throughput ingestion
-    BufferSize     int           // events buffered before flush, default: 1000
-    FlushInterval  time.Duration // max time before flush, default: 5s
-    MaxWorkers     int           // concurrent flush workers, default: 4
-
-    // Event validation
-    ValidateSchema bool // default: true
-    MaxEventSize   int  // bytes, default: 64KB
-
-    // Aggregation settings
-    AggregateInterval time.Duration // default: 1h
-    RetentionPeriod   time.Duration // raw events, default: 90d
-}
-```
-
-### Environment variables
-
-```bash
-# Metering
-METERING_BUFFER_SIZE=1000
-METERING_FLUSH_INTERVAL=5s
-METERING_MAX_WORKERS=4
-METERING_VALIDATE_SCHEMA=true
-METERING_MAX_EVENT_SIZE=65536
-METERING_AGGREGATE_INTERVAL=1h
-METERING_RETENTION_PERIOD=2160h # 90 days
-```
-
-## Feature flags
-
-```go
-type FeatureConfig struct {
-    // Enable experimental features
-    EnableTrials       bool // default: true
-    EnableMeteredBilling bool // default: true
-    EnableInvoicing    bool // default: true
-    EnableWebhooks     bool // default: true
-
-    // Multi-tenancy
-    EnableTenantIsolation bool // default: true
-    MaxTenantsPerOrg      int  // default: unlimited (0)
-
-    // Caching
-    EnableEntitlementCache bool          // default: true
-    CacheTTL               time.Duration // default: 1m
-}
-```
-
-### Environment variables
-
-```bash
-# Features
-ENABLE_TRIALS=true
-ENABLE_METERED_BILLING=true
-ENABLE_INVOICING=true
-ENABLE_WEBHOOKS=true
-ENABLE_TENANT_ISOLATION=true
-ENABLE_ENTITLEMENT_CACHE=true
-CACHE_TTL=1m
-```
-
-## Complete example
-
-### Development configuration
-
-```bash
-# .env.development
-DATABASE_URL=postgres://ledger:ledger@localhost:5432/ledger_dev?sslmode=disable
-DATABASE_AUTO_MIGRATE=true
-
-SERVER_HOST=localhost
-SERVER_PORT=8080
-
-PAYMENT_PROVIDER=mock
-ENABLE_WEBHOOKS=false
-
-METERING_BUFFER_SIZE=100
-METERING_FLUSH_INTERVAL=1s
-```
-
-### Production configuration
-
-```bash
-# .env.production
-DATABASE_URL=postgres://ledger:securepass@db.example.com:5432/ledger?sslmode=require
-DATABASE_MAX_OPEN_CONNS=50
-DATABASE_MAX_IDLE_CONNS=10
-DATABASE_AUTO_MIGRATE=false
-
-SERVER_HOST=0.0.0.0
-SERVER_PORT=443
-SERVER_READ_TIMEOUT=60s
-SERVER_WRITE_TIMEOUT=60s
-
-CORS_ALLOWED_ORIGINS=https://app.example.com
-RATE_LIMIT_PER_MINUTE=5000
-
-PAYMENT_PROVIDER=stripe
-STRIPE_SECRET_KEY=sk_live_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-
-METERING_BUFFER_SIZE=5000
-METERING_FLUSH_INTERVAL=10s
-METERING_MAX_WORKERS=8
-
-ENABLE_ENTITLEMENT_CACHE=true
-CACHE_TTL=5m
-```
-
-## Loading configuration
-
-### From environment
-
-```go
-import "github.com/xraph/ledger/config"
-
-func main() {
-    cfg, err := config.LoadFromEnv()
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    // Use configuration
-    app, err := ledger.New(cfg)
-    if err != nil {
-        log.Fatal(err)
-    }
-}
-```
-
-### From file
-
-```go
-import "github.com/xraph/ledger/config"
-
-func main() {
-    cfg, err := config.LoadFromFile("config.yaml")
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    app, err := ledger.New(cfg)
-    if err != nil {
-        log.Fatal(err)
-    }
-}
-```
-
-### Programmatic
-
-```go
-cfg := &config.Config{
-    Database: config.DatabaseConfig{
-        URL: "postgres://localhost:5432/ledger",
-    },
-    Server: config.ServerConfig{
-        Port: 8080,
-    },
-    Payments: config.PaymentConfig{
-        Provider: "stripe",
-        Stripe: config.StripeConfig{
-            SecretKey: os.Getenv("STRIPE_SECRET_KEY"),
-        },
-    },
-}
-
-app, err := ledger.New(cfg)
-```
-
-## Validation
-
-Configuration is validated on load. Common validation rules:
-
-- `DATABASE_URL` must be a valid PostgreSQL connection string
-- `PAYMENT_PROVIDER` must be one of: `stripe`, `paddle`, `mock`
-- Payment provider credentials must be present for the selected provider
-- Port numbers must be in valid range (1-65535)
-- Timeouts and intervals must be positive durations
-- Buffer sizes and worker counts must be positive integers
-
-## Security best practices
-
-1. **Never commit secrets** — Use environment variables or secret management
-2. **Rotate credentials** — Regular rotation of API keys and database passwords
-3. **Use SSL/TLS** — Enable `sslmode=require` for database in production
-4. **Validate webhooks** — Always configure webhook secrets for payment providers
-5. **Rate limiting** — Enable and tune rate limits for public APIs
-6. **Least privilege** — Database user should have minimal required permissions
+| YAML key | Type | Default | Option | What it does |
+|----------|------|---------|--------|--------------|
+| `grove_database` | string | `""` | `WithGroveDatabase(name)` | Resolves the `*grove.DB` registered under this name and builds the matching store. See [store resolution](/docs/guides/forge-extension#store-resolution). |
+| `disable_migrate` | bool | `false` | `WithDisableMigrate()` | Passes `ledger.WithoutMigrate()` to the engine. |
+| `meter_batch_size` | int | `100` | `WithMeterBatchSize(n)` | The batch size half of `WithMeterConfig`. |
+| `meter_flush_interval` | duration | `5s` | `WithMeterFlushInterval(d)` | The interval half of `WithMeterConfig`. |
+| `entitlement_cache_ttl` | duration | `30s` | `WithEntitlementCacheTTL(d)` | Passed to `ledger.WithEntitlementCacheTTL`. |
+| `lifecycle_interval` | duration | `1m` | none | Passed to `ledger.WithLifecycleInterval`. Zero or a negative value means the default, not off. |
+| `disable_lifecycle` | bool | `false` | `WithDisableLifecycle()` | Turns the lifecycle clock off, for a deployment that calls `Advance` from its own scheduler. |
+| `app_id` | string | `""` | `WithAppID(id)` | The app the dashboard contributor serves when the caller's principal carries no `app_id` claim. |
+| `require_app_claim` | bool | `false` | none | Makes the dashboard contributor refuse a request whose principal has no `app_id` claim. Turn it on in a multi-app deployment. |
+| `base_path` | string | `""` | `WithBasePath(path)` | Does nothing. Ledger registers no HTTP routes, so there is no prefix to apply. |
+| `disable_routes` | bool | `false` | `WithDisableRoutes()` | Does nothing, for the same reason. |
+
+Two keys have no matching extension option. To set them in code, use `WithConfig(extension.Config{...})`, or pass the engine option straight through with `WithLedgerOption(ledger.WithLifecycleInterval(d))`.
+
+### How YAML and options merge
+
+When the extension finds YAML, it merges it with whatever you set in code:
+
+1. Strings, numbers and durations from YAML win. A programmatic value fills a key YAML leaves empty or zero.
+2. A boolean set to `true` in code wins over YAML. YAML can't turn a programmatic `true` back off.
+3. Anything still zero gets the default from `extension.DefaultConfig()`.
+
+When no YAML is found, the programmatic config is used with the same defaults. `WithRequireConfig(true)` makes `Register` fail instead when neither `extensions.ledger` nor `ledger` exists.
+
+`WithConfig(cfg)` replaces the whole programmatic config, so put it before any `WithXxx` option you want to keep.
+
+### Options that only exist in code
+
+| Option | What it does |
+|--------|--------------|
+| `WithStore(store.Store)` | Uses this store and skips Grove resolution. |
+| `WithPlugin(plugin.Plugin)` | Registers a Ledger plugin. |
+| `WithLedgerOption(ledger.Option)` | Passes any engine option through. These are applied after the config-derived ones, so they win. |
+| `WithConfig(extension.Config)` | Sets the whole config struct. |
+| `WithRequireConfig(bool)` | Fails `Register` when no YAML config exists. |

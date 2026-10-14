@@ -8,7 +8,6 @@
     "entitlements",
     "invoicing",
     "payments",
-    "customers",
     "billing-cycles",
     "coupons"
   ]
