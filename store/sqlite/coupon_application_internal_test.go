@@ -23,6 +23,7 @@ import (
 // ":memory:" would hand each one an independent, empty database.
 func newInternalTestStore(t *testing.T) *Store {
 	t.Helper()
+
 	ctx := context.Background()
 
 	dbPath := filepath.Join(t.TempDir(), "internal.db")
@@ -35,6 +36,7 @@ func newInternalTestStore(t *testing.T) *Store {
 	if err := sdb.Open(ctx, dsn); err != nil {
 		t.Fatalf("open sqlite driver: %v", err)
 	}
+
 	t.Cleanup(func() { _ = sdb.Close() })
 
 	db, err := grove.Open(sdb)
@@ -46,6 +48,7 @@ func newInternalTestStore(t *testing.T) *Store {
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+
 	return s
 }
 
@@ -86,10 +89,12 @@ func TestIsUniqueViolationMapsRawDuplicateInsertError(t *testing.T) {
 		SubscriptionID: subID.String(),
 		AppliedAt:      now(),
 	}
+
 	_, err := s.sdb.NewInsert(dup).Exec(ctx)
 	if err == nil {
 		t.Fatal("direct duplicate insert: got nil error, want a UNIQUE constraint violation")
 	}
+
 	if !isUniqueViolation(err) {
 		t.Fatalf("isUniqueViolation(%v) = false, want true (raw error: %#v)", err, err)
 	}
@@ -104,14 +109,19 @@ func TestIsUniqueViolationRejectsUnrelatedErrors(t *testing.T) {
 	s := newInternalTestStore(t)
 
 	existing := new(couponApplicationModel)
+
 	err := s.sdb.NewSelect(existing).
 		Where("coupon_id = ?", "does-not-exist").
 		Scan(ctx)
 	if err == nil {
 		t.Fatal("Select on an empty table: got nil error, want sql.ErrNoRows")
 	}
+
 	if isUniqueViolation(err) {
-		t.Fatalf("isUniqueViolation(%v) = true, want false: this is a no-rows error, not a constraint violation", err)
+		t.Fatalf(
+			"isUniqueViolation(%v) = true, want false: this is a no-rows error, not a constraint violation",
+			err,
+		)
 	}
 }
 
@@ -157,9 +167,15 @@ func TestListAppliedCouponsPropagatesNonNotFoundErrors(t *testing.T) {
 
 	applied, err := s.ListAppliedCoupons(ctx, subID)
 	if err == nil {
-		t.Fatalf("ListAppliedCoupons after dropping ledger_coupons: got nil error and %d row(s), want a non-nil error", len(applied))
+		t.Fatalf(
+			"ListAppliedCoupons after dropping ledger_coupons: got nil error and %d row(s), want a non-nil error",
+			len(applied),
+		)
 	}
+
 	if errors.Is(err, ledger.ErrCouponNotFound) {
-		t.Fatalf("ListAppliedCoupons after dropping ledger_coupons: got ErrCouponNotFound, want some other error - the table is gone, which is not the same thing as the coupon not existing")
+		t.Fatalf(
+			"ListAppliedCoupons after dropping ledger_coupons: got ErrCouponNotFound, want some other error - the table is gone, which is not the same thing as the coupon not existing",
+		)
 	}
 }

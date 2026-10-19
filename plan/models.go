@@ -81,8 +81,11 @@ type PriceTier struct {
 	Type       TierType    `json:"type"`
 	UpTo       int64       `json:"up_to"`
 	UnitAmount types.Money `json:"unit_amount"`
-	FlatAmount types.Money `json:"flat_amount"`
-	Priority   int         `json:"priority"`
+	// UnitQuantity is the positive quantity bought by UnitAmount; zero means
+	// one for existing whole-unit prices. USD UnitAmount is in micros.
+	UnitQuantity int64       `json:"unit_quantity,omitempty"`
+	FlatAmount   types.Money `json:"flat_amount"`
+	Priority     int         `json:"priority"`
 }
 
 func (p *Plan) FindFeature(key string) *Feature {
@@ -91,6 +94,7 @@ func (p *Plan) FindFeature(key string) *Feature {
 			return &p.Features[i]
 		}
 	}
+
 	return nil
 }
 
@@ -99,14 +103,18 @@ func (p *Plan) Allows(featureKey string, currentUsage int64) bool {
 	if f == nil {
 		return false
 	}
+
 	if f.Type == FeatureBoolean {
 		return f.Limit > 0
 	}
+
 	if f.Limit == -1 {
 		return true
 	}
+
 	if currentUsage < f.Limit {
 		return true
 	}
+
 	return f.SoftLimit
 }

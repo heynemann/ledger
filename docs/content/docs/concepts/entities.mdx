@@ -65,6 +65,7 @@ type PriceTier struct {
 	Type       TierType    // graduated, volume, flat
 	UpTo       int64       // total usage this tier reaches; 0 or -1 is open-ended
 	UnitAmount types.Money // graduated and volume
+	UnitQuantity int64    // positive per-unit denominator; 0 means 1
 	FlatAmount types.Money // flat
 	Priority   int         // breaks ties between tiers with the same UpTo
 }
@@ -261,12 +262,12 @@ There's no customer entity. The tenant ID on a subscription is the customer, and
 ```go
 // package types
 type Money struct {
-	Amount   int64  // smallest currency unit: cents, pence, yen
+	Amount   int64  // USD micros; other currencies' smallest units
 	Currency string // lowercase ISO 4217: "usd", "eur", "gbp"
 }
 ```
 
-Constructors: `types.USD`, `EUR`, `GBP`, `JPY`, `CAD`, `AUD` and `Zero(currency)`. The root package re-exports them as `ledger.USD` and so on. `Add`, `Subtract`, `Min`, `Max`, `LessThan` and `GreaterThan` panic when the currencies differ; the `Checked*` variants return an error instead and also catch `int64` overflow. `String()` gives `"$49.99"`, `FormatMajor()` gives `"49.99"`, and JSON adds a `display` field next to `amount` and `currency`.
+Constructors: `types.USD`, `EUR`, `GBP`, `JPY`, `CAD`, `AUD` and `Zero(currency)`. The root package re-exports them as `ledger.USD` and so on. This fork's `USD` argument is micros, not upstream cents; old amounts require explicit checked conversion by 10,000. `Add`, `Subtract`, `Min`, `Max`, `LessThan` and `GreaterThan` panic when the currencies differ; the `Checked*` variants return an error instead and also catch `int64` overflow. For `USD(49_990_000)`, `String()` gives `"$49.990000"` and `FormatMajor()` gives `"49.990000"`; JSON adds a `display` field next to the integer `amount` and `currency`. Rational tier rates retain fractions until nearest/ties-even rounding at the total boundary.
 
 ## Store interfaces
 

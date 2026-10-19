@@ -54,13 +54,19 @@ func (d Deps) engine() *ledger.Ledger {
 	if d.Engine == nil {
 		return nil
 	}
+
 	return d.Engine()
 }
 
 // Register loads and validates the manifest, registers the contributor, and
 // binds every intent. The dashboard calls it through
 // Extension.RegisterContractContributor.
-func Register(d *dispatcher.Dispatcher, reg dash.Registry, wreg dash.WardenRegistry, deps Deps) error {
+func Register(
+	d *dispatcher.Dispatcher,
+	reg dash.Registry,
+	wreg dash.WardenRegistry,
+	deps Deps,
+) error {
 	if deps.Engine == nil {
 		return fmt.Errorf("ledger/contract: Engine is required")
 	}
@@ -69,9 +75,11 @@ func Register(d *dispatcher.Dispatcher, reg dash.Registry, wreg dash.WardenRegis
 	if err != nil {
 		return err
 	}
+
 	if err := loader.Validate(m, wreg); err != nil {
 		return fmt.Errorf("ledger/contract: validate manifest: %w", err)
 	}
+
 	if err := reg.Register(m); err != nil {
 		return fmt.Errorf("ledger/contract: register manifest: %w", err)
 	}
@@ -87,6 +95,7 @@ func loadManifest() (*dash.ContractManifest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ledger/contract: load manifest: %w", err)
 	}
+
 	return m, nil
 }
 

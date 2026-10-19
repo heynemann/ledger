@@ -280,7 +280,11 @@ type OnWebhookReceived interface {
 type PricingStrategy interface {
 	Plugin
 	StrategyName() string
-	Compute(tiers []interface{}, usage, included int64, currency string) interface{} // Returns Money
+	Compute(
+		tiers []interface{},
+		usage, included int64,
+		currency string,
+	) interface{} // Returns Money
 }
 
 // ──────────────────────────────────────────────────
@@ -329,7 +333,11 @@ type UsageAggregator interface {
 // TaxCalculator calculates tax for invoices.
 type TaxCalculator interface {
 	Plugin
-	CalculateTax(ctx context.Context, subtotal interface{}, tenantID string) (interface{}, error) // Returns Money
+	CalculateTax(
+		ctx context.Context,
+		subtotal interface{},
+		tenantID string,
+	) (interface{}, error) // Returns Money
 }
 
 // ──────────────────────────────────────────────────

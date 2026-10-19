@@ -40,6 +40,7 @@ func TestNew(t *testing.T) {
 	if i.IsNil() {
 		t.Fatal("expected non-nil ID")
 	}
+
 	if i.Prefix() != id.PrefixPlan {
 		t.Errorf("expected prefix %q, got %q", id.PrefixPlan, i.Prefix())
 	}
@@ -66,10 +67,12 @@ func TestParseRoundTrip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			original := tt.newFn()
+
 			parsed, err := tt.parseFn(original.String())
 			if err != nil {
 				t.Fatalf("parse failed: %v", err)
 			}
+
 			if parsed.String() != original.String() {
 				t.Errorf("round-trip mismatch: %q != %q", parsed.String(), original.String())
 			}
@@ -86,7 +89,11 @@ func TestCrossTypeRejection(t *testing.T) {
 		{"ParsePlanID rejects feat_", id.NewFeatureID().String(), id.ParsePlanID},
 		{"ParseFeatureID rejects price_", id.NewPriceID().String(), id.ParseFeatureID},
 		{"ParsePriceID rejects sub_", id.NewSubscriptionID().String(), id.ParsePriceID},
-		{"ParseSubscriptionID rejects uevt_", id.NewUsageEventID().String(), id.ParseSubscriptionID},
+		{
+			"ParseSubscriptionID rejects uevt_",
+			id.NewUsageEventID().String(),
+			id.ParseSubscriptionID,
+		},
 		{"ParseUsageEventID rejects ent_", id.NewEntitlementID().String(), id.ParseUsageEventID},
 		{"ParseEntitlementID rejects inv_", id.NewInvoiceID().String(), id.ParseEntitlementID},
 		{"ParseInvoiceID rejects li_", id.NewLineItemID().String(), id.ParseInvoiceID},
@@ -125,6 +132,7 @@ func TestParseAny(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ParseAny(%q) failed: %v", i.String(), err)
 			}
+
 			if parsed.String() != i.String() {
 				t.Errorf("round-trip mismatch: %q != %q", parsed.String(), i.String())
 			}
@@ -134,10 +142,12 @@ func TestParseAny(t *testing.T) {
 
 func TestParseWithPrefix(t *testing.T) {
 	i := id.NewPlanID()
+
 	parsed, err := id.ParseWithPrefix(i.String(), id.PrefixPlan)
 	if err != nil {
 		t.Fatalf("ParseWithPrefix failed: %v", err)
 	}
+
 	if parsed.String() != i.String() {
 		t.Errorf("mismatch: %q != %q", parsed.String(), i.String())
 	}
@@ -160,9 +170,11 @@ func TestNilID(t *testing.T) {
 	if !i.IsNil() {
 		t.Error("zero-value ID should be nil")
 	}
+
 	if i.String() != "" {
 		t.Errorf("expected empty string, got %q", i.String())
 	}
+
 	if i.Prefix() != "" {
 		t.Errorf("expected empty prefix, got %q", i.Prefix())
 	}
@@ -170,6 +182,7 @@ func TestNilID(t *testing.T) {
 
 func TestMarshalUnmarshalText(t *testing.T) {
 	original := id.NewPlanID()
+
 	data, err := original.MarshalText()
 	if err != nil {
 		t.Fatalf("MarshalText failed: %v", err)
@@ -179,20 +192,24 @@ func TestMarshalUnmarshalText(t *testing.T) {
 	if unmarshalErr := restored.UnmarshalText(data); unmarshalErr != nil {
 		t.Fatalf("UnmarshalText failed: %v", unmarshalErr)
 	}
+
 	if restored.String() != original.String() {
 		t.Errorf("mismatch: %q != %q", restored.String(), original.String())
 	}
 
 	// Nil round-trip.
 	var nilID id.ID
+
 	data, err = nilID.MarshalText()
 	if err != nil {
 		t.Fatalf("MarshalText(nil) failed: %v", err)
 	}
+
 	var restored2 id.ID
 	if err := restored2.UnmarshalText(data); err != nil {
 		t.Fatalf("UnmarshalText(nil) failed: %v", err)
 	}
+
 	if !restored2.IsNil() {
 		t.Error("expected nil after round-trip of nil ID")
 	}
@@ -200,6 +217,7 @@ func TestMarshalUnmarshalText(t *testing.T) {
 
 func TestValueScan(t *testing.T) {
 	original := id.NewSubscriptionID()
+
 	val, err := original.Value()
 	if err != nil {
 		t.Fatalf("Value failed: %v", err)
@@ -209,16 +227,19 @@ func TestValueScan(t *testing.T) {
 	if scanErr := scanned.Scan(val); scanErr != nil {
 		t.Fatalf("Scan failed: %v", scanErr)
 	}
+
 	if scanned.String() != original.String() {
 		t.Errorf("mismatch: %q != %q", scanned.String(), original.String())
 	}
 
 	// Nil round-trip.
 	var nilID id.ID
+
 	val, err = nilID.Value()
 	if err != nil {
 		t.Fatalf("Value(nil) failed: %v", err)
 	}
+
 	if val != nil {
 		t.Errorf("expected nil value for nil ID, got %v", val)
 	}
@@ -227,6 +248,7 @@ func TestValueScan(t *testing.T) {
 	if err := scanned2.Scan(nil); err != nil {
 		t.Fatalf("Scan(nil) failed: %v", err)
 	}
+
 	if !scanned2.IsNil() {
 		t.Error("expected nil after scan of nil")
 	}
@@ -234,6 +256,7 @@ func TestValueScan(t *testing.T) {
 
 func TestUniqueness(t *testing.T) {
 	a := id.NewPlanID()
+
 	b := id.NewPlanID()
 	if a.String() == b.String() {
 		t.Errorf("two consecutive NewPlanID() calls returned the same ID: %q", a.String())
@@ -247,6 +270,7 @@ func TestBSONRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalBSONValue failed: %v", err)
 	}
+
 	if bsonType != 0x02 {
 		t.Fatalf("expected BSON string type 0x02, got 0x%02x", bsonType)
 	}
@@ -255,15 +279,18 @@ func TestBSONRoundTrip(t *testing.T) {
 	if unmarshalErr := restored.UnmarshalBSONValue(bsonType, data); unmarshalErr != nil {
 		t.Fatalf("UnmarshalBSONValue failed: %v", unmarshalErr)
 	}
+
 	if restored.String() != original.String() {
 		t.Errorf("BSON round-trip mismatch: %q != %q", restored.String(), original.String())
 	}
 
 	var nilID id.ID
+
 	bsonType, data, err = nilID.MarshalBSONValue()
 	if err != nil {
 		t.Fatalf("MarshalBSONValue(nil) failed: %v", err)
 	}
+
 	if bsonType != 0x0A {
 		t.Fatalf("expected BSON null type 0x0A, got 0x%02x", bsonType)
 	}
@@ -272,6 +299,7 @@ func TestBSONRoundTrip(t *testing.T) {
 	if unmarshalErr := restored2.UnmarshalBSONValue(bsonType, data); unmarshalErr != nil {
 		t.Fatalf("UnmarshalBSONValue(nil) failed: %v", unmarshalErr)
 	}
+
 	if !restored2.IsNil() {
 		t.Error("expected nil after BSON round-trip of nil ID")
 	}
@@ -279,6 +307,7 @@ func TestBSONRoundTrip(t *testing.T) {
 
 func TestBSONUnmarshalInvalidType(t *testing.T) {
 	var restored id.ID
+
 	err := restored.UnmarshalBSONValue(0x01, []byte{0x00, 0x00, 0x00, 0x00})
 	if err == nil {
 		t.Error("expected error for invalid BSON type, got nil")

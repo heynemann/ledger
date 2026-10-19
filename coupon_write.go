@@ -16,6 +16,7 @@ import (
 func normaliseCoupon(c *coupon.Coupon) {
 	c.Code = strings.TrimSpace(c.Code)
 	c.Currency = strings.ToLower(strings.TrimSpace(c.Currency))
+
 	c.Amount.Currency = strings.ToLower(strings.TrimSpace(c.Amount.Currency))
 	if c.Type == coupon.CouponTypeAmount && c.Amount.Currency == "" {
 		c.Amount.Currency = c.Currency
@@ -29,24 +30,37 @@ func validateCouponShape(c *coupon.Coupon) error {
 	if c.Code == "" {
 		return fmt.Errorf("%w: a coupon needs a code", ErrCouponInvalid)
 	}
+
 	switch c.Type {
 	case coupon.CouponTypePercentage:
 		if c.Percentage < 0 || c.Percentage > 100 {
-			return fmt.Errorf("%w: coupon %q has percentage %d, outside 0 to 100", ErrCouponInvalid, c.Code, c.Percentage)
+			return fmt.Errorf(
+				"%w: coupon %q has percentage %d, outside 0 to 100",
+				ErrCouponInvalid,
+				c.Code,
+				c.Percentage,
+			)
 		}
 	case coupon.CouponTypeAmount:
 		if c.Amount.Amount < 0 {
 			return fmt.Errorf("%w: coupon %q has a negative amount", ErrCouponInvalid, c.Code)
 		}
+
 		if c.Amount.Currency == "" {
 			return fmt.Errorf("%w: amount coupon %q has no currency", ErrCouponInvalid, c.Code)
 		}
 	default:
 		return fmt.Errorf("%w: coupon %q has unsupported type %q", ErrCouponInvalid, c.Code, c.Type)
 	}
+
 	if c.ValidFrom != nil && c.ValidUntil != nil && c.ValidUntil.Before(*c.ValidFrom) {
-		return fmt.Errorf("%w: coupon %q is valid until before it is valid from", ErrCouponInvalid, c.Code)
+		return fmt.Errorf(
+			"%w: coupon %q is valid until before it is valid from",
+			ErrCouponInvalid,
+			c.Code,
+		)
 	}
+
 	return nil
 }
 
@@ -54,6 +68,7 @@ func validateCouponShape(c *coupon.Coupon) error {
 // app. A new coupon's redemption count is always zero.
 func (l *Ledger) CreateCoupon(ctx context.Context, c *coupon.Coupon) error {
 	normaliseCoupon(c)
+
 	if err := validateCouponShape(c); err != nil {
 		return err
 	}
@@ -69,6 +84,7 @@ func (l *Ledger) CreateCoupon(ctx context.Context, c *coupon.Coupon) error {
 	if c.ID.IsNil() {
 		c.ID = id.NewCouponID()
 	}
+
 	c.Entity = types.NewEntity()
 	c.TimesRedeemed = 0
 
@@ -86,12 +102,17 @@ func (l *Ledger) UpdateCoupon(ctx context.Context, c *coupon.Coupon) error {
 	}
 
 	normaliseCoupon(c)
+
 	if c.AppID != existing.AppID || c.Code != existing.Code || c.Type != existing.Type ||
 		c.Percentage != existing.Percentage || c.Amount.Amount != existing.Amount.Amount ||
 		!strings.EqualFold(c.Amount.Currency, existing.Amount.Currency) ||
 		!strings.EqualFold(c.Currency, existing.Currency) {
-		return fmt.Errorf("%w: a coupon's code, type, value, currency and app cannot change once it is created", ErrCouponInvalid)
+		return fmt.Errorf(
+			"%w: a coupon's code, type, value, currency and app cannot change once it is created",
+			ErrCouponInvalid,
+		)
 	}
+
 	if err := validateCouponShape(c); err != nil {
 		return err
 	}

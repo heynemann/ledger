@@ -16,14 +16,56 @@ func TestNextPeriod(t *testing.T) {
 		period     plan.Period
 		want       time.Time
 	}{
-		{"back to the 31st after February", day(2026, 1, 31), day(2026, 2, 28), plan.PeriodMonthly, day(2026, 3, 31)},
-		{"the 31st holds through March", day(2026, 2, 28), day(2026, 3, 31), plan.PeriodMonthly, day(2026, 4, 30)},
-		{"and through April", day(2026, 3, 31), day(2026, 4, 30), plan.PeriodMonthly, day(2026, 5, 31)},
-		{"a leap February", day(2028, 1, 31), day(2028, 2, 29), plan.PeriodMonthly, day(2028, 3, 31)},
+		{
+			"back to the 31st after February",
+			day(2026, 1, 31),
+			day(2026, 2, 28),
+			plan.PeriodMonthly,
+			day(2026, 3, 31),
+		},
+		{
+			"the 31st holds through March",
+			day(2026, 2, 28),
+			day(2026, 3, 31),
+			plan.PeriodMonthly,
+			day(2026, 4, 30),
+		},
+		{
+			"and through April",
+			day(2026, 3, 31),
+			day(2026, 4, 30),
+			plan.PeriodMonthly,
+			day(2026, 5, 31),
+		},
+		{
+			"a leap February",
+			day(2028, 1, 31),
+			day(2028, 2, 29),
+			plan.PeriodMonthly,
+			day(2028, 3, 31),
+		},
 		{"the 30th", day(2026, 1, 30), day(2026, 2, 28), plan.PeriodMonthly, day(2026, 3, 30)},
-		{"after the 30th settles", day(2026, 2, 28), day(2026, 3, 30), plan.PeriodMonthly, day(2026, 4, 30)},
-		{"a provider's own cadence keeps its end day", day(2026, 1, 10), day(2026, 2, 9), plan.PeriodMonthly, day(2026, 3, 9)},
-		{"a leap day, yearly", day(2024, 2, 29), day(2025, 2, 28), plan.PeriodYearly, day(2026, 2, 28)},
+		{
+			"after the 30th settles",
+			day(2026, 2, 28),
+			day(2026, 3, 30),
+			plan.PeriodMonthly,
+			day(2026, 4, 30),
+		},
+		{
+			"a provider's own cadence keeps its end day",
+			day(2026, 1, 10),
+			day(2026, 2, 9),
+			plan.PeriodMonthly,
+			day(2026, 3, 9),
+		},
+		{
+			"a leap day, yearly",
+			day(2024, 2, 29),
+			day(2025, 2, 28),
+			plan.PeriodYearly,
+			day(2026, 2, 28),
+		},
 		{
 			// 30 January 21:00 at UTC-5 is 31 January in UTC, so the anchor is
 			// the 31st, not the 27th the local end day would suggest.
@@ -34,8 +76,19 @@ func TestNextPeriod(t *testing.T) {
 		},
 		{
 			"the time of day is kept",
-			time.Date(2026, 1, 15, 13, 45, 0, 0, time.UTC), time.Date(2026, 2, 15, 13, 45, 0, 0, time.UTC),
-			plan.PeriodMonthly, time.Date(2026, 3, 15, 13, 45, 0, 0, time.UTC),
+			time.Date(
+				2026,
+				1,
+				15,
+				13,
+				45,
+				0,
+				0,
+				time.UTC,
+			),
+			time.Date(2026, 2, 15, 13, 45, 0, 0, time.UTC),
+			plan.PeriodMonthly,
+			time.Date(2026, 3, 15, 13, 45, 0, 0, time.UTC),
 		},
 	}
 	for _, c := range cases {
@@ -72,8 +125,16 @@ func TestBillingPeriod(t *testing.T) {
 	}{
 		{"no pricing", &plan.Plan{}, plan.PeriodMonthly},
 		{"no period", &plan.Plan{Pricing: &plan.Pricing{}}, plan.PeriodMonthly},
-		{"yearly", &plan.Plan{Pricing: &plan.Pricing{BillingPeriod: plan.PeriodYearly}}, plan.PeriodYearly},
-		{"none", &plan.Plan{Pricing: &plan.Pricing{BillingPeriod: plan.PeriodNone}}, plan.PeriodNone},
+		{
+			"yearly",
+			&plan.Plan{Pricing: &plan.Pricing{BillingPeriod: plan.PeriodYearly}},
+			plan.PeriodYearly,
+		},
+		{
+			"none",
+			&plan.Plan{Pricing: &plan.Pricing{BillingPeriod: plan.PeriodNone}},
+			plan.PeriodNone,
+		},
 	}
 	for _, c := range cases {
 		if got := billingPeriod(c.p); got != c.want {

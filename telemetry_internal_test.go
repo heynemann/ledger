@@ -20,33 +20,43 @@ func TestErrorTypeNamesEverySentinel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse errors.go: %v", err)
 	}
+
 	named := map[string]error{}
 	for _, s := range sentinels {
 		named[s.name] = s.err
 	}
+
 	found := 0
+
 	for _, decl := range file.Decls {
 		gen, ok := decl.(*ast.GenDecl)
 		if !ok || gen.Tok != token.VAR {
 			continue
 		}
+
 		for _, spec := range gen.Specs {
 			for _, ident := range spec.(*ast.ValueSpec).Names {
 				if !strings.HasPrefix(ident.Name, "Err") {
 					continue
 				}
+
 				found++
+
 				sentinel, ok := named["ledger."+ident.Name]
 				if !ok {
 					t.Errorf("%s is missing from the sentinels table", ident.Name)
 					continue
 				}
-				if got := errorType(fmt.Errorf("wrapped: %w", sentinel)); got != "ledger."+ident.Name {
+
+				if got := errorType(
+					fmt.Errorf("wrapped: %w", sentinel),
+				); got != "ledger."+ident.Name {
 					t.Errorf("errorType of a wrapped %s = %q", ident.Name, got)
 				}
 			}
 		}
 	}
+
 	if found == 0 || found+1 != len(sentinels) { // +1: types.ErrOverflow
 		t.Errorf("errors.go declares %d sentinels, the table names %d", found, len(sentinels))
 	}
@@ -63,7 +73,10 @@ func TestErrorTypeNeverReturnsTheMessage(t *testing.T) {
 	}{
 		{&driverError{"duplicate key alice@example.com"}, "*ledger.driverError"},
 		{fmt.Errorf("insert: %w", &driverError{"alice@example.com"}), "*ledger.driverError"},
-		{errors.Join(fmt.Errorf("row 1: %w", &driverError{"x"}), errors.New("row 2")), "*ledger.driverError"},
+		{
+			errors.Join(fmt.Errorf("row 1: %w", &driverError{"x"}), errors.New("row 2")),
+			"*ledger.driverError",
+		},
 		{fmt.Errorf("subtotal: %w", types.ErrOverflow), "types.ErrOverflow"},
 		{fmt.Errorf("run: %w", context.DeadlineExceeded), "context.DeadlineExceeded"},
 		{errors.Join(ErrInvalidInput, context.Canceled), "context.Canceled"},

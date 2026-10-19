@@ -129,17 +129,20 @@ Hooks are synchronous: the call that fires them waits for each plugin in turn, a
 
 ## Money
 
-`types.Money` is an amount in the currency's smallest unit and a lowercase ISO 4217 code:
+In this fork, `types.Money` stores USD in micros (six decimals); other currencies retain upstream minor-unit precision. Existing upstream USD cents require explicit checked conversion by 10,000:
 
 ```go
-price := types.USD(4999)            // $49.99
-seats := types.USD(1000).Multiply(3) // $30.00
-total := price.Add(seats)            // $79.99, panics if the currencies differ
-fmt.Println(total.String())          // "$79.99"
-fmt.Println(total.FormatMajor())     // "79.99"
+price := types.USD(49_990_000)            // $49.990000
+seats := types.USD(10_000_000).Multiply(3) // $30.000000
+total := price.Add(seats)                  // $79.990000, panics if currencies differ
+fmt.Println(total.String())                // "$79.990000"
+fmt.Println(total.FormatMajor())           // "79.990000"
 ```
 
 `CheckedAdd`, `CheckedSubtract`, `CheckedMultiply` and `CheckedPercent` return an error wrapping `types.ErrOverflow` instead of wrapping around. Invoice generation uses them for every sum.
+
+Tier prices support rational `UnitAmount / UnitQuantity` rates (zero denominator field means one). Invoice calculations retain exact fractions through tier sums and allowance differences before nearest/ties-even rounding. The stateless `spending.Engine` differences rounded cumulative all-meter totals to avoid losing sub-micro usage across requests; it provides no payment collection or persistence. The root buffered `Meter` remains unchanged and loses failed flush batches, so it is not the durable financial path.
+
 
 ## TypeIDs
 

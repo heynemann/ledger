@@ -32,7 +32,11 @@ func statusIn(statuses []subscription.Status) (where string, args []any) {
 	for i, st := range statuses {
 		args[i] = string(st)
 	}
-	return "status IN (" + strings.TrimSuffix(strings.Repeat("?, ", len(statuses)), ", ") + ")", args
+
+	return "status IN (" + strings.TrimSuffix(
+		strings.Repeat("?, ", len(statuses)),
+		", ",
+	) + ")", args
 }
 
 // changed reports whether a conditional update matched a row.
@@ -40,76 +44,108 @@ func changed(res interface{ RowsAffected() (int64, error) }, err error) (bool, e
 	if err != nil {
 		return false, err
 	}
+
 	n, err := res.RowsAffected()
 	if err != nil {
 		return false, err
 	}
+
 	return n > 0, nil
 }
 
-func (s *Store) ListDueSubscriptions(ctx context.Context, opts subscription.DueOpts) ([]*subscription.Subscription, error) {
+func (s *Store) ListDueSubscriptions(
+	ctx context.Context,
+	opts subscription.DueOpts,
+) ([]*subscription.Subscription, error) {
 	dq, ok := dueQueries[opts.Field]
 	if !ok {
-		return nil, fmt.Errorf("ledger/postgres: unknown due field %q: %w", opts.Field, ledger.ErrInvalidInput)
+		return nil, fmt.Errorf(
+			"ledger/postgres: unknown due field %q: %w",
+			opts.Field,
+			ledger.ErrInvalidInput,
+		)
 	}
+
 	var models []subscriptionModel
+
 	q := s.pg.NewSelect(&models).Where(dq.where, opts.Before.UTC())
 	if len(opts.Statuses) > 0 {
 		where, args := statusIn(opts.Statuses)
 		q = q.Where(where, args...)
 	}
+
 	if opts.AppID != "" {
 		q = q.Where("app_id = ?", opts.AppID)
 	}
+
 	if opts.Limit > 0 {
 		q = q.Limit(opts.Limit)
 	}
+
 	if opts.Offset > 0 {
 		q = q.Offset(opts.Offset)
 	}
+
 	if err := q.OrderExpr(dq.order).Scan(ctx); err != nil {
 		return nil, err
 	}
+
 	result := make([]*subscription.Subscription, len(models))
 	for i := range models {
 		sub, err := fromSubscriptionModel(&models[i])
 		if err != nil {
 			return nil, err
 		}
+
 		result[i] = sub
 	}
+
 	return result, nil
 }
 
-func (s *Store) ListOverdueInvoices(ctx context.Context, opts invoice.OverdueOpts) ([]*invoice.Invoice, error) {
+func (s *Store) ListOverdueInvoices(
+	ctx context.Context,
+	opts invoice.OverdueOpts,
+) ([]*invoice.Invoice, error) {
 	var models []invoiceModel
+
 	q := s.pg.NewSelect(&models).
 		Where("status = ?", string(invoice.StatusPending)).
 		Where("due_date < ?", opts.Before.UTC())
 	if opts.AppID != "" {
 		q = q.Where("app_id = ?", opts.AppID)
 	}
+
 	if opts.Limit > 0 {
 		q = q.Limit(opts.Limit)
 	}
+
 	if opts.Offset > 0 {
 		q = q.Offset(opts.Offset)
 	}
+
 	if err := q.OrderExpr("due_date ASC, id ASC").Scan(ctx); err != nil {
 		return nil, err
 	}
+
 	result := make([]*invoice.Invoice, len(models))
 	for i := range models {
 		inv, err := fromInvoiceModel(&models[i])
 		if err != nil {
 			return nil, err
 		}
+
 		result[i] = inv
 	}
+
 	return result, nil
 }
 
-func (s *Store) EndSubscriptionTrial(ctx context.Context, subID id.SubscriptionID, at time.Time) (bool, error) {
+func (s *Store) EndSubscriptionTrial(
+	ctx context.Context,
+	subID id.SubscriptionID,
+	at time.Time,
+) (bool, error) {
 	return changed(s.pg.NewUpdate((*subscriptionModel)(nil)).
 		Set("status = ?", string(subscription.StatusActive)).
 		Set("updated_at = ?", now()).
@@ -119,7 +155,11 @@ func (s *Store) EndSubscriptionTrial(ctx context.Context, subID id.SubscriptionI
 		Exec(ctx))
 }
 
-func (s *Store) EnactSubscriptionCancel(ctx context.Context, subID id.SubscriptionID, at time.Time) (bool, error) {
+func (s *Store) EnactSubscriptionCancel(
+	ctx context.Context,
+	subID id.SubscriptionID,
+	at time.Time,
+) (bool, error) {
 	return changed(s.pg.NewUpdate((*subscriptionModel)(nil)).
 		Set("status = ?", string(subscription.StatusCanceled)).
 		Set("canceled_at = cancel_at").
@@ -130,8 +170,13 @@ func (s *Store) EnactSubscriptionCancel(ctx context.Context, subID id.Subscripti
 		Exec(ctx))
 }
 
-func (s *Store) AdvanceSubscriptionPeriod(ctx context.Context, subID id.SubscriptionID, from, start, end, at time.Time) (bool, error) {
+func (s *Store) AdvanceSubscriptionPeriod(
+	ctx context.Context,
+	subID id.SubscriptionID,
+	from, start, end, at time.Time,
+) (bool, error) {
 	running, args := statusIn(runningStatuses)
+
 	return changed(s.pg.NewUpdate((*subscriptionModel)(nil)).
 		Set("current_period_start = ?", start.UTC()).
 		Set("current_period_end = ?", end.UTC()).
@@ -145,7 +190,11 @@ func (s *Store) AdvanceSubscriptionPeriod(ctx context.Context, subID id.Subscrip
 		Exec(ctx))
 }
 
-func (s *Store) MarkInvoicePastDue(ctx context.Context, invID id.InvoiceID, at time.Time) (bool, error) {
+func (s *Store) MarkInvoicePastDue(
+	ctx context.Context,
+	invID id.InvoiceID,
+	at time.Time,
+) (bool, error) {
 	return changed(s.pg.NewUpdate((*invoiceModel)(nil)).
 		Set("status = ?", string(invoice.StatusPastDue)).
 		Set("updated_at = ?", now()).

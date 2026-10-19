@@ -22,21 +22,21 @@ import (
 type planModel struct {
 	grove.BaseModel `grove:"table:ledger_plans"`
 
-	ID           string            `grove:"id,pk"       bson:"_id"`
-	Name         string            `grove:"name"        bson:"name"`
-	Slug         string            `grove:"slug"        bson:"slug"`
-	Description  string            `grove:"description" bson:"description"`
-	Currency     string            `grove:"currency"    bson:"currency"`
-	Status       string            `grove:"status"      bson:"status"`
-	TrialDays    int               `grove:"trial_days"  bson:"trial_days"`
-	Features     []featureModel    `grove:"features"    bson:"features"`
-	Pricing      *pricingModel     `grove:"pricing"     bson:"pricing,omitempty"`
-	AppID        string            `grove:"app_id"          bson:"app_id"`
-	ProviderID   string            `grove:"provider_id"     bson:"provider_id"`
-	ProviderName string            `grove:"provider_name"   bson:"provider_name"`
-	Metadata     map[string]string `grove:"metadata"        bson:"metadata,omitempty"`
-	CreatedAt    time.Time         `grove:"created_at"      bson:"created_at"`
-	UpdatedAt    time.Time         `grove:"updated_at"      bson:"updated_at"`
+	ID           string            `grove:"id,pk"         bson:"_id"`
+	Name         string            `grove:"name"          bson:"name"`
+	Slug         string            `grove:"slug"          bson:"slug"`
+	Description  string            `grove:"description"   bson:"description"`
+	Currency     string            `grove:"currency"      bson:"currency"`
+	Status       string            `grove:"status"        bson:"status"`
+	TrialDays    int               `grove:"trial_days"    bson:"trial_days"`
+	Features     []featureModel    `grove:"features"      bson:"features"`
+	Pricing      *pricingModel     `grove:"pricing"       bson:"pricing,omitempty"`
+	AppID        string            `grove:"app_id"        bson:"app_id"`
+	ProviderID   string            `grove:"provider_id"   bson:"provider_id"`
+	ProviderName string            `grove:"provider_name" bson:"provider_name"`
+	Metadata     map[string]string `grove:"metadata"      bson:"metadata,omitempty"`
+	CreatedAt    time.Time         `grove:"created_at"    bson:"created_at"`
+	UpdatedAt    time.Time         `grove:"updated_at"    bson:"updated_at"`
 }
 
 type featureModel struct {
@@ -68,6 +68,7 @@ type priceTierModel struct {
 	Type               string `bson:"type"`
 	UpTo               int64  `bson:"up_to"`
 	UnitAmountCents    int64  `bson:"unit_amount_cents"`
+	UnitQuantity       int64  `bson:"unit_quantity,omitempty"`
 	UnitAmountCurrency string `bson:"unit_amount_currency"`
 	FlatAmountCents    int64  `bson:"flat_amount_cents"`
 	FlatAmountCurrency string `bson:"flat_amount_currency"`
@@ -92,6 +93,7 @@ func toPlanModel(p *plan.Plan) *planModel {
 	}
 
 	var pricing *pricingModel
+
 	if p.Pricing != nil {
 		tiers := make([]priceTierModel, len(p.Pricing.Tiers))
 		for i, t := range p.Pricing.Tiers {
@@ -100,12 +102,14 @@ func toPlanModel(p *plan.Plan) *planModel {
 				Type:               string(t.Type),
 				UpTo:               t.UpTo,
 				UnitAmountCents:    t.UnitAmount.Amount,
+				UnitQuantity:       t.UnitQuantity,
 				UnitAmountCurrency: t.UnitAmount.Currency,
 				FlatAmountCents:    t.FlatAmount.Amount,
 				FlatAmountCurrency: t.FlatAmount.Currency,
 				Priority:           t.Priority,
 			}
 		}
+
 		pricing = &pricingModel{
 			ID:                 p.Pricing.ID.String(),
 			PlanID:             p.Pricing.PlanID.String(),
@@ -153,6 +157,7 @@ func fromPlanModel(m *planModel) (*plan.Plan, error) {
 		// rather than failing id.ParseFeatureID, which errors on an empty
 		// string.
 		fID := id.Nil
+
 		if f.ID != "" {
 			parsed, err := id.ParseFeatureID(f.ID)
 			if err != nil {
@@ -162,8 +167,10 @@ func fromPlanModel(m *planModel) (*plan.Plan, error) {
 					return nil, fmt.Errorf("failed to parse feature ID %q: %w", f.ID, err)
 				}
 			}
+
 			fID = parsed
 		}
+
 		features[i] = plan.Feature{
 			Entity: types.Entity{
 				CreatedAt: f.CreatedAt,
@@ -181,6 +188,7 @@ func fromPlanModel(m *planModel) (*plan.Plan, error) {
 	}
 
 	var pricing *plan.Pricing
+
 	if m.Pricing != nil {
 		// The pricing block's own id is also legitimately optional, for the
 		// same reason as feature ids above: Ledger.CreatePlan never mints
@@ -189,11 +197,13 @@ func fromPlanModel(m *planModel) (*plan.Plan, error) {
 		// round-trips as id.Nil rather than failing id.ParsePriceID, which
 		// errors on an empty string.
 		priceID := id.Nil
+
 		if m.Pricing.ID != "" {
 			parsed, priceErr := id.ParsePriceID(m.Pricing.ID)
 			if priceErr != nil {
 				return nil, priceErr
 			}
+
 			priceID = parsed
 		}
 		// PlanID is a redundant back-reference to the owning plan and is
@@ -203,11 +213,13 @@ func fromPlanModel(m *planModel) (*plan.Plan, error) {
 		// id.Nil rather than failing id.ParsePlanID, which errors on an
 		// empty string.
 		pID := id.Nil
+
 		if m.Pricing.PlanID != "" {
 			parsed, pErr := id.ParsePlanID(m.Pricing.PlanID)
 			if pErr != nil {
 				return nil, pErr
 			}
+
 			pID = parsed
 		}
 
@@ -217,19 +229,30 @@ func fromPlanModel(m *planModel) (*plan.Plan, error) {
 				FeatureKey: t.FeatureKey,
 				Type:       plan.TierType(t.Type),
 				UpTo:       t.UpTo,
-				UnitAmount: types.Money{Amount: t.UnitAmountCents, Currency: t.UnitAmountCurrency},
-				FlatAmount: types.Money{Amount: t.FlatAmountCents, Currency: t.FlatAmountCurrency},
-				Priority:   t.Priority,
+				UnitAmount: types.Money{
+					Amount:   t.UnitAmountCents,
+					Currency: t.UnitAmountCurrency,
+				},
+				UnitQuantity: t.UnitQuantity,
+				FlatAmount: types.Money{
+					Amount:   t.FlatAmountCents,
+					Currency: t.FlatAmountCurrency,
+				},
+				Priority: t.Priority,
 			}
 		}
+
 		pricing = &plan.Pricing{
 			Entity: types.Entity{
 				CreatedAt: m.Pricing.CreatedAt,
 				UpdatedAt: m.Pricing.UpdatedAt,
 			},
-			ID:            priceID,
-			PlanID:        pID,
-			BaseAmount:    types.Money{Amount: m.Pricing.BaseAmountCents, Currency: m.Pricing.BaseAmountCurrency},
+			ID:     priceID,
+			PlanID: pID,
+			BaseAmount: types.Money{
+				Amount:   m.Pricing.BaseAmountCents,
+				Currency: m.Pricing.BaseAmountCurrency,
+			},
 			BillingPeriod: plan.Period(m.Pricing.BillingPeriod),
 			Tiers:         tiers,
 		}
@@ -291,6 +314,7 @@ func toSubscriptionModel(s *subscription.Subscription) *subscriptionModel {
 	if quantity == nil {
 		quantity = make(map[string]int64)
 	}
+
 	m := &subscriptionModel{
 		ID:                 s.ID.String(),
 		TenantID:           s.TenantID,
@@ -312,7 +336,10 @@ func toSubscriptionModel(s *subscription.Subscription) *subscriptionModel {
 		CreatedAt:          s.CreatedAt,
 		UpdatedAt:          s.UpdatedAt,
 	}
-	m.StretchStart, m.StretchEnd, m.StretchOriginalEnd, m.StretchFloor = subscription.StretchColumns(s.Stretch)
+	m.StretchStart, m.StretchEnd, m.StretchOriginalEnd, m.StretchFloor = subscription.StretchColumns(
+		s.Stretch,
+	)
+
 	return m
 }
 
@@ -321,6 +348,7 @@ func fromSubscriptionModel(m *subscriptionModel) (*subscription.Subscription, er
 	if err != nil {
 		return nil, err
 	}
+
 	planID, err := id.ParsePlanID(m.PlanID)
 	if err != nil {
 		return nil, err
@@ -348,12 +376,17 @@ func fromSubscriptionModel(m *subscriptionModel) (*subscription.Subscription, er
 		CancelAt:           m.CancelAt,
 		EndedAt:            m.EndedAt,
 		PausedAt:           m.PausedAt,
-		Stretch:            subscription.StretchFromColumns(m.StretchStart, m.StretchEnd, m.StretchOriginalEnd, m.StretchFloor),
-		AppID:              m.AppID,
-		ProviderID:         m.ProviderID,
-		ProviderName:       m.ProviderName,
-		Metadata:           m.Metadata,
-		Quantity:           quantity,
+		Stretch: subscription.StretchFromColumns(
+			m.StretchStart,
+			m.StretchEnd,
+			m.StretchOriginalEnd,
+			m.StretchFloor,
+		),
+		AppID:        m.AppID,
+		ProviderID:   m.ProviderID,
+		ProviderName: m.ProviderName,
+		Metadata:     m.Metadata,
+		Quantity:     quantity,
 	}, nil
 }
 
@@ -425,7 +458,11 @@ type entitlementCacheModel struct {
 	CreatedAt  time.Time `grove:"created_at"   bson:"created_at"`
 }
 
-func toEntitlementCacheModel(tenantID, appID, featureKey string, result *entitlement.Result, expiresAt time.Time) *entitlementCacheModel {
+func toEntitlementCacheModel(
+	tenantID, appID, featureKey string,
+	result *entitlement.Result,
+	expiresAt time.Time,
+) *entitlementCacheModel {
 	return &entitlementCacheModel{
 		CacheKey:   tenantID + ":" + appID + ":" + featureKey,
 		TenantID:   tenantID,
@@ -460,33 +497,33 @@ func fromEntitlementCacheModel(m *entitlementCacheModel) *entitlement.Result {
 type invoiceModel struct {
 	grove.BaseModel `grove:"table:ledger_invoices"`
 
-	ID                  string            `grove:"id,pk"                bson:"_id"`
-	TenantID            string            `grove:"tenant_id"            bson:"tenant_id"`
-	SubscriptionID      string            `grove:"subscription_id"      bson:"subscription_id"`
-	Status              string            `grove:"status"               bson:"status"`
-	Currency            string            `grove:"currency"             bson:"currency"`
+	ID                  string            `grove:"id,pk"                 bson:"_id"`
+	TenantID            string            `grove:"tenant_id"             bson:"tenant_id"`
+	SubscriptionID      string            `grove:"subscription_id"       bson:"subscription_id"`
+	Status              string            `grove:"status"                bson:"status"`
+	Currency            string            `grove:"currency"              bson:"currency"`
 	SubtotalAmountCents int64             `grove:"subtotal_amount_cents" bson:"subtotal_amount_cents"`
-	SubtotalCurrency    string            `grove:"subtotal_currency"    bson:"subtotal_currency"`
-	TaxAmountCents      int64             `grove:"tax_amount_cents"     bson:"tax_amount_cents"`
-	TaxCurrency         string            `grove:"tax_currency"         bson:"tax_currency"`
+	SubtotalCurrency    string            `grove:"subtotal_currency"     bson:"subtotal_currency"`
+	TaxAmountCents      int64             `grove:"tax_amount_cents"      bson:"tax_amount_cents"`
+	TaxCurrency         string            `grove:"tax_currency"          bson:"tax_currency"`
 	DiscountAmountCents int64             `grove:"discount_amount_cents" bson:"discount_amount_cents"`
-	DiscountCurrency    string            `grove:"discount_currency"    bson:"discount_currency"`
-	TotalAmountCents    int64             `grove:"total_amount_cents"   bson:"total_amount_cents"`
-	TotalCurrency       string            `grove:"total_currency"       bson:"total_currency"`
-	LineItems           []lineItemModel   `grove:"line_items"           bson:"line_items"`
-	PeriodStart         time.Time         `grove:"period_start"         bson:"period_start"`
-	PeriodEnd           time.Time         `grove:"period_end"           bson:"period_end"`
-	DueDate             *time.Time        `grove:"due_date"             bson:"due_date,omitempty"`
-	PaidAt              *time.Time        `grove:"paid_at"              bson:"paid_at,omitempty"`
-	VoidedAt            *time.Time        `grove:"voided_at"            bson:"voided_at,omitempty"`
-	VoidReason          string            `grove:"void_reason"          bson:"void_reason"`
-	PaymentRef          string            `grove:"payment_ref"          bson:"payment_ref"`
-	ProviderID          string            `grove:"provider_id"          bson:"provider_id"`
-	ProviderName        string            `grove:"provider_name"        bson:"provider_name"`
-	AppID               string            `grove:"app_id"               bson:"app_id"`
-	Metadata            map[string]string `grove:"metadata"             bson:"metadata,omitempty"`
-	CreatedAt           time.Time         `grove:"created_at"           bson:"created_at"`
-	UpdatedAt           time.Time         `grove:"updated_at"           bson:"updated_at"`
+	DiscountCurrency    string            `grove:"discount_currency"     bson:"discount_currency"`
+	TotalAmountCents    int64             `grove:"total_amount_cents"    bson:"total_amount_cents"`
+	TotalCurrency       string            `grove:"total_currency"        bson:"total_currency"`
+	LineItems           []lineItemModel   `grove:"line_items"            bson:"line_items"`
+	PeriodStart         time.Time         `grove:"period_start"          bson:"period_start"`
+	PeriodEnd           time.Time         `grove:"period_end"            bson:"period_end"`
+	DueDate             *time.Time        `grove:"due_date"              bson:"due_date,omitempty"`
+	PaidAt              *time.Time        `grove:"paid_at"               bson:"paid_at,omitempty"`
+	VoidedAt            *time.Time        `grove:"voided_at"             bson:"voided_at,omitempty"`
+	VoidReason          string            `grove:"void_reason"           bson:"void_reason"`
+	PaymentRef          string            `grove:"payment_ref"           bson:"payment_ref"`
+	ProviderID          string            `grove:"provider_id"           bson:"provider_id"`
+	ProviderName        string            `grove:"provider_name"         bson:"provider_name"`
+	AppID               string            `grove:"app_id"                bson:"app_id"`
+	Metadata            map[string]string `grove:"metadata"              bson:"metadata,omitempty"`
+	CreatedAt           time.Time         `grove:"created_at"            bson:"created_at"`
+	UpdatedAt           time.Time         `grove:"updated_at"            bson:"updated_at"`
 }
 
 type lineItemModel struct {
@@ -557,6 +594,7 @@ func fromInvoiceModel(m *invoiceModel) (*invoice.Invoice, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	subID, err := id.ParseSubscriptionID(m.SubscriptionID)
 	if err != nil {
 		return nil, err
@@ -568,10 +606,12 @@ func fromInvoiceModel(m *invoiceModel) (*invoice.Invoice, error) {
 		if liErr != nil {
 			return nil, liErr
 		}
+
 		iID, iErr := id.ParseInvoiceID(li.InvoiceID)
 		if iErr != nil {
 			return nil, iErr
 		}
+
 		lineItems[i] = invoice.LineItem{
 			ID:          liID,
 			InvoiceID:   iID,

@@ -25,12 +25,15 @@ func (a *summingAggregator) Name() string           { return "sum-agg" }
 func (a *summingAggregator) AggregatorName() string { return "sum-agg" }
 func (a *summingAggregator) Aggregate(_ context.Context, events []interface{}) (int64, error) {
 	a.calls++
+
 	var total int64
+
 	for _, e := range events {
 		if ev, ok := e.(*meter.UsageEvent); ok {
 			total += ev.Quantity
 		}
 	}
+
 	return total, nil
 }
 
@@ -46,8 +49,14 @@ func useSumAggregator(p *plan.Plan) {
 // Ledger.CreateSubscription on purpose: that refuses an empty tenant, and
 // these tests need rows a direct store write, an import or an older binary
 // could still leave behind.
-func storeSubscriptionLike(t *testing.T, s *memory.Store, like *subscription.Subscription, tenantID, appID string) *subscription.Subscription {
+func storeSubscriptionLike(
+	t *testing.T,
+	s *memory.Store,
+	like *subscription.Subscription,
+	tenantID, appID string,
+) *subscription.Subscription {
 	t.Helper()
+
 	sub := &subscription.Subscription{
 		Entity:             types.NewEntity(),
 		ID:                 id.NewSubscriptionID(),
@@ -61,6 +70,7 @@ func storeSubscriptionLike(t *testing.T, s *memory.Store, like *subscription.Sub
 	if err := s.CreateSubscription(context.Background(), sub); err != nil {
 		t.Fatalf("CreateSubscription: %v", err)
 	}
+
 	return sub
 }
 
@@ -83,14 +93,21 @@ func TestGenerateInvoiceRefusesAnEmptyTenantWithAPluginAggregator(t *testing.T) 
 		if inv != nil {
 			total = inv.Total
 		}
+
 		t.Fatalf("got invoice total %v, err %v, want an error wrapping ErrInvalidInput", total, err)
 	}
+
 	if inv != nil {
 		t.Errorf("got an invoice alongside the error: %+v", inv)
 	}
+
 	if agg.calls != 0 {
-		t.Errorf("aggregator was called %d times, want 0: nothing may be read for an empty tenant", agg.calls)
+		t.Errorf(
+			"aggregator was called %d times, want 0: nothing may be read for an empty tenant",
+			agg.calls,
+		)
 	}
+
 	requireNoInvoiceStored(t, s, orphan)
 }
 
@@ -102,6 +119,7 @@ func TestGenerateInvoiceRefusesAnEmptyTenantWithoutAPluginAggregator(t *testing.
 	if !errors.Is(err, ledger.ErrInvalidInput) {
 		t.Fatalf("got invoice %v, err %v, want an error wrapping ErrInvalidInput", inv, err)
 	}
+
 	requireNoInvoiceStored(t, s, orphan)
 }
 
@@ -123,6 +141,7 @@ func TestCreateSubscriptionRefusesAnEmptyTenant(t *testing.T) {
 	if err := l.CreateSubscription(ctx, sub); !errors.Is(err, ledger.ErrInvalidInput) {
 		t.Fatalf("got %v, want an error wrapping ErrInvalidInput", err)
 	}
+
 	if _, err := s.GetSubscription(ctx, sub.ID); err == nil {
 		t.Error("the refused subscription was stored anyway")
 	}
@@ -139,10 +158,12 @@ func TestGenerateInvoiceBillsTheBaseFeeWithAnEmptyAppID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateInvoice: %v", err)
 	}
+
 	base := lineItemsOfType(inv, invoice.LineItemBase)
 	if len(base) != 1 || !base[0].Amount.Equal(types.USD(4900)) {
 		t.Fatalf("got base line items %+v, want one of $49.00", base)
 	}
+
 	if !inv.Total.Equal(types.USD(4900)) {
 		t.Errorf("got total %v, want $49.00", inv.Total)
 	}
@@ -162,8 +183,10 @@ func TestGenerateInvoiceRefusesAnEmptyAppIDWithAPluginAggregator(t *testing.T) {
 	if !errors.Is(err, ledger.ErrInvalidInput) {
 		t.Fatalf("got invoice %v, err %v, want an error wrapping ErrInvalidInput", inv, err)
 	}
+
 	if agg.calls != 0 {
 		t.Errorf("aggregator was called %d times, want 0", agg.calls)
 	}
+
 	requireNoInvoiceStored(t, s, noApp)
 }

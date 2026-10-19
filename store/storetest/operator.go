@@ -31,13 +31,16 @@ func raceEach[T any](rows []T, a, b func(T)) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
+
 			a(row)
 		}()
 		go func() {
 			defer wg.Done()
+
 			b(row)
 		}()
 	}
+
 	wg.Wait()
 }
 
@@ -50,11 +53,13 @@ type errorLog struct {
 func (l *errorLog) add(err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+
 	l.errs = append(l.errs, err)
 }
 
 func (l *errorLog) check(t *testing.T) {
 	t.Helper()
+
 	if err := errors.Join(l.errs...); err != nil {
 		t.Fatalf("racing writes: %v", err)
 	}
@@ -73,32 +78,70 @@ func testOperatorWritesAreConditional(t *testing.T, s ledgerstore.Store) {
 
 	t.Run("pause", func(t *testing.T) {
 		pausedAt := now.Add(-90 * time.Minute).Add(123456789 * time.Nanosecond)
+
 		for _, st := range []subscription.Status{subscription.StatusActive, subscription.StatusTrialing} {
 			sub := withStatus(st)
 			before := time.Now()
-			expectChanged(t, "pause a "+string(st)+" subscription", true)(s.PauseSubscription(ctx, sub.ID, pausedAt))
+
+			expectChanged(
+				t,
+				"pause a "+string(st)+" subscription",
+				true,
+			)(
+				s.PauseSubscription(ctx, sub.ID, pausedAt),
+			)
+
 			after := time.Now()
+
 			got := reread(t, s, sub)
 			if got.Status != subscription.StatusPaused {
 				t.Errorf("a %s subscription paused to %q", st, got.Status)
 			}
+
 			if got.PausedAt == nil || !sameInstantToMillisecond(*got.PausedAt, pausedAt) {
-				t.Errorf("a %s subscription paused with paused_at %v, want %v", st, got.PausedAt, pausedAt)
+				t.Errorf(
+					"a %s subscription paused with paused_at %v, want %v",
+					st,
+					got.PausedAt,
+					pausedAt,
+				)
 			}
+
 			if !sameInstantToMillisecond(got.CurrentPeriodEnd, sub.CurrentPeriodEnd) {
 				t.Errorf("a pause moved the period end to %v", got.CurrentPeriodEnd)
 			}
+
 			requireStampedDuring(t, "updated_at", got.UpdatedAt, before, after)
 		}
+
 		for _, st := range []subscription.Status{subscription.StatusPaused, subscription.StatusPastDue, subscription.StatusCanceled, subscription.StatusExpired} {
 			sub := withStatus(st)
-			expectChanged(t, "pause a "+string(st)+" subscription", false)(s.PauseSubscription(ctx, sub.ID, pausedAt))
+			expectChanged(
+				t,
+				"pause a "+string(st)+" subscription",
+				false,
+			)(
+				s.PauseSubscription(ctx, sub.ID, pausedAt),
+			)
+
 			got := reread(t, s, sub)
 			if got.Status != st || got.PausedAt != nil {
-				t.Errorf("a refused pause moved a %s subscription to %q, paused_at %v", st, got.Status, got.PausedAt)
+				t.Errorf(
+					"a refused pause moved a %s subscription to %q, paused_at %v",
+					st,
+					got.Status,
+					got.PausedAt,
+				)
 			}
 		}
-		expectChanged(t, "pause an unknown subscription", false)(s.PauseSubscription(ctx, id.NewSubscriptionID(), pausedAt))
+
+		expectChanged(
+			t,
+			"pause an unknown subscription",
+			false,
+		)(
+			s.PauseSubscription(ctx, id.NewSubscriptionID(), pausedAt),
+		)
 	})
 
 	t.Run("resume", func(t *testing.T) {
@@ -110,7 +153,12 @@ func testOperatorWritesAreConditional(t *testing.T, s ledgerstore.Store) {
 		stretched := periodEnd.Add(90*24*time.Hour + 123*time.Millisecond)
 		trialEnd := now.Add(10 * 24 * time.Hour)
 		floor := periodStart.AddDate(0, -2, 0)
-		stretch := &subscription.Stretch{Start: periodStart, End: stretched, OriginalEnd: periodEnd, Floor: &floor}
+		stretch := &subscription.Stretch{
+			Start:       periodStart,
+			End:         stretched,
+			OriginalEnd: periodEnd,
+			Floor:       &floor,
+		}
 		paused := func(edit func(*subscription.Subscription)) *subscription.Subscription {
 			return storedSubscription(t, s, appID, func(x *subscription.Subscription) {
 				backdate(&x.Entity)
@@ -123,8 +171,11 @@ func testOperatorWritesAreConditional(t *testing.T, s ledgerstore.Store) {
 		}
 		sameStretch := func(t *testing.T, got, want *subscription.Stretch) {
 			t.Helper()
-			if got == nil || !sameInstantToMillisecond(got.Start, want.Start) || !sameInstantToMillisecond(got.End, want.End) ||
-				!sameInstantToMillisecond(got.OriginalEnd, want.OriginalEnd) || (got.Floor == nil) != (want.Floor == nil) ||
+
+			if got == nil || !sameInstantToMillisecond(got.Start, want.Start) ||
+				!sameInstantToMillisecond(got.End, want.End) ||
+				!sameInstantToMillisecond(got.OriginalEnd, want.OriginalEnd) ||
+				(got.Floor == nil) != (want.Floor == nil) ||
 				(got.Floor != nil && !sameInstantToMillisecond(*got.Floor, *want.Floor)) {
 				t.Errorf("stretch %+v, want %+v", got, want)
 			}
@@ -140,26 +191,55 @@ func testOperatorWritesAreConditional(t *testing.T, s ledgerstore.Store) {
 		})
 		read := reread(t, s, sub)
 		before := time.Now()
-		expectChanged(t, "resume a paused subscription", true)(s.ResumeSubscription(ctx, sub.ID, subscription.Resume{
-			PausedAt: read.PausedAt, Status: subscription.StatusTrialing, PeriodEnd: &stretched, TrialEnd: &trialEnd, Stretch: stretch,
-		}))
+
+		expectChanged(
+			t,
+			"resume a paused subscription",
+			true,
+		)(
+			s.ResumeSubscription(ctx, sub.ID, subscription.Resume{
+				PausedAt:  read.PausedAt,
+				Status:    subscription.StatusTrialing,
+				PeriodEnd: &stretched,
+				TrialEnd:  &trialEnd,
+				Stretch:   stretch,
+			}),
+		)
+
 		after := time.Now()
+
 		got := reread(t, s, sub)
 		if got.Status != subscription.StatusTrialing {
 			t.Errorf("a resumed subscription is %q, want the status it was given", got.Status)
 		}
-		if !sameInstantToMillisecond(got.CurrentPeriodStart, periodStart) || !sameInstantToMillisecond(got.CurrentPeriodEnd, stretched) {
-			t.Errorf("a resumed period runs %v to %v, want %v to the stretched %v", got.CurrentPeriodStart, got.CurrentPeriodEnd, periodStart, stretched)
+
+		if !sameInstantToMillisecond(got.CurrentPeriodStart, periodStart) ||
+			!sameInstantToMillisecond(got.CurrentPeriodEnd, stretched) {
+			t.Errorf(
+				"a resumed period runs %v to %v, want %v to the stretched %v",
+				got.CurrentPeriodStart,
+				got.CurrentPeriodEnd,
+				periodStart,
+				stretched,
+			)
 		}
+
 		if got.CancelAt == nil || !sameInstantToMillisecond(*got.CancelAt, stretched) {
-			t.Errorf("a cancel at the period end is now %v, want it moved to %v", got.CancelAt, stretched)
+			t.Errorf(
+				"a cancel at the period end is now %v, want it moved to %v",
+				got.CancelAt,
+				stretched,
+			)
 		}
+
 		if got.TrialEnd == nil || !sameInstantToMillisecond(*got.TrialEnd, trialEnd) {
 			t.Errorf("trial_end %v, want the moved %v", got.TrialEnd, trialEnd)
 		}
+
 		if got.PausedAt != nil {
 			t.Errorf("paused_at %v survived the resume", got.PausedAt)
 		}
+
 		sameStretch(t, got.Stretch, stretch)
 		requireStampedDuring(t, "updated_at", got.UpdatedAt, before, after)
 
@@ -167,13 +247,28 @@ func testOperatorWritesAreConditional(t *testing.T, s ledgerstore.Store) {
 		otherCancel := periodEnd.Add(-24 * time.Hour)
 		keepCancel := paused(func(x *subscription.Subscription) { x.CancelAt = &otherCancel })
 		noFloor := &subscription.Stretch{Start: periodStart, End: stretched, OriginalEnd: periodEnd}
-		expectChanged(t, "resume with a cancel inside the period", true)(s.ResumeSubscription(ctx, keepCancel.ID, subscription.Resume{
-			PausedAt: reread(t, s, keepCancel).PausedAt, Status: subscription.StatusActive, PeriodEnd: &stretched, Stretch: noFloor,
-		}))
+		expectChanged(
+			t,
+			"resume with a cancel inside the period",
+			true,
+		)(
+			s.ResumeSubscription(ctx, keepCancel.ID, subscription.Resume{
+				PausedAt: reread(
+					t,
+					s,
+					keepCancel,
+				).PausedAt,
+				Status:    subscription.StatusActive,
+				PeriodEnd: &stretched,
+				Stretch:   noFloor,
+			}),
+		)
+
 		got = reread(t, s, keepCancel)
 		if got.CancelAt == nil || !sameInstantToMillisecond(*got.CancelAt, otherCancel) {
 			t.Errorf("a cancel inside the period moved to %v", got.CancelAt)
 		}
+
 		sameStretch(t, got.Stretch, noFloor)
 
 		// Nil fields leave their columns alone: a row paused before
@@ -184,39 +279,111 @@ func testOperatorWritesAreConditional(t *testing.T, s ledgerstore.Store) {
 			x.TrialEnd = &trialEnd
 			x.Stretch = stretch
 		})
-		expectChanged(t, "resume a paused subscription with no paused_at", true)(s.ResumeSubscription(ctx, legacy.ID, subscription.Resume{
-			PausedAt: reread(t, s, legacy).PausedAt, Status: subscription.StatusActive,
-		}))
+		expectChanged(
+			t,
+			"resume a paused subscription with no paused_at",
+			true,
+		)(
+			s.ResumeSubscription(ctx, legacy.ID, subscription.Resume{
+				PausedAt: reread(t, s, legacy).PausedAt, Status: subscription.StatusActive,
+			}),
+		)
+
 		got = reread(t, s, legacy)
-		if got.Status != subscription.StatusActive || !sameInstantToMillisecond(got.CurrentPeriodEnd, legacy.CurrentPeriodEnd) ||
-			got.TrialEnd == nil || !sameInstantToMillisecond(*got.TrialEnd, trialEnd) {
-			t.Errorf("status %q period end %v trial_end %v, want active and both untouched", got.Status, got.CurrentPeriodEnd, got.TrialEnd)
+		if got.Status != subscription.StatusActive ||
+			!sameInstantToMillisecond(got.CurrentPeriodEnd, legacy.CurrentPeriodEnd) ||
+			got.TrialEnd == nil ||
+			!sameInstantToMillisecond(*got.TrialEnd, trialEnd) {
+			t.Errorf(
+				"status %q period end %v trial_end %v, want active and both untouched",
+				got.Status,
+				got.CurrentPeriodEnd,
+				got.TrialEnd,
+			)
 		}
+
 		sameStretch(t, got.Stretch, stretch)
 
 		// A different paused_at means the row was resumed and paused again
 		// since the read: the write must miss.
 		again := paused(func(*subscription.Subscription) {})
 		otherPause := pausedAt.Add(-time.Hour)
-		stale := subscription.Resume{PausedAt: &otherPause, Status: subscription.StatusActive, PeriodEnd: &stretched}
-		expectChanged(t, "resume with a stale paused_at", false)(s.ResumeSubscription(ctx, again.ID, stale))
+		stale := subscription.Resume{
+			PausedAt:  &otherPause,
+			Status:    subscription.StatusActive,
+			PeriodEnd: &stretched,
+		}
+		expectChanged(
+			t,
+			"resume with a stale paused_at",
+			false,
+		)(
+			s.ResumeSubscription(ctx, again.ID, stale),
+		)
 		stale.PausedAt = nil
-		expectChanged(t, "resume reading no paused_at where one is set", false)(s.ResumeSubscription(ctx, again.ID, stale))
-		if got := reread(t, s, again); got.Status != subscription.StatusPaused || got.PausedAt == nil ||
+		expectChanged(
+			t,
+			"resume reading no paused_at where one is set",
+			false,
+		)(
+			s.ResumeSubscription(ctx, again.ID, stale),
+		)
+
+		if got := reread(
+			t,
+			s,
+			again,
+		); got.Status != subscription.StatusPaused ||
+			got.PausedAt == nil ||
 			!sameInstantToMillisecond(got.CurrentPeriodEnd, periodEnd) {
-			t.Errorf("a missed resume left status %q paused_at %v period end %v", got.Status, got.PausedAt, got.CurrentPeriodEnd)
+			t.Errorf(
+				"a missed resume left status %q paused_at %v period end %v",
+				got.Status,
+				got.PausedAt,
+				got.CurrentPeriodEnd,
+			)
 		}
 
 		for _, st := range []subscription.Status{subscription.StatusActive, subscription.StatusTrialing, subscription.StatusCanceled, subscription.StatusExpired} {
 			other := withStatus(st)
-			expectChanged(t, "resume a "+string(st)+" subscription", false)(s.ResumeSubscription(ctx, other.ID, subscription.Resume{
-				PausedAt: reread(t, s, other).PausedAt, Status: subscription.StatusActive, PeriodEnd: &stretched, Stretch: stretch,
-			}))
+			expectChanged(
+				t,
+				"resume a "+string(st)+" subscription",
+				false,
+			)(
+				s.ResumeSubscription(ctx, other.ID, subscription.Resume{
+					PausedAt: reread(
+						t,
+						s,
+						other,
+					).PausedAt,
+					Status:    subscription.StatusActive,
+					PeriodEnd: &stretched,
+					Stretch:   stretch,
+				}),
+			)
+
 			if got := reread(t, s, other); got.Status != st || got.Stretch != nil {
-				t.Errorf("a refused resume moved a %s subscription to %q, stretch %+v", st, got.Status, got.Stretch)
+				t.Errorf(
+					"a refused resume moved a %s subscription to %q, stretch %+v",
+					st,
+					got.Status,
+					got.Stretch,
+				)
 			}
 		}
-		expectChanged(t, "resume an unknown subscription", false)(s.ResumeSubscription(ctx, id.NewSubscriptionID(), subscription.Resume{Status: subscription.StatusActive}))
+
+		expectChanged(
+			t,
+			"resume an unknown subscription",
+			false,
+		)(
+			s.ResumeSubscription(
+				ctx,
+				id.NewSubscriptionID(),
+				subscription.Resume{Status: subscription.StatusActive},
+			),
+		)
 	})
 
 	t.Run("plan", func(t *testing.T) {
@@ -230,30 +397,59 @@ func testOperatorWritesAreConditional(t *testing.T, s ledgerstore.Store) {
 		})
 		planID := id.NewPlanID()
 		before := time.Now()
-		expectChanged(t, "change a paused subscription's plan", true)(s.ChangeSubscriptionPlan(ctx, sub.ID, planID, map[string]int64{"seats": 5}))
+
+		expectChanged(
+			t,
+			"change a paused subscription's plan",
+			true,
+		)(
+			s.ChangeSubscriptionPlan(ctx, sub.ID, planID, map[string]int64{"seats": 5}),
+		)
+
 		after := time.Now()
+
 		got := reread(t, s, sub)
 		if got.PlanID.String() != planID.String() || got.Quantity["seats"] != 5 {
 			t.Errorf("plan %s seats %d, want %s and 5", got.PlanID, got.Quantity["seats"], planID)
 		}
-		if got.Status != subscription.StatusPaused || got.CancelAt == nil || !sameInstantToMillisecond(*got.CancelAt, cancelAt) ||
-			!sameInstantToMillisecond(got.CurrentPeriodEnd, sub.CurrentPeriodEnd) || got.Metadata["note"] != "kept" {
+
+		if got.Status != subscription.StatusPaused || got.CancelAt == nil ||
+			!sameInstantToMillisecond(*got.CancelAt, cancelAt) ||
+			!sameInstantToMillisecond(got.CurrentPeriodEnd, sub.CurrentPeriodEnd) ||
+			got.Metadata["note"] != "kept" {
 			t.Errorf("a plan change wrote more than the plan and seats: %+v", got)
 		}
+
 		requireStampedDuring(t, "updated_at", got.UpdatedAt, before, after)
 
 		expectChanged(t, "a nil quantity", true)(s.ChangeSubscriptionPlan(ctx, sub.ID, planID, nil))
+
 		if got := reread(t, s, sub); len(got.Quantity) != 0 {
 			t.Errorf("a nil quantity stored %v, want none", got.Quantity)
 		}
+
 		for _, st := range []subscription.Status{subscription.StatusCanceled, subscription.StatusExpired} {
 			other := withStatus(st)
-			expectChanged(t, "change a "+string(st)+" subscription's plan", false)(s.ChangeSubscriptionPlan(ctx, other.ID, planID, nil))
+			expectChanged(
+				t,
+				"change a "+string(st)+" subscription's plan",
+				false,
+			)(
+				s.ChangeSubscriptionPlan(ctx, other.ID, planID, nil),
+			)
+
 			if got := reread(t, s, other); got.PlanID.String() != other.PlanID.String() {
 				t.Errorf("a refused plan change moved a %s subscription to plan %s", st, got.PlanID)
 			}
 		}
-		expectChanged(t, "change an unknown subscription's plan", false)(s.ChangeSubscriptionPlan(ctx, id.NewSubscriptionID(), planID, nil))
+
+		expectChanged(
+			t,
+			"change an unknown subscription's plan",
+			false,
+		)(
+			s.ChangeSubscriptionPlan(ctx, id.NewSubscriptionID(), planID, nil),
+		)
 	})
 
 	t.Run("cancel", func(t *testing.T) {
@@ -264,16 +460,39 @@ func testOperatorWritesAreConditional(t *testing.T, s ledgerstore.Store) {
 			for _, immediately := range []bool{false, true} {
 				sub := withStatus(st)
 				if _, err := s.CancelSubscription(ctx, sub.ID, immediately); !errors.Is(err, want) {
-					t.Errorf("cancel a %s subscription (immediately=%v): got %v, want %v", st, immediately, err, want)
+					t.Errorf(
+						"cancel a %s subscription (immediately=%v): got %v, want %v",
+						st,
+						immediately,
+						err,
+						want,
+					)
 				}
+
 				if got := reread(t, s, sub); got.CancelAt != nil {
-					t.Errorf("a refused cancel set cancel_at on a %s subscription to %v", st, got.CancelAt)
+					t.Errorf(
+						"a refused cancel set cancel_at on a %s subscription to %v",
+						st,
+						got.CancelAt,
+					)
 				}
 			}
 		}
+
 		for _, immediately := range []bool{false, true} {
-			if _, err := s.CancelSubscription(ctx, id.NewSubscriptionID(), immediately); !errors.Is(err, ledger.ErrSubscriptionNotFound) {
-				t.Errorf("cancel an unknown subscription (immediately=%v): got %v, want ErrSubscriptionNotFound", immediately, err)
+			if _, err := s.CancelSubscription(
+				ctx,
+				id.NewSubscriptionID(),
+				immediately,
+			); !errors.Is(
+				err,
+				ledger.ErrSubscriptionNotFound,
+			) {
+				t.Errorf(
+					"cancel an unknown subscription (immediately=%v): got %v, want ErrSubscriptionNotFound",
+					immediately,
+					err,
+				)
 			}
 		}
 	})
@@ -283,26 +502,64 @@ func testOperatorWritesAreConditional(t *testing.T, s ledgerstore.Store) {
 		if err := s.SetSubscriptionProvider(ctx, sub.ID, "sub_123", "stripe"); err != nil {
 			t.Fatalf("SetSubscriptionProvider: %v", err)
 		}
-		if got := reread(t, s, sub); got.ProviderID != "sub_123" || got.ProviderName != "stripe" || got.Status != subscription.StatusActive {
-			t.Errorf("subscription provider %q/%q status %q", got.ProviderID, got.ProviderName, got.Status)
+
+		if got := reread(
+			t,
+			s,
+			sub,
+		); got.ProviderID != "sub_123" || got.ProviderName != "stripe" ||
+			got.Status != subscription.StatusActive {
+			t.Errorf(
+				"subscription provider %q/%q status %q",
+				got.ProviderID,
+				got.ProviderName,
+				got.Status,
+			)
 		}
-		if err := s.SetSubscriptionProvider(ctx, id.NewSubscriptionID(), "x", "y"); !errors.Is(err, ledger.ErrSubscriptionNotFound) {
+
+		if err := s.SetSubscriptionProvider(
+			ctx,
+			id.NewSubscriptionID(),
+			"x",
+			"y",
+		); !errors.Is(
+			err,
+			ledger.ErrSubscriptionNotFound,
+		) {
 			t.Errorf("an unknown subscription: got %v, want ErrSubscriptionNotFound", err)
 		}
 
 		due := now.Add(-time.Hour)
+
 		inv := storedInvoice(t, s, appID, invoice.StatusPending, &due)
 		if err := s.SetInvoiceProvider(ctx, inv.ID, "in_123", "stripe"); err != nil {
 			t.Fatalf("SetInvoiceProvider: %v", err)
 		}
+
 		got, err := s.GetInvoice(ctx, inv.ID)
 		if err != nil {
 			t.Fatalf("GetInvoice: %v", err)
 		}
-		if got.ProviderID != "in_123" || got.ProviderName != "stripe" || got.Status != invoice.StatusPending {
-			t.Errorf("invoice provider %q/%q status %q", got.ProviderID, got.ProviderName, got.Status)
+
+		if got.ProviderID != "in_123" || got.ProviderName != "stripe" ||
+			got.Status != invoice.StatusPending {
+			t.Errorf(
+				"invoice provider %q/%q status %q",
+				got.ProviderID,
+				got.ProviderName,
+				got.Status,
+			)
 		}
-		if err := s.SetInvoiceProvider(ctx, id.NewInvoiceID(), "x", "y"); !errors.Is(err, ledger.ErrInvoiceNotFound) {
+
+		if err := s.SetInvoiceProvider(
+			ctx,
+			id.NewInvoiceID(),
+			"x",
+			"y",
+		); !errors.Is(
+			err,
+			ledger.ErrInvoiceNotFound,
+		) {
 			t.Errorf("an unknown invoice: got %v, want ErrInvoiceNotFound", err)
 		}
 	})
@@ -322,6 +579,7 @@ func testOperatorWritesRaceTheClock(t *testing.T, s ledgerstore.Store) {
 		for i := range out {
 			out[i] = storedSubscription(t, s, appID, edit)
 		}
+
 		return out
 	}
 	endedPeriod := func(x *subscription.Subscription) {
@@ -329,8 +587,17 @@ func testOperatorWritesRaceTheClock(t *testing.T, s ledgerstore.Store) {
 	}
 	requireNewPeriod := func(t *testing.T, got *subscription.Subscription) {
 		t.Helper()
-		if !sameInstantToMillisecond(got.CurrentPeriodStart, past) || !sameInstantToMillisecond(got.CurrentPeriodEnd, next) {
-			t.Errorf("%s: period %v to %v, want the advanced %v to %v", got.ID, got.CurrentPeriodStart, got.CurrentPeriodEnd, past, next)
+
+		if !sameInstantToMillisecond(got.CurrentPeriodStart, past) ||
+			!sameInstantToMillisecond(got.CurrentPeriodEnd, next) {
+			t.Errorf(
+				"%s: period %v to %v, want the advanced %v to %v",
+				got.ID,
+				got.CurrentPeriodStart,
+				got.CurrentPeriodEnd,
+				past,
+				next,
+			)
 		}
 	}
 
@@ -340,11 +607,18 @@ func testOperatorWritesRaceTheClock(t *testing.T, s ledgerstore.Store) {
 			c := past
 			x.CancelAt = &c
 		})
+
 		var log errorLog
+
 		enacted := sync.Map{}
+
 		raceEach(subs,
 			func(sub *subscription.Subscription) {
-				_, err := s.ResumeSubscription(ctx, sub.ID, subscription.Resume{Status: subscription.StatusActive})
+				_, err := s.ResumeSubscription(
+					ctx,
+					sub.ID,
+					subscription.Resume{Status: subscription.StatusActive},
+				)
 				log.add(err)
 			},
 			func(sub *subscription.Subscription) {
@@ -353,11 +627,17 @@ func testOperatorWritesRaceTheClock(t *testing.T, s ledgerstore.Store) {
 				enacted.Store(sub.ID.String(), ok)
 			})
 		log.check(t)
+
 		for _, sub := range subs {
 			got := reread(t, s, sub)
 			if got.Status != subscription.StatusCanceled {
-				t.Errorf("%s: a resume racing the cancel left it %q, want canceled", sub.ID, got.Status)
+				t.Errorf(
+					"%s: a resume racing the cancel left it %q, want canceled",
+					sub.ID,
+					got.Status,
+				)
 			}
+
 			if got.CanceledAt == nil || !sameInstantToMillisecond(*got.CanceledAt, past) {
 				t.Errorf("%s: canceled_at %v, want the cancel_at %v", sub.ID, got.CanceledAt, past)
 			}
@@ -382,8 +662,11 @@ func testOperatorWritesRaceTheClock(t *testing.T, s ledgerstore.Store) {
 		})
 		resumedTrial := now.AddDate(0, 0, 3)
 		stretched := now.AddDate(0, 0, 3)
+
 		var log errorLog
+
 		clockMatched := sync.Map{}
+
 		raceEach(subs,
 			func(sub *subscription.Subscription) {
 				ok, err := s.ResumeSubscription(ctx, sub.ID, subscription.Resume{
@@ -393,6 +676,7 @@ func testOperatorWritesRaceTheClock(t *testing.T, s ledgerstore.Store) {
 				if err == nil && !ok {
 					err = errors.New("the resume did not match " + sub.ID.String())
 				}
+
 				log.add(err)
 			},
 			func(sub *subscription.Subscription) {
@@ -403,14 +687,24 @@ func testOperatorWritesRaceTheClock(t *testing.T, s ledgerstore.Store) {
 				clockMatched.Store(sub.ID.String(), advanced || ended)
 			})
 		log.check(t)
+
 		for _, sub := range subs {
 			got := reread(t, s, sub)
 			if ok, _ := clockMatched.Load(sub.ID.String()); ok == true {
 				t.Errorf("%s: a clock write matched a paused or just-resumed row", sub.ID)
 			}
-			if got.Status != subscription.StatusTrialing || !sameInstantToMillisecond(got.CurrentPeriodEnd, stretched) ||
-				got.TrialEnd == nil || !sameInstantToMillisecond(*got.TrialEnd, resumedTrial) {
-				t.Errorf("%s: status %q period end %v trial_end %v, want the resume's", sub.ID, got.Status, got.CurrentPeriodEnd, got.TrialEnd)
+
+			if got.Status != subscription.StatusTrialing ||
+				!sameInstantToMillisecond(got.CurrentPeriodEnd, stretched) ||
+				got.TrialEnd == nil ||
+				!sameInstantToMillisecond(*got.TrialEnd, resumedTrial) {
+				t.Errorf(
+					"%s: status %q period end %v trial_end %v, want the resume's",
+					sub.ID,
+					got.Status,
+					got.CurrentPeriodEnd,
+					got.TrialEnd,
+				)
 			}
 		}
 	})
@@ -418,13 +712,21 @@ func testOperatorWritesRaceTheClock(t *testing.T, s ledgerstore.Store) {
 	t.Run("plan change against period advance", func(t *testing.T) {
 		subs := many(endedPeriod)
 		planID := id.NewPlanID()
+
 		var log errorLog
+
 		raceEach(subs,
 			func(sub *subscription.Subscription) {
-				ok, err := s.ChangeSubscriptionPlan(ctx, sub.ID, planID, map[string]int64{"seats": 7})
+				ok, err := s.ChangeSubscriptionPlan(
+					ctx,
+					sub.ID,
+					planID,
+					map[string]int64{"seats": 7},
+				)
 				if err == nil && !ok {
 					err = errors.New("the plan change did not match " + sub.ID.String())
 				}
+
 				log.add(err)
 			},
 			func(sub *subscription.Subscription) {
@@ -432,15 +734,25 @@ func testOperatorWritesRaceTheClock(t *testing.T, s ledgerstore.Store) {
 				if err == nil && !ok {
 					err = errors.New("the advance did not match " + sub.ID.String())
 				}
+
 				log.add(err)
 			})
 		log.check(t)
+
 		for _, sub := range subs {
 			got := reread(t, s, sub)
 			requireNewPeriod(t, got)
+
 			if got.PlanID.String() != planID.String() || got.Quantity["seats"] != 7 {
-				t.Errorf("%s: plan %s seats %d, want the new plan %s and 7 seats", sub.ID, got.PlanID, got.Quantity["seats"], planID)
+				t.Errorf(
+					"%s: plan %s seats %d, want the new plan %s and 7 seats",
+					sub.ID,
+					got.PlanID,
+					got.Quantity["seats"],
+					planID,
+				)
 			}
+
 			if got.Status != subscription.StatusActive {
 				t.Errorf("%s: status %q, want active", sub.ID, got.Status)
 			}
@@ -449,14 +761,18 @@ func testOperatorWritesRaceTheClock(t *testing.T, s ledgerstore.Store) {
 
 	t.Run("pause against period advance", func(t *testing.T) {
 		subs := many(endedPeriod)
+
 		var log errorLog
+
 		advanced := sync.Map{}
+
 		raceEach(subs,
 			func(sub *subscription.Subscription) {
 				ok, err := s.PauseSubscription(ctx, sub.ID, now)
 				if err == nil && !ok {
 					err = errors.New("the pause did not match " + sub.ID.String())
 				}
+
 				log.add(err)
 			},
 			func(sub *subscription.Subscription) {
@@ -465,6 +781,7 @@ func testOperatorWritesRaceTheClock(t *testing.T, s ledgerstore.Store) {
 				advanced.Store(sub.ID.String(), ok)
 			})
 		log.check(t)
+
 		for _, sub := range subs {
 			got := reread(t, s, sub)
 			if got.Status != subscription.StatusPaused {
@@ -475,21 +792,29 @@ func testOperatorWritesRaceTheClock(t *testing.T, s ledgerstore.Store) {
 			if ok, _ := advanced.Load(sub.ID.String()); ok == true {
 				requireNewPeriod(t, got)
 			} else if !sameInstantToMillisecond(got.CurrentPeriodEnd, past) {
-				t.Errorf("%s: the advance did not match, yet the period ends %v, not %v", sub.ID, got.CurrentPeriodEnd, past)
+				t.Errorf(
+					"%s: the advance did not match, yet the period ends %v, not %v",
+					sub.ID,
+					got.CurrentPeriodEnd,
+					past,
+				)
 			}
 		}
 	})
 
 	t.Run("immediate cancel against cancel enactment", func(t *testing.T) {
 		subs := many(func(x *subscription.Subscription) { c := past; x.CancelAt = &c })
+
 		var (
 			log     errorLog
 			mu      sync.Mutex
 			winners = map[string]int{}
 		)
+
 		win := func(sub *subscription.Subscription) {
 			mu.Lock()
 			defer mu.Unlock()
+
 			winners[sub.ID.String()]++
 		}
 		raceEach(subs,
@@ -505,24 +830,39 @@ func testOperatorWritesRaceTheClock(t *testing.T, s ledgerstore.Store) {
 			func(sub *subscription.Subscription) {
 				ok, err := s.EnactSubscriptionCancel(ctx, sub.ID, now)
 				log.add(err)
+
 				if ok {
 					win(sub)
 				}
 			})
 		log.check(t)
+
 		for _, sub := range subs {
 			if n := winners[sub.ID.String()]; n != 1 {
 				t.Errorf("%s: %d writes canceled it, want exactly 1", sub.ID, n)
 			}
-			if got := reread(t, s, sub); got.Status != subscription.StatusCanceled || got.CanceledAt == nil {
-				t.Errorf("%s: status %q canceled_at %v, want canceled with a date", sub.ID, got.Status, got.CanceledAt)
+
+			if got := reread(
+				t,
+				s,
+				sub,
+			); got.Status != subscription.StatusCanceled ||
+				got.CanceledAt == nil {
+				t.Errorf(
+					"%s: status %q canceled_at %v, want canceled with a date",
+					sub.ID,
+					got.Status,
+					got.CanceledAt,
+				)
 			}
 		}
 	})
 
 	t.Run("provider sync against the clock", func(t *testing.T) {
 		subs := many(endedPeriod)
+
 		var log errorLog
+
 		raceEach(subs,
 			func(sub *subscription.Subscription) {
 				log.add(s.SetSubscriptionProvider(ctx, sub.ID, "sub_"+sub.ID.String(), "stripe"))
@@ -531,10 +871,12 @@ func testOperatorWritesRaceTheClock(t *testing.T, s ledgerstore.Store) {
 				_, err := s.AdvanceSubscriptionPeriod(ctx, sub.ID, past, past, next, now)
 				log.add(err)
 			})
+
 		invs := make([]*invoice.Invoice, operatorRaceRows)
 		for i := range invs {
 			invs[i] = storedInvoice(t, s, appID, invoice.StatusPending, &past)
 		}
+
 		raceEach(invs,
 			func(inv *invoice.Invoice) {
 				log.add(s.SetInvoiceProvider(ctx, inv.ID, "in_"+inv.ID.String(), "stripe"))
@@ -544,20 +886,29 @@ func testOperatorWritesRaceTheClock(t *testing.T, s ledgerstore.Store) {
 				log.add(err)
 			})
 		log.check(t)
+
 		for _, sub := range subs {
 			got := reread(t, s, sub)
 			requireNewPeriod(t, got)
+
 			if got.ProviderID != "sub_"+sub.ID.String() {
 				t.Errorf("%s: provider id %q lost", sub.ID, got.ProviderID)
 			}
 		}
+
 		for _, inv := range invs {
 			got, err := s.GetInvoice(ctx, inv.ID)
 			if err != nil {
 				t.Fatalf("GetInvoice: %v", err)
 			}
+
 			if got.Status != invoice.StatusPastDue || got.ProviderID != "in_"+inv.ID.String() {
-				t.Errorf("%s: status %q provider %q, want past_due and the provider id", inv.ID, got.Status, got.ProviderID)
+				t.Errorf(
+					"%s: status %q provider %q, want past_due and the provider id",
+					inv.ID,
+					got.Status,
+					got.ProviderID,
+				)
 			}
 		}
 	})

@@ -22,8 +22,10 @@ func TestManifestAndRegistrationsAgree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
+
 	b := newBinder(dispatcher.New(nil), Deps{Engine: func() *ledger.Ledger { return nil }})
 	registerAll(b)
+
 	if b.err != nil {
 		t.Fatalf("registerAll: %v", b.err)
 	}
@@ -32,25 +34,30 @@ func TestManifestAndRegistrationsAgree(t *testing.T) {
 	for _, in := range m.Intents {
 		declared[in.Name] = string(in.Kind)
 	}
+
 	if len(declared) != wantIntents {
 		t.Errorf("manifest declares %d intents, want %d", len(declared), wantIntents)
 	}
+
 	for name, kind := range declared {
 		if b.kinds[name] != kind {
 			t.Errorf("%s: declared %q, bound as %q", name, kind, b.kinds[name])
 		}
 	}
+
 	for name := range b.kinds {
 		if _, ok := declared[name]; !ok {
 			t.Errorf("%s is bound but not declared", name)
 		}
 	}
+
 	for _, in := range m.Intents {
 		switch in.Kind {
 		case dash.IntentKindCommand:
 			if len(in.Invalidates) == 0 {
 				t.Errorf("command %s invalidates nothing", in.Name)
 			}
+
 			for _, q := range in.Invalidates {
 				if declared[q] != string(dash.IntentKindQuery) {
 					t.Errorf("command %s invalidates %q, which is not a declared query", in.Name, q)
@@ -71,6 +78,7 @@ func TestManifestAndRegistrationsAgree(t *testing.T) {
 func TestPlatformIntentsAreTheFeatureCatalogAndSettings(t *testing.T) {
 	b := newBinder(dispatcher.New(nil), Deps{})
 	registerAll(b)
+
 	if b.err != nil {
 		t.Fatalf("registerAll: %v", b.err)
 	}
@@ -79,17 +87,22 @@ func TestPlatformIntentsAreTheFeatureCatalogAndSettings(t *testing.T) {
 	for name := range b.platform {
 		got = append(got, name)
 	}
+
 	var want []string
+
 	for name := range b.kinds {
 		if strings.HasPrefix(name, "features.") || name == "settings.detail" {
 			want = append(want, name)
 		}
 	}
+
 	sort.Strings(got)
 	sort.Strings(want)
+
 	if len(want) != 9 {
 		t.Fatalf("expected 8 features.* intents plus settings.detail, found %v", want)
 	}
+
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("platform intents = %v, want exactly %v", got, want)
 	}
@@ -97,14 +110,17 @@ func TestPlatformIntentsAreTheFeatureCatalogAndSettings(t *testing.T) {
 
 func TestRegisterAgainstARealRegistry(t *testing.T) {
 	reg := dash.NewRegistry()
+
 	deps := Deps{Engine: func() *ledger.Ledger { return nil }}
 	if err := Register(dispatcher.New(nil), reg, dash.NewWardenRegistry(), deps); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
+
 	m, ok := reg.Contributor(contributorName)
 	if !ok {
 		t.Fatal("the ledger contributor is not in the registry")
 	}
+
 	if len(m.Intents) != wantIntents {
 		t.Errorf("registered %d intents, want %d", len(m.Intents), wantIntents)
 	}
@@ -116,6 +132,7 @@ func TestDroppedIntentsAreAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
+
 	dropped := map[string]bool{
 		"usage.purge": true, "providers.list": true,
 	}

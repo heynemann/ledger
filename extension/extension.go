@@ -57,11 +57,16 @@ type Extension struct {
 // New creates a new Ledger Forge extension with the given options.
 func New(opts ...Option) *Extension {
 	e := &Extension{
-		BaseExtension: forge.NewBaseExtension(ExtensionName, ExtensionVersion, ExtensionDescription),
+		BaseExtension: forge.NewBaseExtension(
+			ExtensionName,
+			ExtensionVersion,
+			ExtensionDescription,
+		),
 	}
 	for _, opt := range opts {
 		opt(e)
 	}
+
 	return e
 }
 
@@ -86,12 +91,15 @@ func (e *Extension) Register(fapp forge.App) error {
 		if err != nil {
 			return fmt.Errorf("ledger: %w", err)
 		}
+
 		s, err := e.buildStoreFromGroveDB(groveDB)
 		if err != nil {
 			return err
 		}
+
 		e.store = s
 	}
+
 	if e.store == nil {
 		if db, err := vessel.Inject[*grove.DB](fapp.Container()); err == nil {
 			// Auto-discover default grove.DB from container (matches authsome/cortex pattern).
@@ -99,6 +107,7 @@ func (e *Extension) Register(fapp forge.App) error {
 			if err != nil {
 				return err
 			}
+
 			e.store = s
 			e.Logger().Info("ledger: auto-discovered grove.DB from container",
 				forge.F("driver", db.Driver().Name()),
@@ -136,6 +145,7 @@ func (e *Extension) Start(ctx context.Context) error {
 	}
 
 	e.MarkStarted()
+
 	return nil
 }
 
@@ -147,7 +157,9 @@ func (e *Extension) Stop(_ context.Context) error {
 			return err
 		}
 	}
+
 	e.MarkStopped()
+
 	return nil
 }
 
@@ -156,6 +168,7 @@ func (e *Extension) Health(ctx context.Context) error {
 	if e.store == nil {
 		return errors.New("ledger: store not initialized")
 	}
+
 	return e.store.Ping(ctx)
 }
 
@@ -167,13 +180,16 @@ func (e *Extension) buildLedgerOpts() []ledger.Option {
 	if e.config.MeterBatchSize > 0 || e.config.MeterFlushInterval > 0 {
 		batchSize := e.config.MeterBatchSize
 		flushInterval := e.config.MeterFlushInterval
+
 		defaults := DefaultConfig()
 		if batchSize == 0 {
 			batchSize = defaults.MeterBatchSize
 		}
+
 		if flushInterval == 0 {
 			flushInterval = defaults.MeterFlushInterval
 		}
+
 		opts = append(opts, ledger.WithMeterConfig(batchSize, flushInterval))
 	}
 
@@ -255,6 +271,7 @@ func (e *Extension) loadConfiguration() error {
 // tryLoadFromConfigFile attempts to load config from YAML files.
 func (e *Extension) tryLoadFromConfigFile() (Config, bool) {
 	cm := e.App().Config()
+
 	var cfg Config
 
 	// Try "extensions.ledger" first (namespaced pattern).
@@ -263,8 +280,10 @@ func (e *Extension) tryLoadFromConfigFile() (Config, bool) {
 			e.Logger().Debug("ledger: loaded config from file",
 				forge.F("key", "extensions.ledger"),
 			)
+
 			return cfg, true
 		}
+
 		e.Logger().Warn("ledger: failed to bind extensions.ledger config",
 			forge.F("error", "bind failed"),
 		)
@@ -276,8 +295,10 @@ func (e *Extension) tryLoadFromConfigFile() (Config, bool) {
 			e.Logger().Debug("ledger: loaded config from file",
 				forge.F("key", "ledger"),
 			)
+
 			return cfg, true
 		}
+
 		e.Logger().Warn("ledger: failed to bind ledger config",
 			forge.F("error", "bind failed"),
 		)
@@ -292,9 +313,11 @@ func (e *Extension) mergeWithDefaults(cfg Config) Config {
 	if cfg.MeterBatchSize == 0 {
 		cfg.MeterBatchSize = defaults.MeterBatchSize
 	}
+
 	if cfg.MeterFlushInterval == 0 {
 		cfg.MeterFlushInterval = defaults.MeterFlushInterval
 	}
+
 	if cfg.EntitlementCacheTTL == 0 {
 		cfg.EntitlementCacheTTL = defaults.EntitlementCacheTTL
 	}
@@ -303,6 +326,7 @@ func (e *Extension) mergeWithDefaults(cfg Config) Config {
 	if cfg.LifecycleInterval <= 0 {
 		cfg.LifecycleInterval = defaults.LifecycleInterval
 	}
+
 	return cfg
 }
 
@@ -313,12 +337,15 @@ func (e *Extension) mergeConfigurations(yamlConfig, programmaticConfig Config) C
 	if programmaticConfig.DisableRoutes {
 		yamlConfig.DisableRoutes = true
 	}
+
 	if programmaticConfig.DisableMigrate {
 		yamlConfig.DisableMigrate = true
 	}
+
 	if programmaticConfig.RequireAppClaim {
 		yamlConfig.RequireAppClaim = true
 	}
+
 	if programmaticConfig.DisableLifecycle {
 		yamlConfig.DisableLifecycle = true
 	}
@@ -327,9 +354,11 @@ func (e *Extension) mergeConfigurations(yamlConfig, programmaticConfig Config) C
 	if yamlConfig.BasePath == "" && programmaticConfig.BasePath != "" {
 		yamlConfig.BasePath = programmaticConfig.BasePath
 	}
+
 	if yamlConfig.GroveDatabase == "" && programmaticConfig.GroveDatabase != "" {
 		yamlConfig.GroveDatabase = programmaticConfig.GroveDatabase
 	}
+
 	if yamlConfig.AppID == "" && programmaticConfig.AppID != "" {
 		yamlConfig.AppID = programmaticConfig.AppID
 	}
@@ -338,12 +367,15 @@ func (e *Extension) mergeConfigurations(yamlConfig, programmaticConfig Config) C
 	if yamlConfig.MeterBatchSize == 0 && programmaticConfig.MeterBatchSize != 0 {
 		yamlConfig.MeterBatchSize = programmaticConfig.MeterBatchSize
 	}
+
 	if yamlConfig.MeterFlushInterval == 0 && programmaticConfig.MeterFlushInterval != 0 {
 		yamlConfig.MeterFlushInterval = programmaticConfig.MeterFlushInterval
 	}
+
 	if yamlConfig.EntitlementCacheTTL == 0 && programmaticConfig.EntitlementCacheTTL != 0 {
 		yamlConfig.EntitlementCacheTTL = programmaticConfig.EntitlementCacheTTL
 	}
+
 	if yamlConfig.LifecycleInterval <= 0 && programmaticConfig.LifecycleInterval > 0 {
 		yamlConfig.LifecycleInterval = programmaticConfig.LifecycleInterval
 	}
@@ -358,14 +390,21 @@ func (e *Extension) resolveGroveDB(fapp forge.App) (*grove.DB, error) {
 	if e.config.GroveDatabase != "" {
 		db, err := vessel.InjectNamed[*grove.DB](fapp.Container(), e.config.GroveDatabase)
 		if err != nil {
-			return nil, fmt.Errorf("grove database %q not found in container: %w", e.config.GroveDatabase, err)
+			return nil, fmt.Errorf(
+				"grove database %q not found in container: %w",
+				e.config.GroveDatabase,
+				err,
+			)
 		}
+
 		return db, nil
 	}
+
 	db, err := vessel.Inject[*grove.DB](fapp.Container())
 	if err != nil {
 		return nil, fmt.Errorf("default grove database not found in container: %w", err)
 	}
+
 	return db, nil
 }
 
@@ -414,5 +453,6 @@ func lifecycleSetting(eng *ledger.Ledger) string {
 	if eng == nil || eng.LifecycleInterval() <= 0 {
 		return "off"
 	}
+
 	return eng.LifecycleInterval().String()
 }

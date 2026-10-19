@@ -41,6 +41,7 @@ func listIndexNames(ctx context.Context, t *testing.T, s *Store, col string) map
 	for _, d := range docs {
 		names[d.Name] = true
 	}
+
 	return names
 }
 
@@ -63,6 +64,7 @@ func newUnmigratedInternalTestStore(t *testing.T) *Store {
 	if err := md.Open(ctx, uri); err != nil {
 		t.Fatalf("open mongo driver: %v", err)
 	}
+
 	t.Cleanup(func() { _ = md.Close() })
 
 	db, err := grove.Open(md)
@@ -136,7 +138,9 @@ func TestMigrateTransitionsFromOldSparseIndexWithoutLosingData(t *testing.T) {
 
 	tenantID := "tenant-" + id.New(id.Prefix("test")).String()
 	appID := "app-" + id.New(id.Prefix("test")).String()
+
 	const featureKey = "old-schema-seed"
+
 	keyA := "seed-key-a-" + id.New(id.Prefix("test")).String()
 	keyB := "seed-key-b-" + id.New(id.Prefix("test")).String()
 	now := time.Now().UTC()
@@ -151,71 +155,167 @@ func TestMigrateTransitionsFromOldSparseIndexWithoutLosingData(t *testing.T) {
 	// without conflict; neither collides with the two distinct real keys
 	// either.
 	seedDocs := []any{
-		bson.M{"_id": id.NewUsageEventID().String(), "tenant_id": tenantID, "app_id": appID, "feature_key": featureKey, "quantity": int64(1), "timestamp": now, "idempotency_key": "", "created_at": now},
-		bson.M{"_id": id.NewUsageEventID().String(), "tenant_id": tenantID, "app_id": appID, "feature_key": featureKey, "quantity": int64(1), "timestamp": now, "idempotency_key": nil, "created_at": now},
-		bson.M{"_id": id.NewUsageEventID().String(), "tenant_id": tenantID, "app_id": appID, "feature_key": featureKey, "quantity": int64(1), "timestamp": now, "created_at": now}, // idempotency_key genuinely absent
-		bson.M{"_id": id.NewUsageEventID().String(), "tenant_id": tenantID, "app_id": appID, "feature_key": featureKey, "quantity": int64(1), "timestamp": now, "idempotency_key": keyA, "created_at": now},
-		bson.M{"_id": id.NewUsageEventID().String(), "tenant_id": tenantID, "app_id": appID, "feature_key": featureKey, "quantity": int64(1), "timestamp": now, "idempotency_key": keyB, "created_at": now},
+		bson.M{
+			"_id":             id.NewUsageEventID().String(),
+			"tenant_id":       tenantID,
+			"app_id":          appID,
+			"feature_key":     featureKey,
+			"quantity":        int64(1),
+			"timestamp":       now,
+			"idempotency_key": "",
+			"created_at":      now,
+		},
+		bson.M{
+			"_id":             id.NewUsageEventID().String(),
+			"tenant_id":       tenantID,
+			"app_id":          appID,
+			"feature_key":     featureKey,
+			"quantity":        int64(1),
+			"timestamp":       now,
+			"idempotency_key": nil,
+			"created_at":      now,
+		},
+		bson.M{
+			"_id":         id.NewUsageEventID().String(),
+			"tenant_id":   tenantID,
+			"app_id":      appID,
+			"feature_key": featureKey,
+			"quantity":    int64(1),
+			"timestamp":   now,
+			"created_at":  now,
+		}, // idempotency_key genuinely absent
+		bson.M{
+			"_id":             id.NewUsageEventID().String(),
+			"tenant_id":       tenantID,
+			"app_id":          appID,
+			"feature_key":     featureKey,
+			"quantity":        int64(1),
+			"timestamp":       now,
+			"idempotency_key": keyA,
+			"created_at":      now,
+		},
+		bson.M{
+			"_id":             id.NewUsageEventID().String(),
+			"tenant_id":       tenantID,
+			"app_id":          appID,
+			"feature_key":     featureKey,
+			"quantity":        int64(1),
+			"timestamp":       now,
+			"idempotency_key": keyB,
+			"created_at":      now,
+		},
 	}
 	if _, err := s.mdb.Collection(colUsageEvents).InsertMany(ctx, seedDocs); err != nil {
 		t.Fatalf("seed old-schema documents: %v", err)
 	}
 
 	if err := s.Migrate(ctx); err != nil {
-		t.Fatalf("first Migrate call (transitioning from the old schema): got error %v, want nil", err)
+		t.Fatalf(
+			"first Migrate call (transitioning from the old schema): got error %v, want nil",
+			err,
+		)
 	}
+
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatalf("second Migrate call: got error %v, want nil (Migrate must be idempotent)", err)
 	}
 
 	names := listIndexNames(ctx, t, s, colUsageEvents)
 	if names[oldIdempotencyKeyIndexName] {
-		t.Errorf("index %q is still present after Migrate; it must be dropped", oldIdempotencyKeyIndexName)
+		t.Errorf(
+			"index %q is still present after Migrate; it must be dropped",
+			oldIdempotencyKeyIndexName,
+		)
 	}
+
 	if !names[newIdempotencyKeyIndexName] {
 		t.Errorf("index %q is missing after Migrate; want it present", newIdempotencyKeyIndexName)
 	}
 
 	// Seeded data survived untouched: all 5 seed documents are still there.
-	seedCount, err := s.mdb.Collection(colUsageEvents).CountDocuments(ctx, bson.M{"tenant_id": tenantID, "app_id": appID, "feature_key": featureKey})
+	seedCount, err := s.mdb.Collection(colUsageEvents).
+		CountDocuments(ctx, bson.M{"tenant_id": tenantID, "app_id": appID, "feature_key": featureKey})
 	if err != nil {
 		t.Fatalf("count seeded documents: %v", err)
 	}
+
 	if seedCount != 5 {
-		t.Errorf("got %d seeded document(s) after Migrate, want 5 (Migrate must never delete data)", seedCount)
+		t.Errorf(
+			"got %d seeded document(s) after Migrate, want 5 (Migrate must never delete data)",
+			seedCount,
+		)
 	}
 
 	// Keyless ingest now keeps every event: two brand-new keyless events for
 	// a fresh tenant/app/feature must both survive under the new partial
 	// index, which is exactly the defect this task's fix exists to close.
 	freshTenant := "tenant-fresh-" + id.New(id.Prefix("test")).String()
+
 	events := []*usageEventModel{
-		{ID: id.NewUsageEventID().String(), TenantID: freshTenant, AppID: appID, FeatureKey: featureKey, Quantity: 1, Timestamp: now, CreatedAt: now},
-		{ID: id.NewUsageEventID().String(), TenantID: freshTenant, AppID: appID, FeatureKey: featureKey, Quantity: 1, Timestamp: now, CreatedAt: now},
+		{
+			ID:         id.NewUsageEventID().String(),
+			TenantID:   freshTenant,
+			AppID:      appID,
+			FeatureKey: featureKey,
+			Quantity:   1,
+			Timestamp:  now,
+			CreatedAt:  now,
+		},
+		{
+			ID:         id.NewUsageEventID().String(),
+			TenantID:   freshTenant,
+			AppID:      appID,
+			FeatureKey: featureKey,
+			Quantity:   1,
+			Timestamp:  now,
+			CreatedAt:  now,
+		},
 	}
 	for _, e := range events {
 		if _, err = s.mdb.NewInsert(e).Exec(ctx); err != nil {
 			t.Fatalf("insert post-migrate keyless event: %v", err)
 		}
 	}
-	keylessCount, err := s.mdb.Collection(colUsageEvents).CountDocuments(ctx, bson.M{"tenant_id": freshTenant})
+
+	keylessCount, err := s.mdb.Collection(colUsageEvents).
+		CountDocuments(ctx, bson.M{"tenant_id": freshTenant})
 	if err != nil {
 		t.Fatalf("count post-migrate keyless events: %v", err)
 	}
+
 	if keylessCount != 2 {
-		t.Errorf("got %d keyless event(s) after Migrate, want 2 (both keyless events must be kept, not collided as false duplicates)", keylessCount)
+		t.Errorf(
+			"got %d keyless event(s) after Migrate, want 2 (both keyless events must be kept, not collided as false duplicates)",
+			keylessCount,
+		)
 	}
 
 	// A key already stored is still deduplicated: inserting another
 	// document that reuses keyA must fail under the new partial unique
 	// index exactly as it would have under the old sparse one.
-	dup := usageEventModel{ID: id.NewUsageEventID().String(), TenantID: tenantID, AppID: appID, FeatureKey: featureKey, Quantity: 1, Timestamp: now, IdempotencyKey: keyA, CreatedAt: now}
+	dup := usageEventModel{
+		ID:             id.NewUsageEventID().String(),
+		TenantID:       tenantID,
+		AppID:          appID,
+		FeatureKey:     featureKey,
+		Quantity:       1,
+		Timestamp:      now,
+		IdempotencyKey: keyA,
+		CreatedAt:      now,
+	}
+
 	_, err = s.mdb.NewInsert(&dup).Exec(ctx)
 	if err == nil {
-		t.Fatal("inserting a document that reuses an already-stored non-empty key: got nil error, want a duplicate key error")
+		t.Fatal(
+			"inserting a document that reuses an already-stored non-empty key: got nil error, want a duplicate key error",
+		)
 	}
+
 	if !isDuplicateKeyError(err) {
-		t.Fatalf("isDuplicateKeyError(%v) = false, want true (a repeated non-empty key must still be rejected after Migrate)", err)
+		t.Fatalf(
+			"isDuplicateKeyError(%v) = false, want true (a repeated non-empty key must still be rejected after Migrate)",
+			err,
+		)
 	}
 }
 
@@ -243,9 +343,16 @@ func TestPartialAndSparseIndexesCanCoexistOnSameKeyPattern(t *testing.T) {
 
 	uniqueModels := migrationUniqueIndexes()[colUsageEvents]
 	if len(uniqueModels) != 1 {
-		t.Fatalf("migrationUniqueIndexes()[%q] has %d model(s), want exactly 1", colUsageEvents, len(uniqueModels))
+		t.Fatalf(
+			"migrationUniqueIndexes()[%q] has %d model(s), want exactly 1",
+			colUsageEvents,
+			len(uniqueModels),
+		)
 	}
-	if _, err := s.mdb.Collection(colUsageEvents).Indexes().CreateOne(ctx, uniqueModels[0]); err != nil {
+
+	if _, err := s.mdb.Collection(colUsageEvents).
+		Indexes().
+		CreateOne(ctx, uniqueModels[0]); err != nil {
 		t.Fatalf("create the new partial index while the old sparse index still exists: %v", err)
 	}
 
@@ -253,6 +360,7 @@ func TestPartialAndSparseIndexesCanCoexistOnSameKeyPattern(t *testing.T) {
 	if !names[oldIdempotencyKeyIndexName] {
 		t.Error("old sparse index missing after creating the new one alongside it")
 	}
+
 	if !names[newIdempotencyKeyIndexName] {
 		t.Error("new partial index missing after creating it")
 	}
@@ -296,13 +404,18 @@ func TestMigrateReportsDuplicatesWithoutDeletingAnything(t *testing.T) {
 	resetUsageEventsCollection(ctx, t, s)
 
 	seedOldSparseIdempotencyKeyIndex(ctx, t, s)
-	if err := s.mdb.Collection(colUsageEvents).Indexes().DropOne(ctx, oldIdempotencyKeyIndexName); err != nil {
+
+	if err := s.mdb.Collection(colUsageEvents).
+		Indexes().
+		DropOne(ctx, oldIdempotencyKeyIndexName); err != nil {
 		t.Fatalf("drop the just-seeded old index: %v", err)
 	}
 
 	tenantID := "tenant-" + id.New(id.Prefix("test")).String()
 	appID := "app-" + id.New(id.Prefix("test")).String()
+
 	const featureKey = "duplicate-during-gap"
+
 	sharedKey := "shared-" + id.New(id.Prefix("test")).String()
 	now := time.Now().UTC()
 
@@ -310,8 +423,26 @@ func TestMigrateReportsDuplicatesWithoutDeletingAnything(t *testing.T) {
 	// them, which is the point: this reproduces data written during a
 	// window with no protective index whatsoever.
 	dupDocs := []any{
-		bson.M{"_id": id.NewUsageEventID().String(), "tenant_id": tenantID, "app_id": appID, "feature_key": featureKey, "quantity": int64(1), "timestamp": now, "idempotency_key": sharedKey, "created_at": now},
-		bson.M{"_id": id.NewUsageEventID().String(), "tenant_id": tenantID, "app_id": appID, "feature_key": featureKey, "quantity": int64(1), "timestamp": now, "idempotency_key": sharedKey, "created_at": now},
+		bson.M{
+			"_id":             id.NewUsageEventID().String(),
+			"tenant_id":       tenantID,
+			"app_id":          appID,
+			"feature_key":     featureKey,
+			"quantity":        int64(1),
+			"timestamp":       now,
+			"idempotency_key": sharedKey,
+			"created_at":      now,
+		},
+		bson.M{
+			"_id":             id.NewUsageEventID().String(),
+			"tenant_id":       tenantID,
+			"app_id":          appID,
+			"feature_key":     featureKey,
+			"quantity":        int64(1),
+			"timestamp":       now,
+			"idempotency_key": sharedKey,
+			"created_at":      now,
+		},
 	}
 	if _, err := s.mdb.Collection(colUsageEvents).InsertMany(ctx, dupDocs); err != nil {
 		t.Fatalf("seed conflicting duplicate documents: %v", err)
@@ -323,13 +454,17 @@ func TestMigrateReportsDuplicatesWithoutDeletingAnything(t *testing.T) {
 	// behavior under test), but cleaning up after our OWN test fixture once
 	// the test is done is ordinary test hygiene, not something Migrate did.
 	t.Cleanup(func() {
-		_, _ = s.mdb.Collection(colUsageEvents).DeleteMany(context.Background(), bson.M{"tenant_id": tenantID, "app_id": appID, "feature_key": featureKey})
+		_, _ = s.mdb.Collection(colUsageEvents).
+			DeleteMany(context.Background(), bson.M{"tenant_id": tenantID, "app_id": appID, "feature_key": featureKey})
 	})
 
 	err := s.Migrate(ctx)
 	if err == nil {
-		t.Fatal("Migrate over a collection with duplicate non-empty keys: got nil error, want one naming the collection")
+		t.Fatal(
+			"Migrate over a collection with duplicate non-empty keys: got nil error, want one naming the collection",
+		)
 	}
+
 	msg := err.Error()
 	if !strings.Contains(msg, colUsageEvents) {
 		t.Errorf("Migrate error %q does not name the collection %q", msg, colUsageEvents)
@@ -338,15 +473,22 @@ func TestMigrateReportsDuplicatesWithoutDeletingAnything(t *testing.T) {
 	// never true when this error can fire (see the doc comment above and
 	// duplicateKeyMigrateError's doc comment in store.go for why).
 	if strings.Contains(msg, "left in place") || strings.Contains(msg, "old index") {
-		t.Errorf("Migrate error %q falsely claims an old index was left in place/kept; this error only ever fires when no such protection existed", msg)
+		t.Errorf(
+			"Migrate error %q falsely claims an old index was left in place/kept; this error only ever fires when no such protection existed",
+			msg,
+		)
 	}
 	// It should instead say what actually happened: something was left
 	// unchanged, and the operator needs to resolve duplicates and re-run.
 	if !strings.Contains(msg, "no data was changed") {
 		t.Errorf("Migrate error %q does not state that no data was changed", msg)
 	}
+
 	if !strings.Contains(msg, "re-run Migrate") {
-		t.Errorf("Migrate error %q does not tell the operator to re-run Migrate after resolving the duplicates", msg)
+		t.Errorf(
+			"Migrate error %q does not tell the operator to re-run Migrate after resolving the duplicates",
+			msg,
+		)
 	}
 	// errors.As (which isDuplicateKeyError uses under the hood) walks an
 	// errors.Join tree's Unwrap() []error just as it walks a single Unwrap()
@@ -357,12 +499,17 @@ func TestMigrateReportsDuplicatesWithoutDeletingAnything(t *testing.T) {
 	}
 
 	// Data untouched: both conflicting documents are still there.
-	count, err := s.mdb.Collection(colUsageEvents).CountDocuments(ctx, bson.M{"tenant_id": tenantID, "app_id": appID, "feature_key": featureKey})
+	count, err := s.mdb.Collection(colUsageEvents).
+		CountDocuments(ctx, bson.M{"tenant_id": tenantID, "app_id": appID, "feature_key": featureKey})
 	if err != nil {
 		t.Fatalf("count conflicting documents: %v", err)
 	}
+
 	if count != 2 {
-		t.Errorf("got %d document(s) after the failed Migrate, want 2 (Migrate must never delete data)", count)
+		t.Errorf(
+			"got %d document(s) after the failed Migrate, want 2 (Migrate must never delete data)",
+			count,
+		)
 	}
 
 	// No worse than before on the idempotency_key front: before this
@@ -372,10 +519,17 @@ func TestMigrateReportsDuplicatesWithoutDeletingAnything(t *testing.T) {
 	// resurrected old one.
 	names := listIndexNames(ctx, t, s, colUsageEvents)
 	if names[oldIdempotencyKeyIndexName] {
-		t.Errorf("old index %q unexpectedly present after a failed Migrate", oldIdempotencyKeyIndexName)
+		t.Errorf(
+			"old index %q unexpectedly present after a failed Migrate",
+			oldIdempotencyKeyIndexName,
+		)
 	}
+
 	if names[newIdempotencyKeyIndexName] {
-		t.Errorf("new index %q unexpectedly present after a failed Migrate (it must not partially succeed)", newIdempotencyKeyIndexName)
+		t.Errorf(
+			"new index %q unexpectedly present after a failed Migrate (it must not partially succeed)",
+			newIdempotencyKeyIndexName,
+		)
 	}
 
 	// But strictly better than "everything on this collection failed": the
@@ -388,12 +542,16 @@ func TestMigrateReportsDuplicatesWithoutDeletingAnything(t *testing.T) {
 	// index on the collection other than "_id_" and the two
 	// idempotency_key ones must be one of those two query indexes.
 	other := 0
+
 	for name := range names {
-		if name == "_id_" || name == oldIdempotencyKeyIndexName || name == newIdempotencyKeyIndexName {
+		if name == "_id_" || name == oldIdempotencyKeyIndexName ||
+			name == newIdempotencyKeyIndexName {
 			continue
 		}
+
 		other++
 	}
+
 	if other != 2 {
 		t.Errorf("got %d non-idempotency-key index(es) on %s after the failed Migrate, want 2 "+
 			"(the collection's other query indexes must still be created even when the unique "+
@@ -409,10 +567,13 @@ func TestMigrateDropOldIndexToleratesAlreadyDropped(t *testing.T) {
 	ctx := context.Background()
 	s := newInternalTestStore(t)
 
-	err := s.mdb.Collection(colUsageEvents).Indexes().DropOne(ctx, "definitely_never_existed_index_name")
+	err := s.mdb.Collection(colUsageEvents).
+		Indexes().
+		DropOne(ctx, "definitely_never_existed_index_name")
 	if err == nil {
 		t.Fatal("DropOne on a nonexistent index name: got nil error, want an index-not-found error")
 	}
+
 	if !isIndexNotFound(err) {
 		t.Fatalf("isIndexNotFound(%v) = false, want true", err)
 	}

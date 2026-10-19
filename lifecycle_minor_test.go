@@ -27,16 +27,22 @@ func TestEnactCancelsCatchesThePeriodUpFirst(t *testing.T) {
 	if err != nil || len(enacted) != 1 {
 		t.Fatalf("EnactCancels: %v, %v", enacted, err)
 	}
+
 	if len(ev.renewals) != 1 {
 		t.Fatalf("renewals %+v, want one", ev.renewals)
 	}
+
 	ended := ev.renewals[0].Ended
-	if len(ended) != 2 || !ended[0].Start.Equal(at(2026, 1, 1)) || !ended[1].End.Equal(at(2026, 3, 1)) {
+	if len(ended) != 2 || !ended[0].Start.Equal(at(2026, 1, 1)) ||
+		!ended[1].End.Equal(at(2026, 3, 1)) {
 		t.Errorf("ended %+v, want January and February", ended)
 	}
+
 	got := reload(t, l, sub)
 	samePeriod(t, got, at(2026, 3, 1), at(2026, 4, 1))
-	if got.Status != subscription.StatusCanceled || got.CanceledAt == nil || !got.CanceledAt.Equal(at(2026, 3, 15)) {
+
+	if got.Status != subscription.StatusCanceled || got.CanceledAt == nil ||
+		!got.CanceledAt.Equal(at(2026, 3, 15)) {
 		t.Errorf("status %s canceled_at %v, want canceled on 15 March", got.Status, got.CanceledAt)
 	}
 }
@@ -49,12 +55,20 @@ type operatorBetween struct {
 	operator func(id.SubscriptionID)
 }
 
-func (s *operatorBetween) AdvanceSubscriptionPeriod(ctx context.Context, subID id.SubscriptionID, from, start, end, now time.Time) (bool, error) {
+func (s *operatorBetween) AdvanceSubscriptionPeriod(
+	ctx context.Context,
+	subID id.SubscriptionID,
+	from, start, end, now time.Time,
+) (bool, error) {
 	s.operator(subID)
 	return s.Store.AdvanceSubscriptionPeriod(ctx, subID, from, start, end, now)
 }
 
-func (s *operatorBetween) EndSubscriptionTrial(ctx context.Context, subID id.SubscriptionID, now time.Time) (bool, error) {
+func (s *operatorBetween) EndSubscriptionTrial(
+	ctx context.Context,
+	subID id.SubscriptionID,
+	now time.Time,
+) (bool, error) {
 	s.operator(subID)
 	return s.Store.EndSubscriptionTrial(ctx, subID, now)
 }
@@ -79,17 +93,21 @@ func TestLifecycleHooksAnnounceTheStoredRow(t *testing.T) {
 		x.CurrentPeriodEnd = at(2026, 6, 1)
 		x.TrialEnd = ptr(at(2026, 2, 1))
 	})
+
 	var trialSubs []*subscription.Subscription
+
 	trialHook := &trialRecorder{got: &trialSubs}
 	l = ledger.New(st, ledger.WithPlugin(ev), ledger.WithPlugin(trialHook))
 
 	if _, err := l.Advance(ctx, at(2026, 3, 1)); err != nil {
 		t.Fatalf("Advance: %v", err)
 	}
+
 	if len(ev.renewals) != 1 || ev.renewals[0].Subscription.ID.String() != renewing.ID.String() ||
 		ev.renewals[0].Subscription.PlanID.String() != next.ID.String() {
 		t.Errorf("renewal announced %+v, want the stored row on the new plan", ev.renewals)
 	}
+
 	if len(trialSubs) != 1 || trialSubs[0].ID.String() != trialing.ID.String() ||
 		trialSubs[0].PlanID.String() != next.ID.String() || trialSubs[0].Status != subscription.StatusActive {
 		t.Errorf("trial end announced %+v, want the stored active row on the new plan", trialSubs)
@@ -116,27 +134,50 @@ func TestCancelScheduledAnnouncesTheStoredRow(t *testing.T) {
 	ev := &lifecycleEvents{}
 	l := ledger.New(st, ledger.WithPlugin(ev))
 	p := activePlan(t, l, "clock", "app_1", 0)
+
 	sub := &subscription.Subscription{
-		ID: id.NewSubscriptionID(), TenantID: "t1", PlanID: p.ID, AppID: "app_1",
-		Status: subscription.StatusActive, CurrentPeriodStart: past.AddDate(0, -1, 0), CurrentPeriodEnd: past,
+		ID:                 id.NewSubscriptionID(),
+		TenantID:           "t1",
+		PlanID:             p.ID,
+		AppID:              "app_1",
+		Status:             subscription.StatusActive,
+		CurrentPeriodStart: past.AddDate(0, -1, 0),
+		CurrentPeriodEnd:   past,
 	}
 	if err := st.CreateSubscription(ctx, sub); err != nil {
 		t.Fatalf("CreateSubscription: %v", err)
 	}
+
 	st.clock = func() {
-		if ok, err := st.AdvanceSubscriptionPeriod(ctx, sub.ID, past, past, next, now); err != nil || !ok {
+		if ok, err := st.AdvanceSubscriptionPeriod(
+			ctx,
+			sub.ID,
+			past,
+			past,
+			next,
+			now,
+		); err != nil ||
+			!ok {
 			t.Fatalf("AdvanceSubscriptionPeriod: %v, %v", ok, err)
 		}
 	}
+
 	if err := l.CancelSubscription(ctx, sub.ID, false); err != nil {
 		t.Fatalf("CancelSubscription: %v", err)
 	}
+
 	if len(ev.scheduledSubs) != 1 {
 		t.Fatalf("scheduled %d, want 1", len(ev.scheduledSubs))
 	}
+
 	got := ev.scheduledSubs[0]
 	if got.CancelAt == nil || !got.CancelAt.Equal(next) || !got.CurrentPeriodEnd.Equal(next) {
-		t.Errorf("announced cancel_at %v with period end %v, want both %v", got.CancelAt, got.CurrentPeriodEnd, next)
+		t.Errorf(
+			"announced cancel_at %v with period end %v, want both %v",
+			got.CancelAt,
+			got.CurrentPeriodEnd,
+			next,
+		)
 	}
 }
 
@@ -148,12 +189,21 @@ func TestCreateSubscriptionStampsToTheMillisecond(t *testing.T) {
 	now := time.Date(2026, 3, 1, 10, 0, 0, 123456789, time.UTC)
 	l := ledger.New(s, ledger.WithClock(func() time.Time { return now }))
 	p := activePlan(t, l, "pro", "app_1", 7)
+
 	sub := &subscription.Subscription{TenantID: "acme", PlanID: p.ID, AppID: "app_1"}
 	if err := l.CreateSubscription(ctx, sub); err != nil {
 		t.Fatalf("CreateSubscription: %v", err)
 	}
+
 	want := time.Date(2026, 3, 1, 10, 0, 0, 123000000, time.UTC)
-	if !sub.CreatedAt.Equal(want) || !sub.CurrentPeriodStart.Equal(want) || !sub.TrialStart.Equal(want) {
-		t.Errorf("created %v, period from %v, trial from %v; want all %v", sub.CreatedAt, sub.CurrentPeriodStart, sub.TrialStart, want)
+	if !sub.CreatedAt.Equal(want) || !sub.CurrentPeriodStart.Equal(want) ||
+		!sub.TrialStart.Equal(want) {
+		t.Errorf(
+			"created %v, period from %v, trial from %v; want all %v",
+			sub.CreatedAt,
+			sub.CurrentPeriodStart,
+			sub.TrialStart,
+			want,
+		)
 	}
 }

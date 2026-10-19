@@ -69,14 +69,20 @@ var storedLayouts = []string{
 // " m=+..." monotonic reading first: that reading only means something to the
 // process that took it.
 func parseStoredTime(text string) (time.Time, bool) {
-	if i := strings.LastIndex(text, " m="); i >= 0 && i+3 < len(text) && (text[i+3] == '+' || text[i+3] == '-') {
+	if i := strings.LastIndex(
+		text,
+		" m=",
+	); i >= 0 && i+3 < len(text) &&
+		(text[i+3] == '+' || text[i+3] == '-') {
 		text = text[:i]
 	}
+
 	for _, layout := range storedLayouts {
 		if t, err := time.Parse(layout, text); err == nil {
 			return t, true
 		}
 	}
+
 	return time.Time{}, false
 }
 
@@ -91,81 +97,109 @@ func normalizeTimeText(ctx context.Context, exec migrate.Executor) error {
 			return fmt.Errorf("normalize %s: %w", tbl.table, err)
 		}
 	}
+
 	return nil
 }
 
-func normalizeTable(ctx context.Context, exec migrate.Executor, table, key string, columns []string) error {
+func normalizeTable(
+	ctx context.Context,
+	exec migrate.Executor,
+	table, key string,
+	columns []string,
+) error {
 	selects := make([]string, len(columns))
+
 	stale := make([]string, len(columns))
 	for i, c := range columns {
 		selects[i] = "CAST(" + c + " AS TEXT)"
 		stale[i] = "(" + c + " IS NOT NULL AND " + c + " NOT GLOB '" + canonicalGlob + "')"
 	}
+
 	query := "SELECT " + key + ", " + strings.Join(selects, ", ") +
 		" FROM " + table +
 		" WHERE " + key + " > ? AND (" + strings.Join(stale, " OR ") + ")" +
 		" ORDER BY " + key + " LIMIT " + fmt.Sprint(normalizeBatch)
 
 	last := ""
+
 	for {
 		type row struct {
 			key  string
 			vals []sql.NullString
 		}
+
 		var batch []row
+
 		rows, err := exec.Query(ctx, query, last)
 		if err != nil {
 			return err
 		}
+
 		for rows.Next() {
 			r := row{vals: make([]sql.NullString, len(columns))}
 			dest := make([]any, 0, len(columns)+1)
+
 			dest = append(dest, &r.key)
 			for i := range r.vals {
 				dest = append(dest, &r.vals[i])
 			}
+
 			if scanErr := rows.Scan(dest...); scanErr != nil {
 				_ = rows.Close()
 				return scanErr
 			}
+
 			batch = append(batch, r)
 		}
+
 		err = rows.Err()
 		if cerr := rows.Close(); err == nil {
 			err = cerr
 		}
+
 		if err != nil {
 			return err
 		}
+
 		if len(batch) == 0 {
 			return nil
 		}
+
 		for _, r := range batch {
-			var sets, guards []string
-			var setArgs, guardArgs []any
+			var (
+				sets, guards       []string
+				setArgs, guardArgs []any
+			)
+
 			for i, v := range r.vals {
 				if !v.Valid || canonicalTime.MatchString(v.String) {
 					continue
 				}
+
 				t, ok := parseStoredTime(v.String)
 				if !ok {
 					continue
 				}
+
 				sets = append(sets, columns[i]+" = ?")
 				setArgs = append(setArgs, t.UTC())
 				guards = append(guards, "CAST("+columns[i]+" AS TEXT) = ?")
 				guardArgs = append(guardArgs, v.String)
 			}
+
 			if len(sets) == 0 {
 				continue
 			}
+
 			args := append(append(setArgs, r.key), guardArgs...)
+
 			update := "UPDATE " + table + " SET " + strings.Join(sets, ", ") +
 				" WHERE " + key + " = ? AND " + strings.Join(guards, " AND ")
 			if _, err := exec.Exec(ctx, update, args...); err != nil {
 				return err
 			}
 		}
+
 		last = batch[len(batch)-1].key
 	}
 }

@@ -30,6 +30,7 @@ func TestGetUsageAggregatorByName(t *testing.T) {
 	if err := r.Register(&stubAggregator{name: "count"}); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
+
 	if got := r.GetUsageAggregator("count"); got == nil {
 		t.Error("got nil for a registered aggregator, want it returned by name")
 	}
@@ -43,14 +44,17 @@ func (h *lifecycleHooks) OnSubscriptionCancelScheduled(context.Context, interfac
 	h.calls["scheduled"]++
 	return nil
 }
+
 func (h *lifecycleHooks) OnSubscriptionTrialEnded(context.Context, interface{}) error {
 	h.calls["trial"]++
 	return nil
 }
+
 func (h *lifecycleHooks) OnSubscriptionRenewed(context.Context, interface{}) error {
 	h.calls["renewed"]++
 	return nil
 }
+
 func (h *lifecycleHooks) OnInvoicePastDue(context.Context, interface{}) error {
 	h.calls["past_due"]++
 	return nil
@@ -58,15 +62,18 @@ func (h *lifecycleHooks) OnInvoicePastDue(context.Context, interface{}) error {
 
 func TestRegistryDispatchesTheLifecycleHooks(t *testing.T) {
 	r := NewRegistry()
+
 	h := &lifecycleHooks{calls: map[string]int{}}
 	if err := r.Register(h); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
+
 	ctx := context.Background()
 	r.EmitSubscriptionCancelScheduled(ctx, nil)
 	r.EmitSubscriptionTrialEnded(ctx, nil)
 	r.EmitSubscriptionRenewed(ctx, nil)
 	r.EmitInvoicePastDue(ctx, nil)
+
 	for _, k := range []string{"scheduled", "trial", "renewed", "past_due"} {
 		if h.calls[k] != 1 {
 			t.Errorf("%s: %d calls, want 1", k, h.calls[k])
@@ -91,8 +98,10 @@ func (h *failingHooks) OnPlanArchived(context.Context, string) error {
 func TestFailedHooksAreCountedByHookAndReason(t *testing.T) {
 	sink := telemetrytest.NewSink()
 	r := NewRegistry().WithMetrics(sink)
+
 	h := &failingHooks{release: make(chan struct{})}
 	defer close(h.release)
+
 	if err := r.Register(h); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -104,10 +113,15 @@ func TestFailedHooksAreCountedByHookAndReason(t *testing.T) {
 	cancel()
 	r.EmitPlanArchived(canceled, "plan_1")
 
-	if got := sink.Value(`ledger_plugin_hook_failures_total{hook="OnPlanCreated",reason="error"}`); got != 1 {
+	if got := sink.Value(
+		`ledger_plugin_hook_failures_total{hook="OnPlanCreated",reason="error"}`,
+	); got != 1 {
 		t.Errorf("OnPlanCreated errors = %v, want 1 (series: %v)", got, sink.Series())
 	}
-	if got := sink.Value(`ledger_plugin_hook_failures_total{hook="OnPlanArchived",reason="canceled"}`); got != 1 {
+
+	if got := sink.Value(
+		`ledger_plugin_hook_failures_total{hook="OnPlanArchived",reason="canceled"}`,
+	); got != 1 {
 		t.Errorf("OnPlanArchived cancels = %v, want 1 (series: %v)", got, sink.Series())
 	}
 }
@@ -116,8 +130,10 @@ func TestASlowHookTimesOutAndIsCounted(t *testing.T) {
 	sink := telemetrytest.NewSink()
 	r := NewRegistry().WithMetrics(sink)
 	r.hookTimeout = 10 * time.Millisecond
+
 	h := &failingHooks{release: make(chan struct{})}
 	defer close(h.release)
+
 	if err := r.Register(h); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -125,12 +141,16 @@ func TestASlowHookTimesOutAndIsCounted(t *testing.T) {
 	reason, err := r.callWithTimeout(context.Background(), h.Name(), func() error {
 		return h.OnPlanArchived(context.Background(), "plan_1")
 	})
-	if reason != "timeout" || !errors.Is(err, errHookTimeout) || err.Error() != "plugin timeout: failing-hooks" {
+	if reason != "timeout" || !errors.Is(err, errHookTimeout) ||
+		err.Error() != "plugin timeout: failing-hooks" {
 		t.Errorf("a hook past its timeout: reason %q, error %v", reason, err)
 	}
 
 	r.EmitPlanArchived(context.Background(), "plan_1")
-	if got := sink.Value(`ledger_plugin_hook_failures_total{hook="OnPlanArchived",reason="timeout"}`); got != 1 {
+
+	if got := sink.Value(
+		`ledger_plugin_hook_failures_total{hook="OnPlanArchived",reason="timeout"}`,
+	); got != 1 {
 		t.Errorf("OnPlanArchived timeouts = %v, want 1 (series: %v)", got, sink.Series())
 	}
 }

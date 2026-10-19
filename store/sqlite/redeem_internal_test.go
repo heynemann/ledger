@@ -52,6 +52,7 @@ BEGIN SELECT RAISE(ABORT, 'forced failure'); END;
 	if err != nil {
 		t.Fatalf("ListAppliedCoupons after the forced failure: %v", err)
 	}
+
 	if len(applied) != 0 {
 		t.Errorf("got %d applied coupons after a rolled-back redeem, want 0", len(applied))
 	}
@@ -60,6 +61,7 @@ BEGIN SELECT RAISE(ABORT, 'forced failure'); END;
 	if err != nil {
 		t.Fatalf("GetCouponByID after the forced failure: %v", err)
 	}
+
 	if stored.TimesRedeemed != 0 {
 		t.Errorf("got TimesRedeemed %d after a rolled-back redeem, want 0", stored.TimesRedeemed)
 	}
@@ -79,6 +81,7 @@ BEGIN SELECT RAISE(ABORT, 'forced failure'); END;
 	if err != nil {
 		t.Fatalf("ListAppliedCoupons after the retry: %v", err)
 	}
+
 	if len(applied) != 1 {
 		t.Errorf("got %d applied coupons after the retry, want 1", len(applied))
 	}
@@ -87,6 +90,7 @@ BEGIN SELECT RAISE(ABORT, 'forced failure'); END;
 	if err != nil {
 		t.Fatalf("GetCouponByID after the retry: %v", err)
 	}
+
 	if stored.TimesRedeemed != 1 {
 		t.Errorf("got TimesRedeemed %d after the retry, want 1", stored.TimesRedeemed)
 	}

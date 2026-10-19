@@ -14,7 +14,13 @@ import (
 )
 
 func newFeatureInput(key string) FeatureCreateInput {
-	return FeatureCreateInput{Key: key, Name: key, Type: string(feature.FeatureMetered), DefaultLimit: 100, Period: string(feature.PeriodMonthly)}
+	return FeatureCreateInput{
+		Key:          key,
+		Name:         key,
+		Type:         string(feature.FeatureMetered),
+		DefaultLimit: 100,
+		Period:       string(feature.PeriodMonthly),
+	}
 }
 
 func TestFeaturesManifest(t *testing.T) {
@@ -34,13 +40,23 @@ func TestFeaturesManifest(t *testing.T) {
 
 func TestFeaturesCreateAndScope(t *testing.T) {
 	h := newHarness(t)
+
 	own := mustCall(h, "app_a", featuresCreate, newFeatureInput("api_calls"))
 	if own.AppID != "app_a" {
 		t.Errorf("app = %q, want app_a", own.AppID)
 	}
-	if _, err := call(h, "app_a", featuresCreate, newFeatureInput("api_calls")); codeOf(err) != dash.CodeConflict {
+
+	if _, err := call(
+		h,
+		"app_a",
+		featuresCreate,
+		newFeatureInput("api_calls"),
+	); codeOf(
+		err,
+	) != dash.CodeConflict {
 		t.Errorf("duplicate key: got %v, want CONFLICT", err)
 	}
+
 	if _, err := call(h, "app_b", featuresCreate, newFeatureInput("api_calls")); err != nil {
 		t.Errorf("another app may reuse the key: %v", err)
 	}
@@ -56,12 +72,28 @@ func TestFeaturesCreateAndScope(t *testing.T) {
 		}
 	}
 
-	if _, err := call(h, "app_b", featuresDetail, IDInput{ID: own.ID.String()}); codeOf(err) != dash.CodeNotFound {
+	if _, err := call(
+		h,
+		"app_b",
+		featuresDetail,
+		IDInput{ID: own.ID.String()},
+	); codeOf(
+		err,
+	) != dash.CodeNotFound {
 		t.Errorf("another app's feature: got %v, want NOT_FOUND", err)
 	}
-	if _, err := call(h, "app_a", featuresDetail, IDInput{ID: id.NewFeatureID().String()}); codeOf(err) != dash.CodeNotFound {
+
+	if _, err := call(
+		h,
+		"app_a",
+		featuresDetail,
+		IDInput{ID: id.NewFeatureID().String()},
+	); codeOf(
+		err,
+	) != dash.CodeNotFound {
 		t.Errorf("unknown feature: got %v, want NOT_FOUND", err)
 	}
+
 	for _, key := range []string{"id", "key", "name", "type", "default_limit", "period", "soft_limit", "status", "app_id"} {
 		if !wireKeys(t, own)[key] {
 			t.Errorf("feature on the wire lacks %q", key)
@@ -71,6 +103,7 @@ func TestFeaturesCreateAndScope(t *testing.T) {
 
 func TestGlobalFeaturesAreReadableButNotWritableFromAnApp(t *testing.T) {
 	h := newHarness(t)
+
 	global := mustCallPlatform(h, "", featuresCreate, newFeatureInput("sso"))
 	if global.AppID != "" {
 		t.Fatalf("a feature created from an empty scope must be global, got app %q", global.AppID)
@@ -79,12 +112,14 @@ func TestGlobalFeaturesAreReadableButNotWritableFromAnApp(t *testing.T) {
 	if _, err := call(h, "app_a", featuresDetail, IDInput{ID: global.ID.String()}); err != nil {
 		t.Errorf("reading a global feature from an app: %v", err)
 	}
+
 	listed := mustCall(h, "app_a", featuresList, FeaturesListInput{Global: true})
 	if len(listed.Items) != 1 || listed.Items[0].ID.String() != global.ID.String() {
 		t.Errorf("global list from app_a: %+v", listed.Items)
 	}
 
 	name := "Renamed"
+
 	ref := IDInput{ID: global.ID.String()}
 	for label, err := range map[string]error{
 		"update":  second(call(h, "app_a", featuresUpdate, FeatureUpdateInput{ID: global.ID.String(), Name: &name})),
@@ -94,7 +129,12 @@ func TestGlobalFeaturesAreReadableButNotWritableFromAnApp(t *testing.T) {
 	} {
 		assertSharedWriteDenied(t, label, err)
 	}
-	if stored, _ := h.eng.GetFeature(ctxBackground(), global.ID); stored == nil || stored.Name != "sso" || stored.Status != feature.StatusActive {
+
+	if stored, _ := h.eng.GetFeature(
+		ctxBackground(),
+		global.ID,
+	); stored == nil || stored.Name != "sso" ||
+		stored.Status != feature.StatusActive {
 		t.Errorf("a refused write changed the global feature: %+v", stored)
 	}
 }
@@ -105,9 +145,15 @@ func second[T any](_ T, err error) error { return err }
 
 func assertSharedWriteDenied(t *testing.T, label string, err error) {
 	t.Helper()
+
 	var ce *dash.Error
-	if !errors.As(err, &ce) || ce.Code != dash.CodePermissionDenied || ce.Message != "shared features can be changed only with no app selected" {
-		t.Errorf("an app's %s of a shared feature: got %v, want PERMISSION_DENIED with the shared-feature message", label, err)
+	if !errors.As(err, &ce) || ce.Code != dash.CodePermissionDenied ||
+		ce.Message != "shared features can be changed only with no app selected" {
+		t.Errorf(
+			"an app's %s of a shared feature: got %v, want PERMISSION_DENIED with the shared-feature message",
+			label,
+			err,
+		)
 	}
 }
 
@@ -116,6 +162,7 @@ func TestAnotherAppsFeatureStaysNotFoundForEveryWrite(t *testing.T) {
 	h.withFeatureProvider(&featureProvider{syncID: "feat_x"})
 	foreign := mustCall(h, "app_b", featuresCreate, newFeatureInput("theirs"))
 	name := "Renamed"
+
 	in := IDInput{ID: foreign.ID.String()}
 	for label, err := range map[string]error{
 		"update":  second(call(h, "app_a", featuresUpdate, FeatureUpdateInput{ID: foreign.ID.String(), Name: &name})),
@@ -124,11 +171,21 @@ func TestAnotherAppsFeatureStaysNotFoundForEveryWrite(t *testing.T) {
 		"sync":    second(call(h, "app_a", featuresSync, in)),
 	} {
 		var ce *dash.Error
-		if !errors.As(err, &ce) || ce.Code != dash.CodeNotFound || ce.Message != "feature not found" {
-			t.Errorf("an app's %s of another app's feature: got %v, want NOT_FOUND feature not found", label, err)
+		if !errors.As(err, &ce) || ce.Code != dash.CodeNotFound ||
+			ce.Message != "feature not found" {
+			t.Errorf(
+				"an app's %s of another app's feature: got %v, want NOT_FOUND feature not found",
+				label,
+				err,
+			)
 		}
 	}
-	if stored, _ := h.eng.GetFeature(ctxBackground(), foreign.ID); stored == nil || stored.Name != "theirs" || stored.Status != feature.StatusActive || stored.ProviderID != "" {
+
+	if stored, _ := h.eng.GetFeature(
+		ctxBackground(),
+		foreign.ID,
+	); stored == nil || stored.Name != "theirs" || stored.Status != feature.StatusActive ||
+		stored.ProviderID != "" {
 		t.Errorf("a refused write changed the other app's feature: %+v", stored)
 	}
 }
@@ -137,19 +194,47 @@ func TestAnAppWritesItsOwnFeatureAndEveryWriteWorks(t *testing.T) {
 	h := newHarness(t)
 	h.withFeatureProvider(&featureProvider{syncID: "feat_own"})
 	own := mustCall(h, "app_a", featuresCreate, newFeatureInput("mine"))
+
 	name := "Renamed"
-	if got := mustCall(h, "app_a", featuresUpdate, FeatureUpdateInput{ID: own.ID.String(), Name: &name}); got.Name != "Renamed" {
+	if got := mustCall(
+		h,
+		"app_a",
+		featuresUpdate,
+		FeatureUpdateInput{ID: own.ID.String(), Name: &name},
+	); got.Name != "Renamed" {
 		t.Errorf("update: got %+v", got)
 	}
-	if got := mustCall(h, "app_a", featuresSync, IDInput{ID: own.ID.String()}); !got.Success || got.ProviderID != "feat_own" {
+
+	if got := mustCall(
+		h,
+		"app_a",
+		featuresSync,
+		IDInput{ID: own.ID.String()},
+	); !got.Success ||
+		got.ProviderID != "feat_own" {
 		t.Errorf("sync: got %+v", got)
 	}
+
 	mustCall(h, "app_a", featuresArchive, IDInput{ID: own.ID.String()})
-	if stored, _ := h.eng.GetFeature(ctxBackground(), own.ID); stored == nil || stored.Status != feature.StatusArchived {
+
+	if stored, _ := h.eng.GetFeature(
+		ctxBackground(),
+		own.ID,
+	); stored == nil ||
+		stored.Status != feature.StatusArchived {
 		t.Errorf("archive: got %+v", stored)
 	}
+
 	mustCall(h, "app_a", featuresDelete, IDInput{ID: own.ID.String()})
-	if _, err := call(h, "app_a", featuresDetail, IDInput{ID: own.ID.String()}); codeOf(err) != dash.CodeNotFound {
+
+	if _, err := call(
+		h,
+		"app_a",
+		featuresDetail,
+		IDInput{ID: own.ID.String()},
+	); codeOf(
+		err,
+	) != dash.CodeNotFound {
 		t.Errorf("delete: detail after delete got %v, want NOT_FOUND", err)
 	}
 }
@@ -162,19 +247,43 @@ func TestEmptyScopeSeesAndWritesOnlyTheGlobalCatalog(t *testing.T) {
 	for _, in := range []FeaturesListInput{{}, {Global: false}, {Global: true}} {
 		listed := mustCallPlatform(h, "", featuresList, in)
 		if len(listed.Items) != 1 || listed.Items[0].ID.String() != global.ID.String() {
-			t.Errorf("empty scope list %+v: got %d rows, want only the global feature", in, len(listed.Items))
+			t.Errorf(
+				"empty scope list %+v: got %d rows, want only the global feature",
+				in,
+				len(listed.Items),
+			)
 		}
 	}
 
-	if _, err := callPlatform(h, "", featuresDetail, IDInput{ID: owned.ID.String()}); codeOf(err) != dash.CodeNotFound {
+	if _, err := callPlatform(
+		h,
+		"",
+		featuresDetail,
+		IDInput{ID: owned.ID.String()},
+	); codeOf(
+		err,
+	) != dash.CodeNotFound {
 		t.Errorf("an app's feature from the empty scope: got %v, want NOT_FOUND", err)
 	}
+
 	name := "Renamed"
-	if _, err := callPlatform(h, "", featuresUpdate, FeatureUpdateInput{ID: owned.ID.String(), Name: &name}); codeOf(err) != dash.CodeNotFound {
+	if _, err := callPlatform(
+		h,
+		"",
+		featuresUpdate,
+		FeatureUpdateInput{ID: owned.ID.String(), Name: &name},
+	); codeOf(
+		err,
+	) != dash.CodeNotFound {
 		t.Errorf("updating an app's feature from the empty scope: got %v, want NOT_FOUND", err)
 	}
 
-	got := mustCallPlatform(h, "", featuresUpdate, FeatureUpdateInput{ID: global.ID.String(), Name: &name})
+	got := mustCallPlatform(
+		h,
+		"",
+		featuresUpdate,
+		FeatureUpdateInput{ID: global.ID.String(), Name: &name},
+	)
 	if got.Name != "Renamed" || got.AppID != "" {
 		t.Errorf("updating a global feature from the empty scope: got %+v", got)
 	}
@@ -185,17 +294,40 @@ func TestFeaturesUpdateArchiveDelete(t *testing.T) {
 	f := mustCall(h, "app_a", featuresCreate, newFeatureInput("exports"))
 
 	limit := int64(250)
-	got := mustCall(h, "app_a", featuresUpdate, FeatureUpdateInput{ID: f.ID.String(), DefaultLimit: &limit})
+
+	got := mustCall(
+		h,
+		"app_a",
+		featuresUpdate,
+		FeatureUpdateInput{ID: f.ID.String(), DefaultLimit: &limit},
+	)
 	if got.DefaultLimit != 250 || got.Name != "exports" {
-		t.Errorf("got limit %d name %q; want 250 and the name unchanged", got.DefaultLimit, got.Name)
+		t.Errorf(
+			"got limit %d name %q; want 250 and the name unchanged",
+			got.DefaultLimit,
+			got.Name,
+		)
 	}
 
 	mustCall(h, "app_a", featuresArchive, IDInput{ID: f.ID.String()})
-	if stored, _ := h.eng.GetFeature(ctxBackground(), f.ID); stored.Status != feature.StatusArchived {
+
+	if stored, _ := h.eng.GetFeature(
+		ctxBackground(),
+		f.ID,
+	); stored.Status != feature.StatusArchived {
 		t.Errorf("after archive: %q", stored.Status)
 	}
+
 	mustCall(h, "app_a", featuresDelete, IDInput{ID: f.ID.String()})
-	if _, err := call(h, "app_a", featuresDetail, IDInput{ID: f.ID.String()}); codeOf(err) != dash.CodeNotFound {
+
+	if _, err := call(
+		h,
+		"app_a",
+		featuresDetail,
+		IDInput{ID: f.ID.String()},
+	); codeOf(
+		err,
+	) != dash.CodeNotFound {
 		t.Errorf("after delete: got %v, want NOT_FOUND", err)
 	}
 }
@@ -205,24 +337,55 @@ func TestFeaturesUpdateValidatesAndKeepsKeyAndType(t *testing.T) {
 	f := mustCall(h, "app_a", featuresCreate, newFeatureInput("seats"))
 
 	badPeriod, badLimit := "weekly", int64(-5)
-	if _, err := call(h, "app_a", featuresUpdate, FeatureUpdateInput{ID: f.ID.String(), Period: &badPeriod}); codeOf(err) != dash.CodeBadRequest {
+	if _, err := call(
+		h,
+		"app_a",
+		featuresUpdate,
+		FeatureUpdateInput{ID: f.ID.String(), Period: &badPeriod},
+	); codeOf(
+		err,
+	) != dash.CodeBadRequest {
 		t.Errorf("unknown period on update: got %v, want BAD_REQUEST", err)
 	}
-	if _, err := call(h, "app_a", featuresUpdate, FeatureUpdateInput{ID: f.ID.String(), DefaultLimit: &badLimit}); codeOf(err) != dash.CodeBadRequest {
+
+	if _, err := call(
+		h,
+		"app_a",
+		featuresUpdate,
+		FeatureUpdateInput{ID: f.ID.String(), DefaultLimit: &badLimit},
+	); codeOf(
+		err,
+	) != dash.CodeBadRequest {
 		t.Errorf("limit below -1 on update: got %v, want BAD_REQUEST", err)
 	}
-	if stored, _ := h.eng.GetFeature(ctxBackground(), f.ID); stored.DefaultLimit != 100 || stored.Period != feature.PeriodMonthly {
-		t.Errorf("a refused update was stored: limit %d period %q", stored.DefaultLimit, stored.Period)
+
+	if stored, _ := h.eng.GetFeature(
+		ctxBackground(),
+		f.ID,
+	); stored.DefaultLimit != 100 ||
+		stored.Period != feature.PeriodMonthly {
+		t.Errorf(
+			"a refused update was stored: limit %d period %q",
+			stored.DefaultLimit,
+			stored.Period,
+		)
 	}
 
 	unlimited, soft, desc := int64(-1), true, "Seats in use"
 	meta := map[string]string{"tier": "gold"}
+
 	got := mustCall(h, "app_a", featuresUpdate, FeatureUpdateInput{
-		ID: f.ID.String(), DefaultLimit: &unlimited, SoftLimit: &soft, Description: &desc, Metadata: &meta,
+		ID:           f.ID.String(),
+		DefaultLimit: &unlimited,
+		SoftLimit:    &soft,
+		Description:  &desc,
+		Metadata:     &meta,
 	})
-	if got.DefaultLimit != -1 || !got.SoftLimit || got.Description != desc || got.Metadata["tier"] != "gold" {
+	if got.DefaultLimit != -1 || !got.SoftLimit || got.Description != desc ||
+		got.Metadata["tier"] != "gold" {
 		t.Errorf("update did not apply: %+v", got)
 	}
+
 	if got.Key != "seats" || got.Type != feature.FeatureMetered {
 		t.Errorf("key and type must not change: %q %q", got.Key, got.Type)
 	}
@@ -233,6 +396,7 @@ func TestFeaturesList(t *testing.T) {
 	for _, key := range []string{"a", "b", "c"} {
 		mustCall(h, "app_a", featuresCreate, newFeatureInput(key))
 	}
+
 	mustCall(h, "app_b", featuresCreate, newFeatureInput("other"))
 	mustCallPlatform(h, "", featuresCreate, newFeatureInput("shared"))
 
@@ -243,23 +407,52 @@ func TestFeaturesList(t *testing.T) {
 
 	first := mustCall(h, "app_a", featuresList, FeaturesListInput{PageInput: PageInput{Limit: 2}})
 	if len(first.Items) != 2 || !first.HasMore {
-		t.Errorf("first page: got %d rows, has_more %v; want 2 and true", len(first.Items), first.HasMore)
+		t.Errorf(
+			"first page: got %d rows, has_more %v; want 2 and true",
+			len(first.Items),
+			first.HasMore,
+		)
 	}
-	past := mustCall(h, "app_a", featuresList, FeaturesListInput{PageInput: PageInput{Limit: 2, Offset: 10}})
+
+	past := mustCall(
+		h,
+		"app_a",
+		featuresList,
+		FeaturesListInput{PageInput: PageInput{Limit: 2, Offset: 10}},
+	)
 	if past.Items == nil || len(past.Items) != 0 || past.HasMore {
 		t.Errorf("past the end: %+v, want empty items and has_more false", past)
 	}
 
-	clamped := mustCall(h, "app_a", featuresList, FeaturesListInput{PageInput: PageInput{Limit: 500}})
+	clamped := mustCall(
+		h,
+		"app_a",
+		featuresList,
+		FeaturesListInput{PageInput: PageInput{Limit: 500}},
+	)
 	if clamped.Limit != 200 {
 		t.Errorf("a limit of 500 is reported as %d, want 200", clamped.Limit)
 	}
 
-	if _, err := call(h, "app_a", featuresList, FeaturesListInput{Status: "bogus"}); codeOf(err) != dash.CodeBadRequest {
+	if _, err := call(
+		h,
+		"app_a",
+		featuresList,
+		FeaturesListInput{Status: "bogus"},
+	); codeOf(
+		err,
+	) != dash.CodeBadRequest {
 		t.Errorf("unknown status: got %v, want BAD_REQUEST", err)
 	}
+
 	mustCall(h, "app_a", featuresArchive, IDInput{ID: first.Items[0].ID.String()})
-	archived := mustCall(h, "app_a", featuresList, FeaturesListInput{Status: string(feature.StatusArchived)})
+
+	archived := mustCall(
+		h,
+		"app_a",
+		featuresList,
+		FeaturesListInput{Status: string(feature.StatusArchived)},
+	)
 	if len(archived.Items) != 1 {
 		t.Errorf("archived filter: got %d rows, want 1", len(archived.Items))
 	}
@@ -288,8 +481,16 @@ func (h *harness) withFeatureProvider(fp *featureProvider) {
 func TestFeaturesSyncToProvider(t *testing.T) {
 	t.Run("no provider configured is unavailable", func(t *testing.T) {
 		h := newHarness(t)
+
 		f := mustCall(h, "app_a", featuresCreate, newFeatureInput("nosync"))
-		if _, err := call(h, "app_a", featuresSync, IDInput{ID: f.ID.String()}); codeOf(err) != dash.CodeUnavailable {
+		if _, err := call(
+			h,
+			"app_a",
+			featuresSync,
+			IDInput{ID: f.ID.String()},
+		); codeOf(
+			err,
+		) != dash.CodeUnavailable {
 			t.Errorf("got %v, want UNAVAILABLE", err)
 		}
 	})
@@ -303,7 +504,9 @@ func TestFeaturesSyncToProvider(t *testing.T) {
 		if err != nil {
 			t.Fatalf("a provider refusal must not be an error, got %v", err)
 		}
-		if got == nil || got.Success || got.Error != "meter rejected" || got.EntityID != f.ID.String() {
+
+		if got == nil || got.Success || got.Error != "meter rejected" ||
+			got.EntityID != f.ID.String() {
 			t.Errorf("got %+v, want an unsuccessful result carrying the provider's message", got)
 		}
 	})
@@ -317,6 +520,7 @@ func TestFeaturesSyncToProvider(t *testing.T) {
 		if !got.Success || got.ProviderID != "feat_123" {
 			t.Errorf("got %+v, want a successful result for feat_123", got)
 		}
+
 		if stored, _ := h.eng.GetFeature(ctxBackground(), f.ID); stored.ProviderID != "feat_123" {
 			t.Errorf("stored provider id %q, want feat_123", stored.ProviderID)
 		}
@@ -325,10 +529,19 @@ func TestFeaturesSyncToProvider(t *testing.T) {
 	t.Run("another app's feature is not found and nothing is pushed", func(t *testing.T) {
 		h := newHarness(t)
 		h.withFeatureProvider(&featureProvider{syncID: "feat_x"})
+
 		foreign := mustCall(h, "app_b", featuresCreate, newFeatureInput("foreign"))
-		if _, err := call(h, "app_a", featuresSync, IDInput{ID: foreign.ID.String()}); codeOf(err) != dash.CodeNotFound {
+		if _, err := call(
+			h,
+			"app_a",
+			featuresSync,
+			IDInput{ID: foreign.ID.String()},
+		); codeOf(
+			err,
+		) != dash.CodeNotFound {
 			t.Errorf("got %v, want NOT_FOUND", err)
 		}
+
 		if stored, _ := h.eng.GetFeature(ctxBackground(), foreign.ID); stored.ProviderID != "" {
 			t.Errorf("a refused cross-app sync stamped provider id %q", stored.ProviderID)
 		}

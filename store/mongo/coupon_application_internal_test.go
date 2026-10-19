@@ -32,6 +32,7 @@ func newInternalTestStore(t *testing.T) *Store {
 	if err := md.Open(ctx, uri); err != nil {
 		t.Fatalf("open mongo driver: %v", err)
 	}
+
 	t.Cleanup(func() { _ = md.Close() })
 
 	db, err := grove.Open(md)
@@ -43,6 +44,7 @@ func newInternalTestStore(t *testing.T) *Store {
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+
 	return s
 }
 
@@ -83,10 +85,12 @@ func TestIsDuplicateKeyErrorMapsRawDuplicateInsertError(t *testing.T) {
 		SubscriptionID: subID.String(),
 		AppliedAt:      now(),
 	}
+
 	_, err := s.mdb.NewInsert(dup).Exec(ctx)
 	if err == nil {
 		t.Fatal("direct duplicate insert: got nil error, want a duplicate key error (E11000)")
 	}
+
 	if !isDuplicateKeyError(err) {
 		t.Fatalf("isDuplicateKeyError(%v) = false, want true (raw error: %#v)", err, err)
 	}

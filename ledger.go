@@ -233,17 +233,22 @@ func (l *Ledger) CreatePlan(ctx context.Context, p *plan.Plan) error {
 	if p.ID == (id.PlanID{}) {
 		p.ID = id.NewPlanID()
 	}
+
 	normalisePlan(p)
-	if err := validatePlan(p); err != nil {
+
+	if err := ValidatePlan(p); err != nil {
 		return err
 	}
+
 	taken, err := l.slugTaken(ctx, p.Slug, p.AppID, p.ID)
 	if err != nil {
 		return err
 	}
+
 	if taken {
 		return fmt.Errorf("%w: slug %q is already used in this app", ErrAlreadyExists, p.Slug)
 	}
+
 	p.Entity = types.NewEntity()
 
 	if err := l.store.CreatePlan(ctx, p); err != nil {
@@ -251,6 +256,7 @@ func (l *Ledger) CreatePlan(ctx context.Context, p *plan.Plan) error {
 	}
 
 	l.plugins.EmitPlanCreated(ctx, p)
+
 	return nil
 }
 
@@ -273,6 +279,7 @@ func (l *Ledger) CreateFeature(ctx context.Context, f *feature.Feature) error {
 	if f.ID == (id.FeatureID{}) {
 		f.ID = id.NewFeatureID()
 	}
+
 	f.Entity = types.NewEntity()
 
 	if err := l.store.CreateFeature(ctx, f); err != nil {
@@ -280,6 +287,7 @@ func (l *Ledger) CreateFeature(ctx context.Context, f *feature.Feature) error {
 	}
 
 	l.plugins.EmitFeatureCreated(ctx, f)
+
 	return nil
 }
 
@@ -294,12 +302,19 @@ func (l *Ledger) GetFeatureByKey(ctx context.Context, key, appID string) (*featu
 }
 
 // ListFeatures lists catalog features for an app.
-func (l *Ledger) ListFeatures(ctx context.Context, appID string, opts feature.ListOpts) ([]*feature.Feature, error) {
+func (l *Ledger) ListFeatures(
+	ctx context.Context,
+	appID string,
+	opts feature.ListOpts,
+) ([]*feature.Feature, error) {
 	return l.store.ListFeatures(ctx, appID, opts)
 }
 
 // ListGlobalFeatures lists catalog features with no app scope.
-func (l *Ledger) ListGlobalFeatures(ctx context.Context, opts feature.ListOpts) ([]*feature.Feature, error) {
+func (l *Ledger) ListGlobalFeatures(
+	ctx context.Context,
+	opts feature.ListOpts,
+) ([]*feature.Feature, error) {
 	return l.store.ListGlobalFeatures(ctx, opts)
 }
 
@@ -315,6 +330,7 @@ func (l *Ledger) UpdateFeature(ctx context.Context, f *feature.Feature) error {
 	}
 
 	l.plugins.EmitFeatureUpdated(ctx, old, f)
+
 	return nil
 }
 
@@ -325,6 +341,7 @@ func (l *Ledger) DeleteFeature(ctx context.Context, featureID id.FeatureID) erro
 	}
 
 	l.plugins.EmitFeatureDeleted(ctx, featureID.String())
+
 	return nil
 }
 
@@ -335,6 +352,7 @@ func (l *Ledger) ArchiveFeature(ctx context.Context, featureID id.FeatureID) err
 	}
 
 	l.plugins.EmitFeatureArchived(ctx, featureID.String())
+
 	return nil
 }
 
@@ -358,6 +376,7 @@ func (l *Ledger) CreateSubscription(ctx context.Context, sub *subscription.Subsc
 	if err != nil {
 		return err
 	}
+
 	if err := validateQuantity(p, sub.Quantity); err != nil {
 		return err
 	}
@@ -405,19 +424,28 @@ func (l *Ledger) CreateSubscription(ctx context.Context, sub *subscription.Subsc
 	}
 
 	// Invalidate entitlement cache for tenant
-	_ = l.store.Invalidate(ctx, sub.TenantID, sub.AppID) //nolint:errcheck // best-effort cache invalidation
+	if err := l.store.Invalidate(ctx, sub.TenantID, sub.AppID); err != nil {
+		l.logger.Warn("entitlement cache invalidation failed", log.Error(err))
+	}
 
 	l.plugins.EmitSubscriptionCreated(ctx, sub)
+
 	return nil
 }
 
 // GetSubscription retrieves a subscription by ID.
-func (l *Ledger) GetSubscription(ctx context.Context, subID id.SubscriptionID) (*subscription.Subscription, error) {
+func (l *Ledger) GetSubscription(
+	ctx context.Context,
+	subID id.SubscriptionID,
+) (*subscription.Subscription, error) {
 	return l.store.GetSubscription(ctx, subID)
 }
 
 // GetActiveSubscription retrieves the active subscription for a tenant.
-func (l *Ledger) GetActiveSubscription(ctx context.Context, tenantID, appID string) (*subscription.Subscription, error) {
+func (l *Ledger) GetActiveSubscription(
+	ctx context.Context,
+	tenantID, appID string,
+) (*subscription.Subscription, error) {
 	return l.store.GetActiveSubscription(ctx, tenantID, appID)
 }
 
@@ -433,11 +461,16 @@ func (l *Ledger) GetActiveSubscription(ctx context.Context, tenantID, appID stri
 // clock fires OnSubscriptionCanceled when it enacts it. That holds even when
 // the period it ends is already over: the subscription keeps running until
 // the clock's next run cancels it as of that period's end.
-func (l *Ledger) CancelSubscription(ctx context.Context, subID id.SubscriptionID, immediately bool) error {
+func (l *Ledger) CancelSubscription(
+	ctx context.Context,
+	subID id.SubscriptionID,
+	immediately bool,
+) error {
 	sub, err := l.store.GetSubscription(ctx, subID)
 	if err != nil {
 		return err
 	}
+
 	switch sub.Status {
 	case subscription.StatusCanceled:
 		return ErrSubscriptionCanceled
@@ -465,7 +498,9 @@ func (l *Ledger) CancelSubscription(ctx context.Context, subID id.SubscriptionID
 	})
 
 	// Invalidate entitlement cache
-	_ = l.store.Invalidate(ctx, sub.TenantID, sub.AppID) //nolint:errcheck // best-effort cache invalidation
+	if err := l.store.Invalidate(ctx, sub.TenantID, sub.AppID); err != nil {
+		l.logger.Warn("entitlement cache invalidation failed", log.Error(err))
+	}
 
 	// Only an immediate cancel changes the status; a scheduled one never
 	// does, whatever date the store copied into cancel_at.
@@ -474,6 +509,7 @@ func (l *Ledger) CancelSubscription(ctx context.Context, subID id.SubscriptionID
 	} else {
 		l.plugins.EmitSubscriptionCancelScheduled(ctx, sub)
 	}
+
 	return nil
 }
 
@@ -514,6 +550,7 @@ func (l *Ledger) meterFlushWorker(ctx context.Context) {
 	defer l.wg.Done()
 
 	batch := make([]*meter.UsageEvent, 0, l.meterBatchSize)
+
 	ticker := time.NewTicker(l.meterFlushInterval)
 	defer ticker.Stop()
 
@@ -524,6 +561,7 @@ func (l *Ledger) meterFlushWorker(ctx context.Context) {
 			if len(batch) > 0 {
 				l.flushMeterBatch(ctx, batch)
 			}
+
 			return
 
 		case event := <-l.meterBuffer:
@@ -558,8 +596,10 @@ func (l *Ledger) flushMeterBatch(ctx context.Context, batch []*meter.UsageEvent)
 			log.Error(err),
 			log.Int("batch_size", len(batch)),
 		)
+
 		return
 	}
+
 	l.metrics.meterEvents.Add(float64(len(batch)), resultOK)
 
 	elapsed := time.Since(start)
@@ -590,6 +630,7 @@ func (l *Ledger) Entitled(ctx context.Context, featureKey string) (*entitlement.
 
 	result, source, err := l.entitled(ctx, featureKey)
 	answer := resultError
+
 	switch {
 	case err != nil:
 		telemetry.Fail(span, errorType(err))
@@ -600,21 +641,31 @@ func (l *Ledger) Entitled(ctx context.Context, featureKey string) (*entitlement.
 	default:
 		answer = resultDenied
 	}
+
 	hit := source == entitlementCached
 	if span.IsRecording() {
-		span.SetAttributes(attribute.String(attrEntitlement, answer), attribute.Bool(attrCacheHit, hit))
+		span.SetAttributes(
+			attribute.String(attrEntitlement, answer),
+			attribute.Bool(attrCacheHit, hit),
+		)
 	}
+
 	cacheLabel := cacheMiss
 	if hit {
 		cacheLabel = cacheHit
 	}
+
 	l.metrics.entitlementChecks.Inc(answer, cacheLabel)
+
 	return result, err
 }
 
 // entitled answers Entitled, and says where the answer came from: the cache,
 // or which kind of computed answer it was.
-func (l *Ledger) entitled(ctx context.Context, featureKey string) (*entitlement.Result, entitlementKind, error) {
+func (l *Ledger) entitled(
+	ctx context.Context,
+	featureKey string,
+) (*entitlement.Result, entitlementKind, error) {
 	tenantID := extractTenantID(ctx)
 	appID := extractAppID(ctx)
 
@@ -638,12 +689,32 @@ func (l *Ledger) entitled(ctx context.Context, featureKey string) (*entitlement.
 
 	switch kind {
 	case entitlementBoolean:
-		_ = l.store.SetCached(ctx, tenantID, appID, featureKey, result, l.entitlementCacheTTL) //nolint:errcheck // best-effort cache set
+		if err := l.store.SetCached(
+			ctx,
+			tenantID,
+			appID,
+			featureKey,
+			result,
+			l.entitlementCacheTTL,
+		); err != nil {
+			l.logger.Warn("entitlement cache population failed", log.Error(err))
+		}
 	case entitlementMetered:
 		if result.Reason == "quota exceeded" {
 			l.plugins.EmitQuotaExceeded(ctx, tenantID, featureKey, result.Used, result.Limit)
 		}
-		_ = l.store.SetCached(ctx, tenantID, appID, featureKey, result, l.entitlementCacheTTL) //nolint:errcheck // best-effort cache set
+
+		if err := l.store.SetCached(
+			ctx,
+			tenantID,
+			appID,
+			featureKey,
+			result,
+			l.entitlementCacheTTL,
+		); err != nil {
+			l.logger.Warn("entitlement cache population failed", log.Error(err))
+		}
+
 		l.plugins.EmitEntitlementChecked(ctx, result)
 	case entitlementNoAccess, entitlementCached:
 		// Nothing is cached and no event fires when there is no access to report.
@@ -663,7 +734,10 @@ const (
 
 // computeEntitlement answers an entitlement question from the store alone. It
 // reads no cache, writes no cache and fires no plugin events; callers decide.
-func (l *Ledger) computeEntitlement(ctx context.Context, tenantID, appID, featureKey string) (*entitlement.Result, entitlementKind, error) {
+func (l *Ledger) computeEntitlement(
+	ctx context.Context,
+	tenantID, appID, featureKey string,
+) (*entitlement.Result, entitlementKind, error) {
 	// Get active subscription
 	sub, err := l.store.GetActiveSubscription(ctx, tenantID, appID)
 	if err != nil {
@@ -701,6 +775,7 @@ func (l *Ledger) computeEntitlement(ctx context.Context, tenantID, appID, featur
 			Feature: featureKey,
 			Limit:   feat.Limit,
 		}
+
 		return result, entitlementBoolean, nil
 	}
 
@@ -741,6 +816,7 @@ func (l *Ledger) Remaining(ctx context.Context, featureKey string) (int64, error
 	if err != nil {
 		return 0, err
 	}
+
 	return result.Remaining, nil
 }
 
@@ -760,7 +836,12 @@ func (l *Ledger) Remaining(ctx context.Context, featureKey string) (int64, error
 // also refuses an empty app id, because it reads events through QueryUsage,
 // which drops the app filter when the app id is empty. The summing path
 // skips events from another app itself.
-func (l *Ledger) aggregateUsage(ctx context.Context, sub *subscription.Subscription, pf plan.Feature, window subscription.Period) (int64, error) {
+func (l *Ledger) aggregateUsage(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	pf plan.Feature,
+	window subscription.Period,
+) (int64, error) {
 	name := pf.Metadata["aggregator"]
 	if name == "" {
 		return l.usageInPeriod(ctx, sub, pf, window)
@@ -777,8 +858,12 @@ func (l *Ledger) aggregateUsage(ctx context.Context, sub *subscription.Subscript
 	}
 
 	if sub.AppID == "" {
-		return 0, fmt.Errorf("%w: usage aggregator %q needs an app id to scope its events, and subscription %s has none",
-			ErrInvalidInput, name, sub.ID)
+		return 0, fmt.Errorf(
+			"%w: usage aggregator %q needs an app id to scope its events, and subscription %s has none",
+			ErrInvalidInput,
+			name,
+			sub.ID,
+		)
 	}
 
 	events, err := l.store.QueryUsage(ctx, sub.TenantID, sub.AppID, meter.QueryOpts{
@@ -818,21 +903,33 @@ func (l *Ledger) aggregateUsage(ctx context.Context, sub *subscription.Subscript
 // plugin. Everything else uses the built-in tier models. The plugin is never
 // asked to price usage the allowance covers, and its answer must be a
 // non-negative Money in the plan's currency.
-func (l *Ledger) priceFeature(p *plan.Plan, pf plan.Feature, featureTiers []plan.PriceTier, currency string, usage, included int64) (types.Money, error) {
+func (l *Ledger) priceFeature(
+	p *plan.Plan,
+	pf plan.Feature,
+	featureTiers []plan.PriceTier,
+	currency string,
+	usage, included int64,
+) (types.Money, error) {
 	// The feature's own strategy wins over the plan's.
 	namedBy := "feature"
+
 	name := pf.Metadata["pricing_strategy"]
 	if name == "" {
 		namedBy = "plan"
 		name = p.Metadata["pricing_strategy"]
 	}
+
 	if name == "" {
 		return invoice.ComputeOverage(featureTiers, usage, included, currency)
 	}
 
 	strategy := l.plugins.GetPricingStrategy(name)
 	if strategy == nil {
-		l.logger.Warn(fmt.Sprintf("ledger: %s names an unregistered pricing strategy; using the built-in tiers", namedBy),
+		l.logger.Warn(
+			fmt.Sprintf(
+				"ledger: %s names an unregistered pricing strategy; using the built-in tiers",
+				namedBy,
+			),
 			log.String("strategy", name),
 			log.String("feature", pf.Key),
 		)
@@ -850,21 +947,38 @@ func (l *Ledger) priceFeature(p *plan.Plan, pf plan.Feature, featureTiers []plan
 
 	// Hand the strategy a ladder in order, as invoice.ComputeOverage sees it.
 	sorted := invoice.SortTiers(featureTiers)
+
 	boxed := make([]interface{}, len(sorted))
 	for i := range sorted {
 		boxed[i] = sorted[i]
 	}
 
 	raw := strategy.Compute(boxed, usage, included, currency)
+
 	amount, ok := raw.(types.Money)
 	if !ok {
-		return types.Money{}, fmt.Errorf("pricing strategy %q returned %T, want types.Money", name, raw)
+		return types.Money{}, fmt.Errorf(
+			"pricing strategy %q returned %T, want types.Money",
+			name,
+			raw,
+		)
 	}
+
 	if amount.Currency != "" && !strings.EqualFold(amount.Currency, currency) {
-		return types.Money{}, fmt.Errorf("pricing strategy %q returned %s, want %s", name, amount.Currency, currency)
+		return types.Money{}, fmt.Errorf(
+			"pricing strategy %q returned %s, want %s",
+			name,
+			amount.Currency,
+			currency,
+		)
 	}
+
 	if amount.IsNegative() {
-		return types.Money{}, fmt.Errorf("pricing strategy %q returned a negative amount %v", name, amount)
+		return types.Money{}, fmt.Errorf(
+			"pricing strategy %q returned a negative amount %v",
+			name,
+			amount,
+		)
 	}
 
 	return types.Money{Amount: amount.Amount, Currency: currency}, nil
@@ -918,7 +1032,11 @@ func addChecked(stage string, a, b types.Money) (types.Money, error) {
 // of its current one. Only usage is historical: the plan, its prices, the
 // seat counts and the coupons are all read as they are now, because Ledger
 // keeps no history of them and ChangePlan leaves the period alone.
-func (l *Ledger) GenerateInvoice(ctx context.Context, subID id.SubscriptionID, opts ...InvoiceOption) (inv *invoice.Invoice, err error) {
+func (l *Ledger) GenerateInvoice(
+	ctx context.Context,
+	subID id.SubscriptionID,
+	opts ...InvoiceOption,
+) (inv *invoice.Invoice, err error) {
 	start := time.Now()
 	ctx, span := telemetry.Start(ctx, "generate invoice",
 		trace.WithAttributes(attribute.String(attrSubscriptionID, subID.String())))
@@ -927,8 +1045,10 @@ func (l *Ledger) GenerateInvoice(ctx context.Context, subID id.SubscriptionID, o
 	// code and can panic. finished stays false when one does, and the span
 	// still ends, marked as a panic.
 	finished := false
+
 	defer func() {
 		result := resultOK
+
 		switch {
 		case !finished:
 			result = resultError
@@ -939,29 +1059,38 @@ func (l *Ledger) GenerateInvoice(ctx context.Context, subID id.SubscriptionID, o
 		case err != nil:
 			result = resultError
 		}
+
 		span.SetAttributes(attribute.String(attrInvoiceResult, result))
+
 		if inv != nil {
 			span.SetAttributes(
 				attribute.String(attrInvoiceID, inv.ID.String()),
 				attribute.Int(attrInvoiceLineItems, len(inv.LineItems)),
 			)
 		}
+
 		if finished {
 			endSpan(span, err)
 		} else {
 			telemetry.Fail(span, "panic")
 			span.End()
 		}
+
 		l.metrics.invoiceGenerate.ObserveSince(start, result)
 	}()
 
 	inv, err = l.generateInvoice(ctx, subID, opts...)
 	finished = true
+
 	return inv, err
 }
 
 // generateInvoice is GenerateInvoice without its telemetry.
-func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, opts ...InvoiceOption) (*invoice.Invoice, error) {
+func (l *Ledger) generateInvoice(
+	ctx context.Context,
+	subID id.SubscriptionID,
+	opts ...InvoiceOption,
+) (*invoice.Invoice, error) {
 	sub, err := l.store.GetSubscription(ctx, subID)
 	if err != nil {
 		return nil, err
@@ -980,22 +1109,30 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 	// carrying that period, so the duplicate check, the invoice's dates and a
 	// plugin aggregator's window all read it from one place.
 	now := l.now()
+
 	named, err := namedPeriod(sub, p, opts, now)
 	if err != nil {
 		return nil, err
 	}
+
 	periodKind := "current"
 	if named != nil {
 		periodKind = "named"
 	}
+
 	trace.SpanFromContext(ctx).SetAttributes(attribute.String(attrInvoicePeriod, periodKind))
 	// A resume moves the end of a paused subscription's period on by the
 	// length of the pause, so that period is not finished: billing it now
 	// would bill a period whose end later moves. Ended periods named with
 	// ForPeriod are finished and stay billable.
 	if named == nil && sub.Status == subscription.StatusPaused {
-		return nil, fmt.Errorf("%w: subscription %s is paused; its period is billed when it ends", ErrInvalidInput, sub.ID)
+		return nil, fmt.Errorf(
+			"%w: subscription %s is paused; its period is billed when it ends",
+			ErrInvalidInput,
+			sub.ID,
+		)
 	}
+
 	if named != nil {
 		billed := *sub
 		billed.CurrentPeriodStart, billed.CurrentPeriodEnd = named.Start, named.End
@@ -1006,10 +1143,19 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 	if err != nil {
 		return nil, err
 	}
+
 	if existing != nil {
-		return nil, fmt.Errorf("%w: invoice %s already covers this billing period", ErrAlreadyExists, existing.ID)
+		return nil, fmt.Errorf(
+			"%w: invoice %s already covers this billing period",
+			ErrAlreadyExists,
+			existing.ID,
+		)
 	}
-	window := usageWindow(subscription.Period{Start: sub.CurrentPeriodStart, End: sub.CurrentPeriodEnd}, now)
+
+	window := usageWindow(
+		subscription.Period{Start: sub.CurrentPeriodStart, End: sub.CurrentPeriodEnd},
+		now,
+	)
 
 	currency := strings.ToLower(p.Currency)
 
@@ -1039,8 +1185,10 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 		return nil, fmt.Errorf("%w: plan %s base price %v is negative",
 			ErrInvalidPricing, p.ID, p.Pricing.BaseAmount)
 	}
+
 	if p.Pricing != nil && p.Pricing.BaseAmount.IsPositive() {
-		if p.Pricing.BaseAmount.Currency != "" && !strings.EqualFold(p.Pricing.BaseAmount.Currency, currency) {
+		if p.Pricing.BaseAmount.Currency != "" &&
+			!strings.EqualFold(p.Pricing.BaseAmount.Currency, currency) {
 			return nil, fmt.Errorf("%w: plan %s base price is in %q, plan bills in %q",
 				ErrInvalidPricing, p.ID, p.Pricing.BaseAmount.Currency, p.Currency)
 		}
@@ -1055,10 +1203,12 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 			Amount:      base,
 			Type:        invoice.LineItemBase,
 		})
+
 		subtotal, addErr := addChecked("subtotal: adding the base fee", inv.Subtotal, base)
 		if addErr != nil {
 			return nil, addErr
 		}
+
 		inv.Subtotal = subtotal
 	}
 
@@ -1100,6 +1250,7 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 		if priceErr != nil {
 			return nil, fmt.Errorf("price feature %q: %w", pf.Key, priceErr)
 		}
+
 		if amount.IsZero() {
 			continue
 		}
@@ -1114,10 +1265,16 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 			Amount:      amount,
 			Type:        invoice.LineItemOverage,
 		})
-		subtotal, addErr := addChecked(fmt.Sprintf("subtotal: adding feature %q overage", pf.Key), inv.Subtotal, amount)
+
+		subtotal, addErr := addChecked(
+			fmt.Sprintf("subtotal: adding feature %q overage", pf.Key),
+			inv.Subtotal,
+			amount,
+		)
 		if addErr != nil {
 			return nil, addErr
 		}
+
 		inv.Subtotal = subtotal
 	}
 
@@ -1147,6 +1304,7 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 		if priceErr != nil {
 			return nil, fmt.Errorf("price feature %q: %w", pf.Key, priceErr)
 		}
+
 		if amount.IsZero() {
 			continue
 		}
@@ -1161,10 +1319,16 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 			Amount:      amount,
 			Type:        invoice.LineItemSeat,
 		})
-		subtotal, addErr := addChecked(fmt.Sprintf("subtotal: adding feature %q seats", pf.Key), inv.Subtotal, amount)
+
+		subtotal, addErr := addChecked(
+			fmt.Sprintf("subtotal: adding feature %q seats", pf.Key),
+			inv.Subtotal,
+			amount,
+		)
 		if addErr != nil {
 			return nil, addErr
 		}
+
 		inv.Subtotal = subtotal
 	}
 
@@ -1181,6 +1345,7 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 	}
 
 	discountBase := inv.Subtotal
+
 	for _, c := range applied {
 		// A coupon reaching here did not necessarily pass through
 		// ApplyCoupon's own checks: it may have been recorded by another
@@ -1189,16 +1354,24 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 		// anything, rather than trusting that every application row was
 		// produced by the one guarded entry point.
 		var amount types.Money
+
 		switch c.Type {
 		case coupon.CouponTypePercentage:
 			if c.Percentage < 0 || c.Percentage > 100 {
 				return nil, fmt.Errorf("%w: coupon %q has percentage %d out of range 0..100",
 					ErrCouponInvalid, c.Code, c.Percentage)
 			}
+
 			pct, pctErr := discountBase.CheckedPercent(c.Percentage)
 			if pctErr != nil {
-				return nil, fmt.Errorf("discount: coupon %q at %d%%: %w", c.Code, c.Percentage, pctErr)
+				return nil, fmt.Errorf(
+					"discount: coupon %q at %d%%: %w",
+					c.Code,
+					c.Percentage,
+					pctErr,
+				)
 			}
+
 			amount = pct
 		case coupon.CouponTypeAmount:
 			if c.Amount.Amount < 0 {
@@ -1217,6 +1390,7 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 			if effectiveCurrency == "" {
 				effectiveCurrency = strings.ToLower(c.Currency)
 			}
+
 			if effectiveCurrency != currency {
 				return nil, fmt.Errorf("%w: coupon %q is in %q, plan bills in %q",
 					ErrCouponInvalid, c.Code, effectiveCurrency, currency)
@@ -1227,6 +1401,7 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 			return nil, fmt.Errorf("%w: coupon %q has unsupported type %q",
 				ErrCouponInvalid, c.Code, c.Type)
 		}
+
 		if amount.IsZero() {
 			continue
 		}
@@ -1240,10 +1415,16 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 			Amount:      amount.Negate(),
 			Type:        invoice.LineItemDiscount,
 		})
-		discount, addErr := addChecked(fmt.Sprintf("discount: adding coupon %q", c.Code), inv.DiscountAmount, amount)
+
+		discount, addErr := addChecked(
+			fmt.Sprintf("discount: adding coupon %q", c.Code),
+			inv.DiscountAmount,
+			amount,
+		)
 		if addErr != nil {
 			return nil, addErr
 		}
+
 		inv.DiscountAmount = discount
 	}
 
@@ -1255,6 +1436,7 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 	if netErr != nil {
 		return nil, fmt.Errorf("net amount: %w", netErr)
 	}
+
 	if net.IsNegative() {
 		net = types.Zero(currency)
 	}
@@ -1268,14 +1450,20 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 		if taxErr != nil {
 			return nil, fmt.Errorf("tax calculator %q: %w", tc.Name(), taxErr)
 		}
+
 		if raw == nil {
 			continue
 		}
 
 		amount, ok := raw.(types.Money)
 		if !ok {
-			return nil, fmt.Errorf("tax calculator %q returned %T, want types.Money", tc.Name(), raw)
+			return nil, fmt.Errorf(
+				"tax calculator %q returned %T, want types.Money",
+				tc.Name(),
+				raw,
+			)
 		}
+
 		if amount.Currency != "" && !strings.EqualFold(amount.Currency, currency) {
 			return nil, fmt.Errorf("tax calculator %q returned %s, want %s",
 				tc.Name(), amount.Currency, currency)
@@ -1285,7 +1473,11 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 		// at zero above. Refuse it the same way a wrong type is refused: a
 		// zero or nil result stays legal and simply adds no tax line.
 		if amount.IsNegative() {
-			return nil, fmt.Errorf("tax calculator %q returned a negative tax amount %v", tc.Name(), amount)
+			return nil, fmt.Errorf(
+				"tax calculator %q returned a negative tax amount %v",
+				tc.Name(),
+				amount,
+			)
 		}
 
 		taxTotal, addErr := addChecked(fmt.Sprintf("tax: adding calculator %q", tc.Name()),
@@ -1293,6 +1485,7 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 		if addErr != nil {
 			return nil, addErr
 		}
+
 		inv.TaxAmount = taxTotal
 	}
 
@@ -1313,6 +1506,7 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 	if totalErr != nil {
 		return nil, totalErr
 	}
+
 	inv.Total = total
 
 	// Save invoice
@@ -1321,6 +1515,7 @@ func (l *Ledger) generateInvoice(ctx context.Context, subID id.SubscriptionID, o
 	}
 
 	l.plugins.EmitInvoiceGenerated(ctx, inv)
+
 	return inv, nil
 }
 
@@ -1336,6 +1531,7 @@ func extractTenantID(ctx context.Context) string {
 			return s
 		}
 	}
+
 	return ""
 }
 
@@ -1347,6 +1543,7 @@ func extractAppID(ctx context.Context) string {
 			return s
 		}
 	}
+
 	return ""
 }
 
@@ -1384,6 +1581,7 @@ func (l *Ledger) getProvider(name string) (provider.Provider, error) {
 		if pp == nil {
 			return nil, fmt.Errorf("%w: %s", ErrProviderNotFound, name)
 		}
+
 		return pp.Provider(), nil
 	}
 
@@ -1392,6 +1590,7 @@ func (l *Ledger) getProvider(name string) (provider.Provider, error) {
 	if len(providers) == 0 {
 		return nil, ErrProviderNotConfigured
 	}
+
 	return providers[0].Provider(), nil
 }
 
@@ -1402,21 +1601,31 @@ func (l *Ledger) providerFor(ctx context.Context, name string) (provider.Provide
 	if err == nil {
 		trace.SpanFromContext(ctx).SetAttributes(attribute.String(attrProviderName, prov.Name()))
 	}
+
 	return prov, err
 }
 
 // callProvider makes one call into a payment provider plugin and records how
 // long it took. operation is one of the documented operation label values.
-func callProvider[T any](l *Ledger, prov provider.Provider, operation string, call func() (T, error)) (T, error) {
+func callProvider[T any](
+	l *Ledger,
+	prov provider.Provider,
+	operation string,
+	call func() (T, error),
+) (T, error) {
 	start := time.Now()
 	v, err := call()
 	l.metrics.providerCalls.ObserveSince(start, prov.Name(), operation, resultOf(err))
+
 	return v, err
 }
 
 // ListPaymentMethods lists payment methods from the provider for a tenant.
 // Payment methods are always fetched live and never stored locally.
-func (l *Ledger) ListPaymentMethods(ctx context.Context, tenantID string) (methods []provider.PaymentMethod, err error) {
+func (l *Ledger) ListPaymentMethods(
+	ctx context.Context,
+	tenantID string,
+) (methods []provider.PaymentMethod, err error) {
 	ctx, span := telemetry.Start(ctx, "list payment methods")
 	defer func() { endSpan(span, err) }()
 
@@ -1426,6 +1635,7 @@ func (l *Ledger) ListPaymentMethods(ctx context.Context, tenantID string) (metho
 		if errors.Is(err, ErrProviderNotConfigured) {
 			return nil, nil
 		}
+
 		return nil, err
 	}
 
@@ -1435,7 +1645,10 @@ func (l *Ledger) ListPaymentMethods(ctx context.Context, tenantID string) (metho
 }
 
 // SyncPlanToProvider pushes a local plan to the payment provider.
-func (l *Ledger) SyncPlanToProvider(ctx context.Context, planID id.PlanID) (res *provider.SyncResult, err error) {
+func (l *Ledger) SyncPlanToProvider(
+	ctx context.Context,
+	planID id.PlanID,
+) (res *provider.SyncResult, err error) {
 	ctx, span := telemetry.Start(ctx, "sync plan",
 		trace.WithAttributes(attribute.String(attrPlanID, planID.String())))
 	defer func() { endSpan(span, err) }()
@@ -1453,6 +1666,7 @@ func (l *Ledger) SyncPlanToProvider(ctx context.Context, planID id.PlanID) (res 
 	providerID, syncErr := callProvider(l, prov, "sync_plan", func() (string, error) {
 		return prov.SyncPlan(ctx, p)
 	})
+
 	result := &provider.SyncResult{
 		ProviderName: prov.Name(),
 		ProviderID:   providerID,
@@ -1473,11 +1687,15 @@ func (l *Ledger) SyncPlanToProvider(ctx context.Context, planID id.PlanID) (res 
 	}
 
 	l.plugins.EmitProviderSync(ctx, prov.Name(), syncErr == nil, syncErr)
+
 	return result, syncErr
 }
 
 // SyncFeatureToProvider pushes a local feature to the payment provider.
-func (l *Ledger) SyncFeatureToProvider(ctx context.Context, featureID id.FeatureID) (res *provider.SyncResult, err error) {
+func (l *Ledger) SyncFeatureToProvider(
+	ctx context.Context,
+	featureID id.FeatureID,
+) (res *provider.SyncResult, err error) {
 	ctx, span := telemetry.Start(ctx, "sync feature",
 		trace.WithAttributes(attribute.String(attrFeatureID, featureID.String())))
 	defer func() { endSpan(span, err) }()
@@ -1495,6 +1713,7 @@ func (l *Ledger) SyncFeatureToProvider(ctx context.Context, featureID id.Feature
 	providerID, syncErr := callProvider(l, prov, "sync_feature", func() (string, error) {
 		return prov.SyncFeature(ctx, f)
 	})
+
 	result := &provider.SyncResult{
 		ProviderName: prov.Name(),
 		ProviderID:   providerID,
@@ -1514,11 +1733,15 @@ func (l *Ledger) SyncFeatureToProvider(ctx context.Context, featureID id.Feature
 	}
 
 	l.plugins.EmitProviderSync(ctx, prov.Name(), syncErr == nil, syncErr)
+
 	return result, syncErr
 }
 
 // SyncSubscriptionToProvider pushes a local subscription to the payment provider.
-func (l *Ledger) SyncSubscriptionToProvider(ctx context.Context, subID id.SubscriptionID) (res *provider.SyncResult, err error) {
+func (l *Ledger) SyncSubscriptionToProvider(
+	ctx context.Context,
+	subID id.SubscriptionID,
+) (res *provider.SyncResult, err error) {
 	ctx, span := telemetry.Start(ctx, "sync subscription",
 		trace.WithAttributes(attribute.String(attrSubscriptionID, subID.String())))
 	defer func() { endSpan(span, err) }()
@@ -1536,6 +1759,7 @@ func (l *Ledger) SyncSubscriptionToProvider(ctx context.Context, subID id.Subscr
 	providerID, syncErr := callProvider(l, prov, "sync_subscription", func() (string, error) {
 		return prov.SyncSubscription(ctx, s)
 	})
+
 	result := &provider.SyncResult{
 		ProviderName: prov.Name(),
 		ProviderID:   providerID,
@@ -1553,15 +1777,26 @@ func (l *Ledger) SyncSubscriptionToProvider(ctx context.Context, subID id.Subscr
 		s.ProviderName = prov.Name()
 		// Only the provider columns: the sync took a network round trip, and
 		// the clock or an operator may have written the row meanwhile.
-		_ = l.store.SetSubscriptionProvider(ctx, subID, providerID, s.ProviderName) //nolint:errcheck // best-effort update
+		if err := l.store.SetSubscriptionProvider(
+			ctx,
+			subID,
+			providerID,
+			s.ProviderName,
+		); err != nil {
+			return nil, err
+		}
 	}
 
 	l.plugins.EmitProviderSync(ctx, prov.Name(), syncErr == nil, syncErr)
+
 	return result, syncErr
 }
 
 // SyncInvoiceToProvider pushes a local invoice to the payment provider.
-func (l *Ledger) SyncInvoiceToProvider(ctx context.Context, invID id.InvoiceID) (res *provider.SyncResult, err error) {
+func (l *Ledger) SyncInvoiceToProvider(
+	ctx context.Context,
+	invID id.InvoiceID,
+) (res *provider.SyncResult, err error) {
 	ctx, span := telemetry.Start(ctx, "sync invoice",
 		trace.WithAttributes(attribute.String(attrInvoiceID, invID.String())))
 	defer func() { endSpan(span, err) }()
@@ -1579,6 +1814,7 @@ func (l *Ledger) SyncInvoiceToProvider(ctx context.Context, invID id.InvoiceID) 
 	providerID, syncErr := callProvider(l, prov, "sync_invoice", func() (string, error) {
 		return prov.SyncInvoice(ctx, inv)
 	})
+
 	result := &provider.SyncResult{
 		ProviderName: prov.Name(),
 		ProviderID:   providerID,
@@ -1597,10 +1833,13 @@ func (l *Ledger) SyncInvoiceToProvider(ctx context.Context, invID id.InvoiceID) 
 		// Only the provider columns: the sync took a network round trip, and
 		// the clock may have marked the invoice past due meanwhile, or an
 		// operator paid or voided it.
-		_ = l.store.SetInvoiceProvider(ctx, invID, providerID, inv.ProviderName) //nolint:errcheck // best-effort update
+		if err := l.store.SetInvoiceProvider(ctx, invID, providerID, inv.ProviderName); err != nil {
+			return nil, err
+		}
 	}
 
 	l.plugins.EmitProviderSync(ctx, prov.Name(), syncErr == nil, syncErr)
+
 	return result, syncErr
 }
 
@@ -1609,7 +1848,11 @@ func (l *Ledger) SyncInvoiceToProvider(ctx context.Context, invID id.InvoiceID) 
 // ──────────────────────────────────────────────────
 
 // HandleWebhook routes an incoming webhook payload to the correct provider.
-func (l *Ledger) HandleWebhook(ctx context.Context, providerName string, payload []byte) (res *provider.WebhookResult, err error) {
+func (l *Ledger) HandleWebhook(
+	ctx context.Context,
+	providerName string,
+	payload []byte,
+) (res *provider.WebhookResult, err error) {
 	ctx, span := telemetry.Start(ctx, "handle webhook")
 	defer func() { endSpan(span, err) }()
 
@@ -1626,6 +1869,7 @@ func (l *Ledger) HandleWebhook(ctx context.Context, providerName string, payload
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrProviderWebhook, err)
 	}
+
 	if result != nil {
 		span.SetAttributes(
 			attribute.String(attrWebhookEvent, result.EventType),
@@ -1661,11 +1905,17 @@ func (l *Ledger) FinalizeInvoice(ctx context.Context, invID id.InvoiceID) error 
 	}
 
 	l.plugins.EmitInvoiceFinalized(ctx, inv)
+
 	return nil
 }
 
 // MarkInvoicePaid marks an invoice as paid.
-func (l *Ledger) MarkInvoicePaid(ctx context.Context, invID id.InvoiceID, paidAt time.Time, paymentRef string) error {
+func (l *Ledger) MarkInvoicePaid(
+	ctx context.Context,
+	invID id.InvoiceID,
+	paidAt time.Time,
+	paymentRef string,
+) error {
 	inv, err := l.store.GetInvoice(ctx, invID)
 	if err != nil {
 		return err
@@ -1674,6 +1924,7 @@ func (l *Ledger) MarkInvoicePaid(ctx context.Context, invID id.InvoiceID, paidAt
 	if inv.Status == invoice.StatusPaid {
 		return ErrInvoicePaid
 	}
+
 	if inv.Status == invoice.StatusVoided {
 		return ErrInvoiceVoided
 	}
@@ -1686,6 +1937,7 @@ func (l *Ledger) MarkInvoicePaid(ctx context.Context, invID id.InvoiceID, paidAt
 	inv.PaidAt = &paidAt
 	inv.PaymentRef = paymentRef
 	l.plugins.EmitInvoicePaid(ctx, inv)
+
 	return nil
 }
 
@@ -1699,6 +1951,7 @@ func (l *Ledger) MarkInvoiceVoided(ctx context.Context, invID id.InvoiceID, reas
 	if inv.Status == invoice.StatusPaid {
 		return ErrInvoicePaid
 	}
+
 	if inv.Status == invoice.StatusVoided {
 		return ErrInvoiceVoided
 	}
@@ -1712,5 +1965,6 @@ func (l *Ledger) MarkInvoiceVoided(ctx context.Context, invID id.InvoiceID, reas
 	inv.VoidedAt = &now
 	inv.VoidReason = reason
 	l.plugins.EmitInvoiceVoided(ctx, inv, reason)
+
 	return nil
 }

@@ -42,6 +42,7 @@ type planModel struct {
 func toPlanModel(p *plan.Plan) *planModel {
 	features, _ := json.Marshal(p.Features) //nolint:errcheck // best-effort
 	pricing, _ := json.Marshal(p.Pricing)   //nolint:errcheck // best-effort
+
 	metadata := p.Metadata
 	if metadata == nil {
 		metadata = make(map[string]string)
@@ -139,10 +140,12 @@ func toSubscriptionModel(s *subscription.Subscription) *subscriptionModel {
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
+
 	quantity := s.Quantity
 	if quantity == nil {
 		quantity = make(map[string]int64)
 	}
+
 	m := &subscriptionModel{
 		ID:                 s.ID.String(),
 		TenantID:           s.TenantID,
@@ -164,7 +167,10 @@ func toSubscriptionModel(s *subscription.Subscription) *subscriptionModel {
 		CreatedAt:          s.CreatedAt,
 		UpdatedAt:          s.UpdatedAt,
 	}
-	m.StretchStart, m.StretchEnd, m.StretchOriginalEnd, m.StretchFloor = subscription.StretchColumns(s.Stretch)
+	m.StretchStart, m.StretchEnd, m.StretchOriginalEnd, m.StretchFloor = subscription.StretchColumns(
+		s.Stretch,
+	)
+
 	return m
 }
 
@@ -173,6 +179,7 @@ func fromSubscriptionModel(m *subscriptionModel) (*subscription.Subscription, er
 	if err != nil {
 		return nil, err
 	}
+
 	planID, err := id.ParsePlanID(m.PlanID)
 	if err != nil {
 		return nil, err
@@ -200,12 +207,17 @@ func fromSubscriptionModel(m *subscriptionModel) (*subscription.Subscription, er
 		CancelAt:           m.CancelAt,
 		EndedAt:            m.EndedAt,
 		PausedAt:           m.PausedAt,
-		Stretch:            subscription.StretchFromColumns(m.StretchStart, m.StretchEnd, m.StretchOriginalEnd, m.StretchFloor),
-		AppID:              m.AppID,
-		ProviderID:         m.ProviderID,
-		ProviderName:       m.ProviderName,
-		Metadata:           m.Metadata,
-		Quantity:           quantity,
+		Stretch: subscription.StretchFromColumns(
+			m.StretchStart,
+			m.StretchEnd,
+			m.StretchOriginalEnd,
+			m.StretchFloor,
+		),
+		AppID:        m.AppID,
+		ProviderID:   m.ProviderID,
+		ProviderName: m.ProviderName,
+		Metadata:     m.Metadata,
+		Quantity:     quantity,
 	}, nil
 }
 
@@ -230,6 +242,7 @@ func toUsageEventModel(e *meter.UsageEvent) *usageEventModel {
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
+
 	return &usageEventModel{
 		ID:             e.ID.String(),
 		TenantID:       e.TenantID,
@@ -281,7 +294,11 @@ type entitlementCacheModel struct {
 	CreatedAt  time.Time `grove:"created_at"`
 }
 
-func toEntitlementCacheModel(tenantID, appID, featureKey string, result *entitlement.Result, expiresAt time.Time) *entitlementCacheModel {
+func toEntitlementCacheModel(
+	tenantID, appID, featureKey string,
+	result *entitlement.Result,
+	expiresAt time.Time,
+) *entitlementCacheModel {
 	return &entitlementCacheModel{
 		CacheKey:   tenantID + ":" + appID + ":" + featureKey,
 		TenantID:   tenantID,
@@ -347,6 +364,7 @@ type invoiceModel struct {
 
 func toInvoiceModel(inv *invoice.Invoice) *invoiceModel {
 	lineItems, _ := json.Marshal(inv.LineItems) //nolint:errcheck // best-effort
+
 	metadata := inv.Metadata
 	if metadata == nil {
 		metadata = make(map[string]string)
@@ -388,6 +406,7 @@ func fromInvoiceModel(m *invoiceModel) (*invoice.Invoice, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	subID, err := id.ParseSubscriptionID(m.SubscriptionID)
 	if err != nil {
 		return nil, err
@@ -455,6 +474,7 @@ func toCouponModel(c *coupon.Coupon) *couponModel {
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
+
 	return &couponModel{
 		ID:             c.ID.String(),
 		Code:           c.Code,
@@ -540,6 +560,7 @@ func toFeatureModel(f *feature.Feature) *featureModel {
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
+
 	return &featureModel{
 		ID:           f.ID.String(),
 		Key:          f.Key,

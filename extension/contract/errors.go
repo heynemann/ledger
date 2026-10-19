@@ -61,6 +61,7 @@ func isAny(err error, targets []error) bool {
 			return true
 		}
 	}
+
 	return false
 }
 

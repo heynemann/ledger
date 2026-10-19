@@ -101,6 +101,7 @@ func (r *Registry) WithMetrics(m gometrics.Metrics) *Registry {
 	r.hookFailures = telemetry.NewCounterVec(m, HookFailuresMetric,
 		"Plugin hook calls that failed, by hook and reason.",
 		"hook", "reason")
+
 	return r
 }
 
@@ -122,105 +123,139 @@ func (r *Registry) Register(p Plugin) error {
 	if v, ok := p.(OnInit); ok {
 		r.onInit = append(r.onInit, v)
 	}
+
 	if v, ok := p.(OnShutdown); ok {
 		r.onShutdown = append(r.onShutdown, v)
 	}
+
 	if v, ok := p.(OnPlanCreated); ok {
 		r.onPlanCreated = append(r.onPlanCreated, v)
 	}
+
 	if v, ok := p.(OnPlanUpdated); ok {
 		r.onPlanUpdated = append(r.onPlanUpdated, v)
 	}
+
 	if v, ok := p.(OnPlanArchived); ok {
 		r.onPlanArchived = append(r.onPlanArchived, v)
 	}
+
 	if v, ok := p.(OnFeatureCreated); ok {
 		r.onFeatureCreated = append(r.onFeatureCreated, v)
 	}
+
 	if v, ok := p.(OnFeatureUpdated); ok {
 		r.onFeatureUpdated = append(r.onFeatureUpdated, v)
 	}
+
 	if v, ok := p.(OnFeatureDeleted); ok {
 		r.onFeatureDeleted = append(r.onFeatureDeleted, v)
 	}
+
 	if v, ok := p.(OnFeatureArchived); ok {
 		r.onFeatureArchived = append(r.onFeatureArchived, v)
 	}
+
 	if v, ok := p.(OnSubscriptionCreated); ok {
 		r.onSubscriptionCreated = append(r.onSubscriptionCreated, v)
 	}
+
 	if v, ok := p.(OnSubscriptionChanged); ok {
 		r.onSubscriptionChanged = append(r.onSubscriptionChanged, v)
 	}
+
 	if v, ok := p.(OnSubscriptionCanceled); ok {
 		r.onSubscriptionCanceled = append(r.onSubscriptionCanceled, v)
 	}
+
 	if v, ok := p.(OnSubscriptionExpired); ok {
 		r.onSubscriptionExpired = append(r.onSubscriptionExpired, v)
 	}
+
 	if v, ok := p.(OnSubscriptionCancelScheduled); ok {
 		r.onSubscriptionCancelScheduled = append(r.onSubscriptionCancelScheduled, v)
 	}
+
 	if v, ok := p.(OnSubscriptionTrialEnded); ok {
 		r.onSubscriptionTrialEnded = append(r.onSubscriptionTrialEnded, v)
 	}
+
 	if v, ok := p.(OnSubscriptionRenewed); ok {
 		r.onSubscriptionRenewed = append(r.onSubscriptionRenewed, v)
 	}
+
 	if v, ok := p.(OnInvoicePastDue); ok {
 		r.onInvoicePastDue = append(r.onInvoicePastDue, v)
 	}
+
 	if v, ok := p.(OnUsageIngested); ok {
 		r.onUsageIngested = append(r.onUsageIngested, v)
 	}
+
 	if v, ok := p.(OnUsageFlushed); ok {
 		r.onUsageFlushed = append(r.onUsageFlushed, v)
 	}
+
 	if v, ok := p.(OnEntitlementChecked); ok {
 		r.onEntitlementChecked = append(r.onEntitlementChecked, v)
 	}
+
 	if v, ok := p.(OnQuotaExceeded); ok {
 		r.onQuotaExceeded = append(r.onQuotaExceeded, v)
 	}
+
 	if v, ok := p.(OnSoftLimitReached); ok {
 		r.onSoftLimitReached = append(r.onSoftLimitReached, v)
 	}
+
 	if v, ok := p.(OnInvoiceGenerated); ok {
 		r.onInvoiceGenerated = append(r.onInvoiceGenerated, v)
 	}
+
 	if v, ok := p.(OnInvoiceFinalized); ok {
 		r.onInvoiceFinalized = append(r.onInvoiceFinalized, v)
 	}
+
 	if v, ok := p.(OnInvoicePaid); ok {
 		r.onInvoicePaid = append(r.onInvoicePaid, v)
 	}
+
 	if v, ok := p.(OnInvoiceFailed); ok {
 		r.onInvoiceFailed = append(r.onInvoiceFailed, v)
 	}
+
 	if v, ok := p.(OnInvoiceVoided); ok {
 		r.onInvoiceVoided = append(r.onInvoiceVoided, v)
 	}
+
 	if v, ok := p.(OnProviderSync); ok {
 		r.onProviderSync = append(r.onProviderSync, v)
 	}
+
 	if v, ok := p.(OnWebhookReceived); ok {
 		r.onWebhookReceived = append(r.onWebhookReceived, v)
 	}
+
 	if v, ok := p.(PaymentProviderPlugin); ok {
 		r.paymentProviders = append(r.paymentProviders, v)
 	}
+
 	if v, ok := p.(PricingStrategy); ok {
 		r.pricingStrategies[v.StrategyName()] = v
 	}
+
 	if v, ok := p.(UsageAggregator); ok {
 		r.usageAggregators[v.AggregatorName()] = v
 	}
+
 	if v, ok := p.(TaxCalculator); ok {
 		r.taxCalculators = append(r.taxCalculators, v)
 	}
+
 	if v, ok := p.(InvoiceFormatter); ok {
 		r.invoiceFormatters[v.Format()] = v
 	}
+
 	if v, ok := p.(CouponValidator); ok {
 		r.couponValidators = append(r.couponValidators, v)
 	}
@@ -236,6 +271,7 @@ func (r *Registry) Register(p Plugin) error {
 // getImplementedInterfaces returns a list of interfaces implemented by the plugin.
 func (r *Registry) getImplementedInterfaces(p Plugin) []string {
 	var interfaces []string
+
 	v := reflect.TypeOf(p)
 
 	// Check each interface
@@ -270,6 +306,7 @@ func (r *Registry) Get(name string) Plugin {
 			return p
 		}
 	}
+
 	return nil
 }
 
@@ -280,6 +317,7 @@ func (r *Registry) List() []Plugin {
 
 	result := make([]Plugin, len(r.plugins))
 	copy(result, r.plugins)
+
 	return result
 }
 
@@ -287,6 +325,7 @@ func (r *Registry) List() []Plugin {
 func (r *Registry) Count() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+
 	return len(r.plugins)
 }
 
@@ -425,7 +464,11 @@ func (r *Registry) EmitEntitlementChecked(ctx context.Context, result interface{
 }
 
 // EmitQuotaExceeded emits a quota exceeded event.
-func (r *Registry) EmitQuotaExceeded(ctx context.Context, tenantID, featureKey string, used, limit int64) {
+func (r *Registry) EmitQuotaExceeded(
+	ctx context.Context,
+	tenantID, featureKey string,
+	used, limit int64,
+) {
 	r.mu.RLock()
 	plugins := r.onQuotaExceeded
 	r.mu.RUnlock()
@@ -470,6 +513,7 @@ func (r *Registry) GetPaymentProviders() []PaymentProviderPlugin {
 
 	result := make([]PaymentProviderPlugin, len(r.paymentProviders))
 	copy(result, r.paymentProviders)
+
 	return result
 }
 
@@ -490,7 +534,9 @@ func (r *Registry) InvoiceFormats() []string {
 	for format := range r.invoiceFormatters {
 		out = append(out, format)
 	}
+
 	sort.Strings(out)
+
 	return out
 }
 
@@ -498,6 +544,7 @@ func (r *Registry) InvoiceFormats() []string {
 func (r *Registry) GetPricingStrategy(name string) PricingStrategy {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+
 	return r.pricingStrategies[name]
 }
 
@@ -505,6 +552,7 @@ func (r *Registry) GetPricingStrategy(name string) PricingStrategy {
 func (r *Registry) GetUsageAggregator(name string) UsageAggregator {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+
 	return r.usageAggregators[name]
 }
 
@@ -515,6 +563,7 @@ func (r *Registry) GetTaxCalculators() []TaxCalculator {
 
 	result := make([]TaxCalculator, len(r.taxCalculators))
 	copy(result, r.taxCalculators)
+
 	return result
 }
 
@@ -539,6 +588,7 @@ func (r *Registry) GetPaymentProvider(name string) PaymentProviderPlugin {
 			return p
 		}
 	}
+
 	return nil
 }
 
@@ -546,6 +596,7 @@ func (r *Registry) GetPaymentProvider(name string) PaymentProviderPlugin {
 func (r *Registry) HasPaymentProviders() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+
 	return len(r.paymentProviders) > 0
 }
 
@@ -655,7 +706,11 @@ func (r *Registry) EmitInvoicePastDue(ctx context.Context, inv interface{}) {
 }
 
 // EmitSoftLimitReached emits a soft limit reached event.
-func (r *Registry) EmitSoftLimitReached(ctx context.Context, tenantID, featureKey string, used, limit int64) {
+func (r *Registry) EmitSoftLimitReached(
+	ctx context.Context,
+	tenantID, featureKey string,
+	used, limit int64,
+) {
 	r.mu.RLock()
 	plugins := r.onSoftLimitReached
 	r.mu.RUnlock()
@@ -733,7 +788,12 @@ func (r *Registry) EmitInvoiceVoided(ctx context.Context, inv interface{}, reaso
 }
 
 // EmitProviderSync emits a provider sync event.
-func (r *Registry) EmitProviderSync(ctx context.Context, providerName string, success bool, syncErr error) {
+func (r *Registry) EmitProviderSync(
+	ctx context.Context,
+	providerName string,
+	success bool,
+	syncErr error,
+) {
 	r.mu.RLock()
 	plugins := r.onProviderSync
 	r.mu.RUnlock()
@@ -766,6 +826,7 @@ func (r *Registry) dispatch(ctx context.Context, hook, pluginName string, fn fun
 	if err == nil {
 		return
 	}
+
 	r.hookFailures.Inc(hook, reason)
 	r.logger.Warn("plugin "+hook+" failed",
 		log.String("plugin", pluginName),
@@ -777,7 +838,11 @@ func (r *Registry) dispatch(ctx context.Context, hook, pluginName string, fn fun
 // failed: the hook returned an error, it outran the timeout, or ctx ended
 // first.
 // Plugins should never block the billing pipeline.
-func (r *Registry) callWithTimeout(ctx context.Context, pluginName string, fn func() error) (reason string, err error) {
+func (r *Registry) callWithTimeout(
+	ctx context.Context,
+	pluginName string,
+	fn func() error,
+) (reason string, err error) {
 	done := make(chan error, 1)
 
 	go func() {
@@ -789,6 +854,7 @@ func (r *Registry) callWithTimeout(ctx context.Context, pluginName string, fn fu
 		if hookErr != nil {
 			return "error", hookErr
 		}
+
 		return "", nil
 	case <-time.After(r.hookTimeout):
 		return "timeout", fmt.Errorf("%w: %s", errHookTimeout, pluginName)

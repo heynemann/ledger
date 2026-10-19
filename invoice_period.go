@@ -43,22 +43,31 @@ func ForPeriod(start, end time.Time) InvoiceOption {
 
 // namedPeriod returns the period an invoice bills when the caller named one
 // other than the current period, and nil when it bills the current period.
-func namedPeriod(sub *subscription.Subscription, p *plan.Plan, opts []InvoiceOption, now time.Time) (*subscription.Period, error) {
+func namedPeriod(
+	sub *subscription.Subscription,
+	p *plan.Plan,
+	opts []InvoiceOption,
+	now time.Time,
+) (*subscription.Period, error) {
 	var cfg invoiceConfig
 	for _, opt := range opts {
 		opt(&cfg)
 	}
+
 	if cfg.period == nil {
 		return nil, nil
 	}
+
 	want := *cfg.period
 	if want.Start.Equal(sub.CurrentPeriodStart) && want.End.Equal(sub.CurrentPeriodEnd) {
 		return nil, nil
 	}
+
 	if !periodBelongsTo(sub, billingPeriod(p), want, now) {
 		return nil, fmt.Errorf("%w: subscription %s had no billing period from %s to %s",
 			ErrInvalidInput, sub.ID, want.Start.Format(time.RFC3339), want.End.Format(time.RFC3339))
 	}
+
 	return &want, nil
 }
 
@@ -81,16 +90,27 @@ func namedPeriod(sub *subscription.Subscription, p *plan.Plan, opts []InvoiceOpt
 // walk back on the old cadence, or, when an older stretch's end is the Floor,
 // are rebuilt forwards from there. Below the Floor nothing can be proved.
 // Anything that cannot be proved is refused, never guessed.
-func periodBelongsTo(sub *subscription.Subscription, period plan.Period, want subscription.Period, now time.Time) bool {
+func periodBelongsTo(
+	sub *subscription.Subscription,
+	period plan.Period,
+	want subscription.Period,
+	now time.Time,
+) bool {
 	// The start-before-end check is a cheap early exit: the walk below can
 	// never match a period that is empty or runs backwards, so it is redundant.
 	if !want.Start.Before(want.End) || want.Start.After(now) || !want.End.After(sub.CreatedAt) {
 		return false
 	}
+
 	if period != plan.PeriodMonthly && period != plan.PeriodYearly {
 		return false
 	}
-	current := subscription.Period{Start: sub.CurrentPeriodStart.UTC(), End: sub.CurrentPeriodEnd.UTC()}
+
+	current := subscription.Period{
+		Start: sub.CurrentPeriodStart.UTC(),
+		End:   sub.CurrentPeriodEnd.UTC(),
+	}
+
 	st := sub.Stretch
 	if st == nil {
 		return walkBack(sub, period, want, current.Start, current.End, true)
@@ -104,11 +124,13 @@ func periodBelongsTo(sub *subscription.Subscription, period plan.Period, want su
 	if !ok {
 		return false
 	}
+
 	for _, p := range after {
 		if p.Start.Equal(want.Start) && p.End.Equal(want.End) {
 			return true
 		}
 	}
+
 	if want.End.After(stretched.Start) {
 		return false
 	}
@@ -117,25 +139,33 @@ func periodBelongsTo(sub *subscription.Subscription, period plan.Period, want su
 	if st.Floor == nil {
 		return walkBack(sub, period, want, before.Start, before.End, true)
 	}
+
 	floor := st.Floor.UTC()
 	if want.Start.Before(floor) {
 		return false
 	}
+
 	return onFloorCadence(floor, before, period, want)
 }
 
 // forwardTo lists the periods the clock builds from first, with nextPeriod,
 // up to and including target, and reports whether it reaches target exactly.
-func forwardTo(first, target subscription.Period, period plan.Period) ([]subscription.Period, bool) {
+func forwardTo(
+	first, target subscription.Period,
+	period plan.Period,
+) ([]subscription.Period, bool) {
 	var out []subscription.Period
+
 	p := first
 	for range maxCatchUpPeriods {
 		out = append(out, p)
 		if !p.Start.Before(target.Start) {
 			return out, p.Start.Equal(target.Start) && p.End.Equal(target.End)
 		}
+
 		p.Start, p.End = nextPeriod(p.Start, p.End, period)
 	}
+
 	return nil, false
 }
 
@@ -146,50 +176,77 @@ func forwardTo(first, target subscription.Period, period plan.Period) ([]subscri
 // start could have had. Each candidate is rebuilt forwards as the clock
 // would have, and want counts only if every candidate that reaches next
 // exactly contains it.
-func onFloorCadence(floor time.Time, next subscription.Period, period plan.Period, want subscription.Period) bool {
+func onFloorCadence(
+	floor time.Time,
+	next subscription.Period,
+	period plan.Period,
+	want subscription.Period,
+) bool {
 	days := []int{floor.Day()}
 	if floor.Day() == daysIn(floor.Year(), floor.Month()) {
 		for d := floor.Day() + 1; d <= 31; d++ {
 			days = append(days, d)
 		}
 	}
+
 	reached := 0
+
 	for _, day := range days {
-		first := subscription.Period{Start: floor, End: shiftMonths(floor, periodMonths(period), day)}
+		first := subscription.Period{
+			Start: floor,
+			End:   shiftMonths(floor, periodMonths(period), day),
+		}
+
 		chain, ok := forwardTo(first, next, period)
 		if !ok {
 			continue
 		}
+
 		reached++
 		found := false
+
 		for _, p := range chain {
 			if p.Start.Equal(want.Start) && p.End.Equal(want.End) {
 				found = true
 			}
 		}
+
 		if !found {
 			return false
 		}
 	}
+
 	return reached > 0
 }
 
 // walkBack reports whether want is one of the periods before [start, end) on
 // that period's own cadence. fromCreation says the cadence runs back to the
 // subscription's creation, where the 29 February rule applies.
-func walkBack(sub *subscription.Subscription, period plan.Period, want subscription.Period, start, end time.Time, fromCreation bool) bool {
+func walkBack(
+	sub *subscription.Subscription,
+	period plan.Period,
+	want subscription.Period,
+	start, end time.Time,
+	fromCreation bool,
+) bool {
 	months, day := periodMonths(period), anchorDay(start, end)
 	for range maxCatchUpPeriods {
 		if start.Before(want.End) {
 			return false
 		}
+
 		if start.Equal(want.End) {
 			// Only a yearly plan loses its anchor: a monthly plan's anchorDay
 			// always recovers the 29th to the 31st from the period itself, so
 			// the walk is exact and the rule below would only refuse real
 			// periods, such as an import whose provider period started a
 			// few days before the creation day.
-			if first, ok := clampedFirstStart(sub, period, want.End); ok && fromCreation && period == plan.PeriodYearly {
+			if first, ok := clampedFirstStart(
+				sub,
+				period,
+				want.End,
+			); ok && fromCreation &&
+				period == plan.PeriodYearly {
 				// The anchor is lost where a year from 29 February lands on
 				// the 28th, so the walk back cannot tell 29 February to 28
 				// February from 28 to 28. The subscription's own creation
@@ -197,10 +254,13 @@ func walkBack(sub *subscription.Subscription, period plan.Period, want subscript
 				// period at all.
 				return want.Start.Equal(first) && reproduces(want, period, start, end)
 			}
+
 			return shiftMonths(start, -months, day).Equal(want.Start)
 		}
+
 		start, end = shiftMonths(start, -months, day), start
 	}
+
 	return false
 }
 
@@ -209,15 +269,22 @@ func walkBack(sub *subscription.Subscription, period plan.Period, want subscript
 // created on 29 February has a first period ending on the 28th. The start is
 // the subscription's creation day, one period before end, and ok is false
 // unless end is a month's last day and the creation day is later than it.
-func clampedFirstStart(sub *subscription.Subscription, period plan.Period, end time.Time) (first time.Time, ok bool) {
+func clampedFirstStart(
+	sub *subscription.Subscription,
+	period plan.Period,
+	end time.Time,
+) (first time.Time, ok bool) {
 	created := sub.CreatedAt.UTC()
 	if end.Day() != daysIn(end.Year(), end.Month()) || created.Day() <= end.Day() {
 		return time.Time{}, false
 	}
+
 	first = shiftMonths(end, -periodMonths(period), created.Day())
-	if !first.Before(end) || first.Year() != created.Year() || first.YearDay() != created.YearDay() {
+	if !first.Before(end) || first.Year() != created.Year() ||
+		first.YearDay() != created.YearDay() {
 		return time.Time{}, false
 	}
+
 	return first, true
 }
 
@@ -238,6 +305,7 @@ func usageWindow(billed subscription.Period, now time.Time) subscription.Period 
 	if now.Before(billed.End) {
 		billed.End = now
 	}
+
 	return billed
 }
 
@@ -245,10 +313,16 @@ func usageWindow(billed subscription.Period, now time.Time) subscription.Period 
 // themselves. QueryUsage drops its app filter when the app id is empty, so
 // events from another app are skipped here. A window that ends at or before
 // its start holds no usage.
-func (l *Ledger) usageInPeriod(ctx context.Context, sub *subscription.Subscription, pf plan.Feature, window subscription.Period) (int64, error) {
+func (l *Ledger) usageInPeriod(
+	ctx context.Context,
+	sub *subscription.Subscription,
+	pf plan.Feature,
+	window subscription.Period,
+) (int64, error) {
 	if !window.End.After(window.Start) {
 		return 0, nil
 	}
+
 	events, err := l.store.QueryUsage(ctx, sub.TenantID, sub.AppID, meter.QueryOpts{
 		FeatureKey: pf.Key,
 		Start:      window.Start,
@@ -257,10 +331,17 @@ func (l *Ledger) usageInPeriod(ctx context.Context, sub *subscription.Subscripti
 	if err != nil {
 		return 0, err
 	}
+
 	var total int64
+
 	for _, e := range events {
 		if e.AppID == sub.AppID {
-			total += e.Quantity
+			sum, sumErr := meter.CheckedAdd(total, e.Quantity)
+			if sumErr != nil {
+				return 0, fmt.Errorf("usage for feature %q: %w", pf.Key, sumErr)
+			}
+
+			total = sum
 		}
 	}
 	// Meter accepts negative quantities (a correction, say), so the sum can
@@ -270,5 +351,6 @@ func (l *Ledger) usageInPeriod(ctx context.Context, sub *subscription.Subscripti
 	if total < 0 {
 		return 0, fmt.Errorf("usage for the period totals %d, below zero", total)
 	}
+
 	return total, nil
 }

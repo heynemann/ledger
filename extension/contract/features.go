@@ -31,7 +31,12 @@ type FeaturesListInput struct {
 	Global bool `json:"global"`
 }
 
-func featuresList(ctx context.Context, eng *ledger.Ledger, sc scope, in FeaturesListInput) (Page[*feature.Feature], error) {
+func featuresList(
+	ctx context.Context,
+	eng *ledger.Ledger,
+	sc scope,
+	in FeaturesListInput,
+) (Page[*feature.Feature], error) {
 	switch feature.Status(in.Status) {
 	case "", feature.StatusDraft, feature.StatusActive, feature.StatusArchived:
 	default:
@@ -45,16 +50,20 @@ func featuresList(ctx context.Context, eng *ledger.Ledger, sc scope, in Features
 	// id as "all apps", so it lists the global catalog and nothing else.
 	global := in.Global || sc.AppID == ""
 
-	var rows []*feature.Feature
-	var err error
+	var (
+		rows []*feature.Feature
+		err  error
+	)
 	if global {
 		rows, err = eng.ListGlobalFeatures(ctx, opts)
 	} else {
 		rows, err = eng.ListFeatures(ctx, sc.AppID, opts)
 	}
+
 	if err != nil {
 		return Page[*feature.Feature]{}, err
 	}
+
 	return pageFrom(rows, limit, offset), nil
 }
 
@@ -64,15 +73,23 @@ func featuresList(ctx context.Context, eng *ledger.Ledger, sc scope, in Features
 // PERMISSION_DENIED, since the same caller can read the feature and its
 // existence is no secret. A feature that belongs to another app stays
 // NOT_FOUND.
-func loadFeature(ctx context.Context, eng *ledger.Ledger, sc scope, raw string, write bool) (*feature.Feature, error) {
+func loadFeature(
+	ctx context.Context,
+	eng *ledger.Ledger,
+	sc scope,
+	raw string,
+	write bool,
+) (*feature.Feature, error) {
 	featureID, err := parseID("id", raw, id.ParseFeatureID)
 	if err != nil {
 		return nil, err
 	}
+
 	f, err := eng.GetFeature(ctx, featureID)
 	if err != nil {
 		return nil, err
 	}
+
 	allowed := sc.canRead(f.AppID)
 	if write {
 		allowed = sc.owns(f.AppID)
@@ -80,13 +97,20 @@ func loadFeature(ctx context.Context, eng *ledger.Ledger, sc scope, raw string, 
 			return nil, permissionDenied("shared features can be changed only with no app selected")
 		}
 	}
+
 	if !allowed {
 		return nil, notFound("feature")
 	}
+
 	return f, nil
 }
 
-func featuresDetail(ctx context.Context, eng *ledger.Ledger, sc scope, in IDInput) (*feature.Feature, error) {
+func featuresDetail(
+	ctx context.Context,
+	eng *ledger.Ledger,
+	sc scope,
+	in IDInput,
+) (*feature.Feature, error) {
 	return loadFeature(ctx, eng, sc, in.ID, false)
 }
 
@@ -108,19 +132,29 @@ type FeatureCreateInput struct {
 // the provider imports share; this only words a refusal as a BAD_REQUEST.
 func validFeatureShape(key, typ, period string, limit int64) error {
 	err := ledger.ValidateFeature(&feature.Feature{
-		Key: key, Type: feature.FeatureType(typ), Period: feature.Period(period), DefaultLimit: limit,
+		Key:          key,
+		Type:         feature.FeatureType(typ),
+		Period:       feature.Period(period),
+		DefaultLimit: limit,
 	})
 	if err == nil {
 		return nil
 	}
+
 	return badRequest("%s", strings.TrimPrefix(err.Error(), ledger.ErrInvalidInput.Error()+": "))
 }
 
-func featuresCreate(ctx context.Context, eng *ledger.Ledger, sc scope, in FeatureCreateInput) (*feature.Feature, error) {
+func featuresCreate(
+	ctx context.Context,
+	eng *ledger.Ledger,
+	sc scope,
+	in FeatureCreateInput,
+) (*feature.Feature, error) {
 	key := strings.TrimSpace(in.Key)
 	if err := validFeatureShape(key, in.Type, in.Period, in.DefaultLimit); err != nil {
 		return nil, err
 	}
+
 	if existing, err := eng.GetFeatureByKey(ctx, key, sc.AppID); err == nil && existing != nil {
 		return nil, conflict("feature key %q already exists in this app", key)
 	} else if err != nil && !errors.Is(err, ledger.ErrFeatureNotFound) {
@@ -135,6 +169,7 @@ func featuresCreate(ctx context.Context, eng *ledger.Ledger, sc scope, in Featur
 	if err := eng.CreateFeature(ctx, f); err != nil {
 		return nil, err
 	}
+
 	return f, nil
 }
 
@@ -150,35 +185,54 @@ type FeatureUpdateInput struct {
 	Metadata     *map[string]string `json:"metadata"`
 }
 
-func featuresUpdate(ctx context.Context, eng *ledger.Ledger, sc scope, in FeatureUpdateInput) (*feature.Feature, error) {
+func featuresUpdate(
+	ctx context.Context,
+	eng *ledger.Ledger,
+	sc scope,
+	in FeatureUpdateInput,
+) (*feature.Feature, error) {
 	f, err := loadFeature(ctx, eng, sc, in.ID, true)
 	if err != nil {
 		return nil, err
 	}
+
 	if in.Name != nil {
 		f.Name = *in.Name
 	}
+
 	if in.Description != nil {
 		f.Description = *in.Description
 	}
+
 	if in.DefaultLimit != nil {
 		f.DefaultLimit = *in.DefaultLimit
 	}
+
 	if in.Period != nil {
 		f.Period = feature.Period(*in.Period)
 	}
+
 	if in.SoftLimit != nil {
 		f.SoftLimit = *in.SoftLimit
 	}
+
 	if in.Metadata != nil {
 		f.Metadata = *in.Metadata
 	}
-	if err := validFeatureShape(f.Key, string(f.Type), string(f.Period), f.DefaultLimit); err != nil {
+
+	if err := validFeatureShape(
+		f.Key,
+		string(f.Type),
+		string(f.Period),
+		f.DefaultLimit,
+	); err != nil {
 		return nil, err
 	}
+
 	if err := eng.UpdateFeature(ctx, f); err != nil {
 		return nil, err
 	}
+
 	return f, nil
 }
 
@@ -187,9 +241,11 @@ func featuresArchive(ctx context.Context, eng *ledger.Ledger, sc scope, in IDInp
 	if err != nil {
 		return Ack{}, err
 	}
+
 	if err := eng.ArchiveFeature(ctx, f.ID); err != nil {
 		return Ack{}, err
 	}
+
 	return Ack{OK: true}, nil
 }
 
@@ -198,17 +254,25 @@ func featuresDelete(ctx context.Context, eng *ledger.Ledger, sc scope, in IDInpu
 	if err != nil {
 		return Ack{}, err
 	}
+
 	if err := eng.DeleteFeature(ctx, f.ID); err != nil {
 		return Ack{}, err
 	}
+
 	return Ack{OK: true}, nil
 }
 
-func featuresSync(ctx context.Context, eng *ledger.Ledger, sc scope, in IDInput) (*provider.SyncResult, error) {
+func featuresSync(
+	ctx context.Context,
+	eng *ledger.Ledger,
+	sc scope,
+	in IDInput,
+) (*provider.SyncResult, error) {
 	f, err := loadFeature(ctx, eng, sc, in.ID, true)
 	if err != nil {
 		return nil, err
 	}
+
 	res, err := eng.SyncFeatureToProvider(ctx, f.ID)
 	// The engine returns the result and the provider's error together when the
 	// provider refuses. Passing that error on would turn a refusal into a bare
@@ -219,5 +283,6 @@ func featuresSync(ctx context.Context, eng *ledger.Ledger, sc scope, in IDInput)
 	if res != nil {
 		return res, nil
 	}
+
 	return nil, err
 }

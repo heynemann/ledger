@@ -41,13 +41,19 @@ type importSource struct {
 func (s *importSource) Name() string                { return "fake" }
 func (s *importSource) Provider() provider.Provider { return s }
 
-func importAnswer[T any](s *importSource, builders map[string]func() *T, noun, pid string) (*T, error) {
+func importAnswer[T any](
+	s *importSource,
+	builders map[string]func() *T,
+	noun, pid string,
+) (*T, error) {
 	s.mu.Lock()
 	s.calls++
 	s.mu.Unlock()
+
 	if build, ok := builders[pid]; ok {
 		return build(), nil
 	}
+
 	return nil, fmt.Errorf("no such %s: %s", noun, pid)
 }
 
@@ -59,7 +65,10 @@ func (s *importSource) ImportFeature(_ context.Context, pid string) (*feature.Fe
 	return importAnswer(s, s.features, "feature", pid)
 }
 
-func (s *importSource) ImportSubscription(_ context.Context, pid string) (*subscription.Subscription, error) {
+func (s *importSource) ImportSubscription(
+	_ context.Context,
+	pid string,
+) (*subscription.Subscription, error) {
 	return importAnswer(s, s.subs, "subscription", pid)
 }
 
@@ -83,9 +92,11 @@ func TestImportIntoFilesThePlanUnderTheCallersApp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ImportPlanFromProvider: %v", err)
 	}
+
 	if p.AppID != "app_1" || p.ProviderID != "prod_1" || p.ProviderName != "fake" || p.ID.IsNil() {
 		t.Errorf("imported %+v; want app_1, prod_1 from fake, with a local id", p)
 	}
+
 	stored, err := l.GetPlan(ctx, p.ID)
 	if err != nil || stored.AppID != "app_1" {
 		t.Errorf("stored plan %+v, err %v; want it in app_1", stored, err)
@@ -97,10 +108,12 @@ func TestImportWithoutAnAppKeepsTheProvidersApp(t *testing.T) {
 		"prod_1": func() *plan.Plan { return validPlan("growth", "app_9") },
 	}}
 	l, _ := newImportLedger(src)
+
 	p, err := l.ImportPlanFromProvider(context.Background(), "fake", "prod_1")
 	if err != nil {
 		t.Fatalf("ImportPlanFromProvider: %v", err)
 	}
+
 	if p.AppID != "app_9" {
 		t.Errorf("app = %q, want the provider's app_9", p.AppID)
 	}
@@ -117,6 +130,7 @@ func TestImportRefusesARecordTheProviderFilesUnderAnotherApp(t *testing.T) {
 	if !errors.Is(err, ledger.ErrPlanNotFound) {
 		t.Fatalf("got %v, want ErrPlanNotFound", err)
 	}
+
 	for _, app := range []string{"app_1", "app_2"} {
 		if rows, _ := st.ListPlans(ctx, app, plan.ListOpts{}); len(rows) != 0 {
 			t.Errorf("%s holds %d plans after a refused import, want 0", app, len(rows))
@@ -131,25 +145,62 @@ func TestImportRefusesBeforeAskingAndReportsTheProvidersWords(t *testing.T) {
 	}}
 	l, _ := newImportLedger(src)
 
-	if _, err := l.ImportPlanFromProvider(ctx, "", "  ", ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrInvalidInput) {
+	if _, err := l.ImportPlanFromProvider(
+		ctx,
+		"",
+		"  ",
+		ledger.ImportInto("app_1"),
+	); !errors.Is(
+		err,
+		ledger.ErrInvalidInput,
+	) {
 		t.Errorf("blank provider id: got %v, want ErrInvalidInput", err)
 	}
+
 	if src.calls != 0 {
 		t.Errorf("the provider was asked %d times for a blank id, want 0", src.calls)
 	}
 
 	_, err := l.ImportPlanFromProvider(ctx, "", "prod_missing", ledger.ImportInto("app_1"))
-	if !errors.Is(err, ledger.ErrProviderSync) || !strings.Contains(err.Error(), "no such plan: prod_missing") {
+	if !errors.Is(err, ledger.ErrProviderSync) ||
+		!strings.Contains(err.Error(), "no such plan: prod_missing") {
 		t.Errorf("unknown id: got %v, want ErrProviderSync carrying the provider's words", err)
 	}
-	if _, err := l.ImportPlanFromProvider(ctx, "", "prod_empty", ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrProviderSync) {
+
+	if _, err := l.ImportPlanFromProvider(
+		ctx,
+		"",
+		"prod_empty",
+		ledger.ImportInto("app_1"),
+	); !errors.Is(
+		err,
+		ledger.ErrProviderSync,
+	) {
 		t.Errorf("an empty answer: got %v, want ErrProviderSync", err)
 	}
-	if _, err := l.ImportPlanFromProvider(ctx, "paypal", "prod_empty", ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrProviderNotFound) {
+
+	if _, err := l.ImportPlanFromProvider(
+		ctx,
+		"paypal",
+		"prod_empty",
+		ledger.ImportInto("app_1"),
+	); !errors.Is(
+		err,
+		ledger.ErrProviderNotFound,
+	) {
 		t.Errorf("unknown provider name: got %v, want ErrProviderNotFound", err)
 	}
+
 	bare := ledger.New(memory.New())
-	if _, err := bare.ImportPlanFromProvider(ctx, "", "prod_1", ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrProviderNotConfigured) {
+	if _, err := bare.ImportPlanFromProvider(
+		ctx,
+		"",
+		"prod_1",
+		ledger.ImportInto("app_1"),
+	); !errors.Is(
+		err,
+		ledger.ErrProviderNotConfigured,
+	) {
 		t.Errorf("no provider: got %v, want ErrProviderNotConfigured", err)
 	}
 }
@@ -161,21 +212,51 @@ func TestImportedPlansAreValidatedAndASecondImportConflicts(t *testing.T) {
 		"prod_nameless": func() *plan.Plan {
 			p := validPlan("nameless", "")
 			p.Name = ""
+
 			return p
 		},
 	}}
 	l, _ := newImportLedger(src)
 
-	if _, err := l.ImportPlanFromProvider(ctx, "", "prod_1", ledger.ImportInto("app_1")); err != nil {
+	if _, err := l.ImportPlanFromProvider(
+		ctx,
+		"",
+		"prod_1",
+		ledger.ImportInto("app_1"),
+	); err != nil {
 		t.Fatalf("first import: %v", err)
 	}
-	if _, err := l.ImportPlanFromProvider(ctx, "", "prod_1", ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrAlreadyExists) {
+
+	if _, err := l.ImportPlanFromProvider(
+		ctx,
+		"",
+		"prod_1",
+		ledger.ImportInto("app_1"),
+	); !errors.Is(
+		err,
+		ledger.ErrAlreadyExists,
+	) {
 		t.Errorf("second import: got %v, want ErrAlreadyExists", err)
 	}
-	if _, err := l.ImportPlanFromProvider(ctx, "", "prod_1", ledger.ImportInto("app_2")); err != nil {
+
+	if _, err := l.ImportPlanFromProvider(
+		ctx,
+		"",
+		"prod_1",
+		ledger.ImportInto("app_2"),
+	); err != nil {
 		t.Errorf("another app may import the same plan: %v", err)
 	}
-	if _, err := l.ImportPlanFromProvider(ctx, "", "prod_nameless", ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrInvalidInput) {
+
+	if _, err := l.ImportPlanFromProvider(
+		ctx,
+		"",
+		"prod_nameless",
+		ledger.ImportInto("app_1"),
+	); !errors.Is(
+		err,
+		ledger.ErrInvalidInput,
+	) {
 		t.Errorf("a plan with no name: got %v, want ErrInvalidInput", err)
 	}
 }
@@ -184,7 +265,13 @@ func TestImportedFeaturesGoToTheCatalogTheCallerNames(t *testing.T) {
 	ctx := context.Background()
 	src := &importSource{features: map[string]func() *feature.Feature{
 		"mtr_1": func() *feature.Feature {
-			return &feature.Feature{Key: "exports", Name: "Exports", Type: feature.FeatureMetered, DefaultLimit: 100, Period: feature.PeriodMonthly}
+			return &feature.Feature{
+				Key:          "exports",
+				Name:         "Exports",
+				Type:         feature.FeatureMetered,
+				DefaultLimit: 100,
+				Period:       feature.PeriodMonthly,
+			}
 		},
 		"mtr_blank": func() *feature.Feature {
 			return &feature.Feature{Key: "  ", Name: "Blank", Type: feature.FeatureBoolean}
@@ -196,14 +283,33 @@ func TestImportedFeaturesGoToTheCatalogTheCallerNames(t *testing.T) {
 	if err != nil || own.AppID != "app_1" || own.Status != feature.StatusActive {
 		t.Fatalf("app import: %+v, %v; want an active feature in app_1", own, err)
 	}
+
 	shared, err := l.ImportFeatureFromProvider(ctx, "", "mtr_1", ledger.ImportInto(""))
 	if err != nil || shared.AppID != "" {
 		t.Fatalf("shared import: %+v, %v; want a global feature", shared, err)
 	}
-	if _, err := l.ImportFeatureFromProvider(ctx, "", "mtr_1", ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrAlreadyExists) {
+
+	if _, err := l.ImportFeatureFromProvider(
+		ctx,
+		"",
+		"mtr_1",
+		ledger.ImportInto("app_1"),
+	); !errors.Is(
+		err,
+		ledger.ErrAlreadyExists,
+	) {
 		t.Errorf("a key the app uses: got %v, want ErrAlreadyExists", err)
 	}
-	if _, err := l.ImportFeatureFromProvider(ctx, "", "mtr_blank", ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrInvalidInput) {
+
+	if _, err := l.ImportFeatureFromProvider(
+		ctx,
+		"",
+		"mtr_blank",
+		ledger.ImportInto("app_1"),
+	); !errors.Is(
+		err,
+		ledger.ErrInvalidInput,
+	) {
 		t.Errorf("a feature with no key: got %v, want ErrInvalidInput", err)
 	}
 }
@@ -211,13 +317,16 @@ func TestImportedFeaturesGoToTheCatalogTheCallerNames(t *testing.T) {
 // activePlanIn creates and activates a plan through the engine.
 func activePlanIn(t *testing.T, l *ledger.Ledger, slug, app string) *plan.Plan {
 	t.Helper()
+
 	p := validPlan(slug, app)
 	if err := l.CreatePlan(context.Background(), p); err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
+
 	if err := l.ActivatePlan(context.Background(), p.ID); err != nil {
 		t.Fatalf("ActivatePlan: %v", err)
 	}
+
 	return p
 }
 
@@ -229,18 +338,35 @@ func TestImportedSubscriptionsNeedTheirPlanInTheApp(t *testing.T) {
 	theirs := activePlanIn(t, l, "pro", "app_2")
 	onPlan := func(p *plan.Plan) func() *subscription.Subscription {
 		return func() *subscription.Subscription {
-			return &subscription.Subscription{TenantID: "acme", PlanID: p.ID, Status: subscription.StatusActive}
+			return &subscription.Subscription{
+				TenantID: "acme",
+				PlanID:   p.ID,
+				Status:   subscription.StatusActive,
+			}
 		}
 	}
-	src.subs = map[string]func() *subscription.Subscription{"sub_1": onPlan(ours), "sub_2": onPlan(theirs)}
+	src.subs = map[string]func() *subscription.Subscription{
+		"sub_1": onPlan(ours),
+		"sub_2": onPlan(theirs),
+	}
 
 	s, err := l.ImportSubscriptionFromProvider(ctx, "", "sub_1", ledger.ImportInto("app_1"))
 	if err != nil || s.AppID != "app_1" || s.PlanID != ours.ID || s.ProviderID != "sub_1" {
 		t.Fatalf("import: %+v, %v", s, err)
 	}
-	if _, err = l.ImportSubscriptionFromProvider(ctx, "", "sub_1", ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrAlreadyExists) {
+
+	if _, err = l.ImportSubscriptionFromProvider(
+		ctx,
+		"",
+		"sub_1",
+		ledger.ImportInto("app_1"),
+	); !errors.Is(
+		err,
+		ledger.ErrAlreadyExists,
+	) {
 		t.Errorf("second import: got %v, want ErrAlreadyExists", err)
 	}
+
 	_, err = l.ImportSubscriptionFromProvider(ctx, "", "sub_2", ledger.ImportInto("app_1"))
 	if !errors.Is(err, ledger.ErrInvalidInput) || strings.Contains(err.Error(), "app_2") {
 		t.Errorf("another app's plan: got %v, want ErrInvalidInput that names no other app", err)
@@ -252,38 +378,91 @@ func TestImportedInvoicesNeedTheirSubscriptionAndGetLineItemIDs(t *testing.T) {
 	src := &importSource{}
 	l, _ := newImportLedger(src)
 	p := activePlanIn(t, l, "pro", "app_1")
+
 	sub := &subscription.Subscription{TenantID: "acme", PlanID: p.ID, AppID: "app_1"}
 	if err := l.CreateSubscription(ctx, sub); err != nil {
 		t.Fatalf("CreateSubscription: %v", err)
 	}
+
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	paidAt := start.AddDate(0, 0, 2)
 	bill := func(tenant string) func() *invoice.Invoice {
 		return func() *invoice.Invoice {
 			return &invoice.Invoice{
-				TenantID: tenant, SubscriptionID: sub.ID, Status: invoice.StatusPaid, PaidAt: &paidAt, Currency: "usd",
-				Subtotal: types.USD(4900), Total: types.USD(4900), TaxAmount: types.Zero("usd"), DiscountAmount: types.Zero("usd"),
-				PeriodStart: start, PeriodEnd: start.AddDate(0, 1, 0),
-				LineItems: []invoice.LineItem{{Description: "Pro plan", Quantity: 1, UnitAmount: types.USD(4900), Amount: types.USD(4900), Type: invoice.LineItemBase}},
+				TenantID:       tenant,
+				SubscriptionID: sub.ID,
+				Status:         invoice.StatusPaid,
+				PaidAt:         &paidAt,
+				Currency:       "usd",
+				Subtotal: types.USD(
+					4900,
+				),
+				Total:          types.USD(4900),
+				TaxAmount:      types.Zero("usd"),
+				DiscountAmount: types.Zero("usd"),
+				PeriodStart:    start,
+				PeriodEnd:      start.AddDate(0, 1, 0),
+				LineItems: []invoice.LineItem{
+					{
+						Description: "Pro plan",
+						Quantity:    1,
+						UnitAmount:  types.USD(4900),
+						Amount:      types.USD(4900),
+						Type:        invoice.LineItemBase,
+					},
+				},
 			}
 		}
 	}
-	src.invoices = map[string]func() *invoice.Invoice{"in_1": bill("acme"), "in_2": bill("acme"), "in_globex": bill("globex")}
+	src.invoices = map[string]func() *invoice.Invoice{
+		"in_1":      bill("acme"),
+		"in_2":      bill("acme"),
+		"in_globex": bill("globex"),
+	}
 
 	inv, err := l.ImportInvoiceFromProvider(ctx, "", "in_1", ledger.ImportInto("app_1"))
 	if err != nil || inv.AppID != "app_1" || inv.ProviderID != "in_1" {
 		t.Fatalf("import: %+v, %v", inv, err)
 	}
-	if len(inv.LineItems) != 1 || inv.LineItems[0].ID.IsNil() || inv.LineItems[0].InvoiceID != inv.ID {
+
+	if len(inv.LineItems) != 1 || inv.LineItems[0].ID.IsNil() ||
+		inv.LineItems[0].InvoiceID != inv.ID {
 		t.Errorf("line items %+v; want an id and this invoice's id on each", inv.LineItems)
 	}
-	if _, err := l.ImportInvoiceFromProvider(ctx, "", "in_1", ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrAlreadyExists) {
+
+	if _, err := l.ImportInvoiceFromProvider(
+		ctx,
+		"",
+		"in_1",
+		ledger.ImportInto("app_1"),
+	); !errors.Is(
+		err,
+		ledger.ErrAlreadyExists,
+	) {
 		t.Errorf("second import: got %v, want ErrAlreadyExists", err)
 	}
-	if _, err := l.ImportInvoiceFromProvider(ctx, "", "in_2", ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrAlreadyExists) {
+
+	if _, err := l.ImportInvoiceFromProvider(
+		ctx,
+		"",
+		"in_2",
+		ledger.ImportInto("app_1"),
+	); !errors.Is(
+		err,
+		ledger.ErrAlreadyExists,
+	) {
 		t.Errorf("a second live invoice for the period: got %v, want ErrAlreadyExists", err)
 	}
-	if _, err := l.ImportInvoiceFromProvider(ctx, "", "in_globex", ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrInvalidInput) {
+
+	if _, err := l.ImportInvoiceFromProvider(
+		ctx,
+		"",
+		"in_globex",
+		ledger.ImportInto("app_1"),
+	); !errors.Is(
+		err,
+		ledger.ErrInvalidInput,
+	) {
 		t.Errorf("another tenant's subscription: got %v, want ErrInvalidInput", err)
 	}
 }
@@ -293,34 +472,78 @@ func TestImportedFeaturesAreShapeChecked(t *testing.T) {
 	src := &importSource{features: map[string]func() *feature.Feature{
 		"mtr_type": func() *feature.Feature { return &feature.Feature{Key: "a", Name: "A", Type: "bogus"} },
 		"mtr_period": func() *feature.Feature {
-			return &feature.Feature{Key: "b", Name: "B", Type: feature.FeatureBoolean, Period: "hourly"}
+			return &feature.Feature{
+				Key:    "b",
+				Name:   "B",
+				Type:   feature.FeatureBoolean,
+				Period: "hourly",
+			}
 		},
 		"mtr_limit": func() *feature.Feature {
-			return &feature.Feature{Key: "c", Name: "C", Type: feature.FeatureMetered, DefaultLimit: -5}
+			return &feature.Feature{
+				Key:          "c",
+				Name:         "C",
+				Type:         feature.FeatureMetered,
+				DefaultLimit: -5,
+			}
 		},
 		"mtr_draft": func() *feature.Feature {
-			return &feature.Feature{Key: "d", Name: "D", Type: feature.FeatureBoolean, Status: feature.StatusDraft}
+			return &feature.Feature{
+				Key:    "d",
+				Name:   "D",
+				Type:   feature.FeatureBoolean,
+				Status: feature.StatusDraft,
+			}
 		},
 		"mtr_archived": func() *feature.Feature {
-			return &feature.Feature{Key: "e", Name: "E", Type: feature.FeatureBoolean, Status: feature.StatusArchived}
+			return &feature.Feature{
+				Key:    "e",
+				Name:   "E",
+				Type:   feature.FeatureBoolean,
+				Status: feature.StatusArchived,
+			}
 		},
 		"mtr_theirs": func() *feature.Feature {
-			return &feature.Feature{Key: "f", Name: "F", Type: feature.FeatureBoolean, AppID: "app_2"}
+			return &feature.Feature{
+				Key:   "f",
+				Name:  "F",
+				Type:  feature.FeatureBoolean,
+				AppID: "app_2",
+			}
 		},
 	}}
 	l, st := newImportLedger(src)
 
 	for _, pid := range []string{"mtr_type", "mtr_period", "mtr_limit", "mtr_draft"} {
-		if _, err := l.ImportFeatureFromProvider(ctx, "", pid, ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrInvalidInput) {
+		if _, err := l.ImportFeatureFromProvider(
+			ctx,
+			"",
+			pid,
+			ledger.ImportInto("app_1"),
+		); !errors.Is(
+			err,
+			ledger.ErrInvalidInput,
+		) {
 			t.Errorf("%s: got %v, want ErrInvalidInput", pid, err)
 		}
 	}
-	if _, err := l.ImportFeatureFromProvider(ctx, "", "mtr_theirs", ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrFeatureNotFound) {
+
+	if _, err := l.ImportFeatureFromProvider(
+		ctx,
+		"",
+		"mtr_theirs",
+		ledger.ImportInto("app_1"),
+	); !errors.Is(
+		err,
+		ledger.ErrFeatureNotFound,
+	) {
 		t.Errorf("a feature filed under another app: got %v, want ErrFeatureNotFound", err)
 	}
+
 	if rows, _ := st.ListFeatures(ctx, "app_1", feature.ListOpts{}); len(rows) != 0 {
 		t.Errorf("app_1 holds %d features after refused imports, want 0", len(rows))
 	}
+
 	f, err := l.ImportFeatureFromProvider(ctx, "", "mtr_archived", ledger.ImportInto("app_1"))
 	if err != nil || f.Status != feature.StatusArchived {
 		t.Errorf("an archived feature: %+v, %v; want it kept archived", f, err)
@@ -331,10 +554,12 @@ func TestImportedSubscriptionNeedsAnActivePlanAndNamesIt(t *testing.T) {
 	ctx := context.Background()
 	src := &importSource{}
 	l, st := newImportLedger(src)
+
 	draft := validPlan("starter", "app_1")
 	if err := l.CreatePlan(ctx, draft); err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
+
 	src.subs = map[string]func() *subscription.Subscription{
 		"sub_1": func() *subscription.Subscription {
 			return &subscription.Subscription{TenantID: "acme", PlanID: draft.ID}
@@ -342,10 +567,19 @@ func TestImportedSubscriptionNeedsAnActivePlanAndNamesIt(t *testing.T) {
 	}
 
 	_, err := l.ImportSubscriptionFromProvider(ctx, "", "sub_1", ledger.ImportInto("app_1"))
-	if !errors.Is(err, ledger.ErrInvalidInput) || !strings.Contains(err.Error(), "activate plan starter before importing its subscriptions") {
+	if !errors.Is(err, ledger.ErrInvalidInput) ||
+		!strings.Contains(err.Error(), "activate plan starter before importing its subscriptions") {
 		t.Fatalf("got %v, want ErrInvalidInput telling the operator to activate plan starter", err)
 	}
-	if rows, _ := st.ListSubscriptions(ctx, "acme", "app_1", subscription.ListOpts{}); len(rows) != 0 {
+
+	if rows, _ := st.ListSubscriptions(
+		ctx,
+		"acme",
+		"app_1",
+		subscription.ListOpts{},
+	); len(
+		rows,
+	) != 0 {
 		t.Errorf("%d subscriptions stored after a refused import, want 0", len(rows))
 	}
 }
@@ -359,18 +593,46 @@ func TestImportedSubscriptionRefusesAMissingAndAForeignPlanInTheSameWords(t *tes
 	on := func(pid id.PlanID) func() *subscription.Subscription {
 		return func() *subscription.Subscription { return &subscription.Subscription{TenantID: "acme", PlanID: pid} }
 	}
-	src.subs = map[string]func() *subscription.Subscription{"sub_missing": on(missing), "sub_foreign": on(theirs.ID)}
+	src.subs = map[string]func() *subscription.Subscription{
+		"sub_missing": on(missing),
+		"sub_foreign": on(theirs.ID),
+	}
 
-	_, errMissing := l.ImportSubscriptionFromProvider(ctx, "", "sub_missing", ledger.ImportInto("app_1"))
-	_, errForeign := l.ImportSubscriptionFromProvider(ctx, "", "sub_foreign", ledger.ImportInto("app_1"))
-	if !errors.Is(errMissing, ledger.ErrInvalidInput) || !errors.Is(errForeign, ledger.ErrInvalidInput) {
+	_, errMissing := l.ImportSubscriptionFromProvider(
+		ctx,
+		"",
+		"sub_missing",
+		ledger.ImportInto("app_1"),
+	)
+
+	_, errForeign := l.ImportSubscriptionFromProvider(
+		ctx,
+		"",
+		"sub_foreign",
+		ledger.ImportInto("app_1"),
+	)
+	if !errors.Is(errMissing, ledger.ErrInvalidInput) ||
+		!errors.Is(errForeign, ledger.ErrInvalidInput) {
 		t.Fatalf("got %v and %v, want ErrInvalidInput for both", errMissing, errForeign)
 	}
+
 	blind := func(err error, pid id.PlanID) string { return strings.ReplaceAll(err.Error(), pid.String(), "<plan>") }
 	if blind(errMissing, missing) != blind(errForeign, theirs.ID) {
-		t.Errorf("a missing plan says %q and a foreign plan says %q; want the same words", errMissing, errForeign)
+		t.Errorf(
+			"a missing plan says %q and a foreign plan says %q; want the same words",
+			errMissing,
+			errForeign,
+		)
 	}
-	if rows, _ := st.ListSubscriptions(ctx, "acme", "app_1", subscription.ListOpts{}); len(rows) != 0 {
+
+	if rows, _ := st.ListSubscriptions(
+		ctx,
+		"acme",
+		"app_1",
+		subscription.ListOpts{},
+	); len(
+		rows,
+	) != 0 {
 		t.Errorf("%d subscriptions stored after refused imports, want 0", len(rows))
 	}
 }
@@ -391,12 +653,34 @@ func TestImportedSubscriptionRulesHoldForEveryEntityAcrossApps(t *testing.T) {
 			return &subscription.Subscription{TenantID: "   ", PlanID: p.ID}
 		},
 	}
-	if _, err := l.ImportSubscriptionFromProvider(ctx, "", "sub_theirs", ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrSubscriptionNotFound) {
-		t.Errorf("a subscription filed under another app: got %v, want ErrSubscriptionNotFound", err)
+
+	if _, err := l.ImportSubscriptionFromProvider(
+		ctx,
+		"",
+		"sub_theirs",
+		ledger.ImportInto("app_1"),
+	); !errors.Is(
+		err,
+		ledger.ErrSubscriptionNotFound,
+	) {
+		t.Errorf(
+			"a subscription filed under another app: got %v, want ErrSubscriptionNotFound",
+			err,
+		)
 	}
-	if _, err := l.ImportSubscriptionFromProvider(ctx, "", "sub_blank", ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrInvalidInput) {
+
+	if _, err := l.ImportSubscriptionFromProvider(
+		ctx,
+		"",
+		"sub_blank",
+		ledger.ImportInto("app_1"),
+	); !errors.Is(
+		err,
+		ledger.ErrInvalidInput,
+	) {
 		t.Errorf("a blank tenant: got %v, want ErrInvalidInput", err)
 	}
+
 	s, err := l.ImportSubscriptionFromProvider(ctx, "", "sub_padded", ledger.ImportInto("app_1"))
 	if err != nil || s.TenantID != "acme" {
 		t.Errorf("a padded tenant: %+v, %v; want it trimmed to acme", s, err)
@@ -414,13 +698,26 @@ func TestImportedSubscriptionDuplicateCheckStaysInItsApp(t *testing.T) {
 			return &subscription.Subscription{TenantID: "acme", PlanID: inApp.ID}
 		},
 	}
-	if _, err := l.ImportSubscriptionFromProvider(ctx, "", "sub_1", ledger.ImportInto("app_1")); err != nil {
+
+	if _, err := l.ImportSubscriptionFromProvider(
+		ctx,
+		"",
+		"sub_1",
+		ledger.ImportInto("app_1"),
+	); err != nil {
 		t.Fatalf("import into app_1: %v", err)
 	}
+
 	src.subs["sub_1"] = func() *subscription.Subscription {
 		return &subscription.Subscription{TenantID: "acme", PlanID: noApp.ID}
 	}
-	if _, err := l.ImportSubscriptionFromProvider(ctx, "", "sub_1", ledger.ImportInto("")); err != nil {
+
+	if _, err := l.ImportSubscriptionFromProvider(
+		ctx,
+		"",
+		"sub_1",
+		ledger.ImportInto(""),
+	); err != nil {
 		t.Errorf("the no-app scope must not see app_1's copy as a duplicate: %v", err)
 	}
 }
@@ -444,6 +741,7 @@ type barrierStore struct {
 func (b *barrierStore) arm(want int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
 	b.want, b.arrived, b.release = want, 0, make(chan struct{})
 	b.once = sync.Once{}
 }
@@ -454,7 +752,9 @@ func (b *barrierStore) wait() {
 		b.mu.Unlock()
 		return
 	}
+
 	release := b.release
+
 	b.arrived++
 	if b.arrived >= b.want {
 		b.once.Do(func() { close(release) })
@@ -468,9 +768,14 @@ func (b *barrierStore) wait() {
 	}
 }
 
-func (b *barrierStore) ListSubscriptions(ctx context.Context, tenantID, appID string, opts subscription.ListOpts) ([]*subscription.Subscription, error) {
+func (b *barrierStore) ListSubscriptions(
+	ctx context.Context,
+	tenantID, appID string,
+	opts subscription.ListOpts,
+) ([]*subscription.Subscription, error) {
 	rows, err := b.Store.ListSubscriptions(ctx, tenantID, appID, opts)
 	b.wait()
+
 	return rows, err
 }
 
@@ -487,19 +792,23 @@ func TestConcurrentImportsOfOneSubscriptionStoreOneRow(t *testing.T) {
 	const n = 8
 	bs.arm(n)
 	errs := make(chan error, n)
+
 	var wg sync.WaitGroup
 	for range n {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+
 			_, err := l.ImportSubscriptionFromProvider(ctx, "", "sub_1", ledger.ImportInto("app_1"))
 			errs <- err
 		}()
 	}
+
 	wg.Wait()
 	close(errs)
 
 	var stored, conflicts int
+
 	for err := range errs {
 		switch {
 		case err == nil:
@@ -510,10 +819,25 @@ func TestConcurrentImportsOfOneSubscriptionStoreOneRow(t *testing.T) {
 			t.Errorf("unexpected error: %v", err)
 		}
 	}
+
 	if stored != 1 || conflicts != n-1 {
-		t.Errorf("%d stored and %d conflicts from %d imports; want 1 and %d", stored, conflicts, n, n-1)
+		t.Errorf(
+			"%d stored and %d conflicts from %d imports; want 1 and %d",
+			stored,
+			conflicts,
+			n,
+			n-1,
+		)
 	}
-	if rows, _ := bs.ListSubscriptions(ctx, "acme", "app_1", subscription.ListOpts{}); len(rows) != 1 {
+
+	if rows, _ := bs.ListSubscriptions(
+		ctx,
+		"acme",
+		"app_1",
+		subscription.ListOpts{},
+	); len(
+		rows,
+	) != 1 {
 		t.Errorf("%d subscription rows, want exactly 1", len(rows))
 	}
 }
@@ -525,16 +849,24 @@ func TestImportedInvoiceDuplicateCheckStaysInItsApp(t *testing.T) {
 	inApp := activePlanIn(t, l, "pro", "app_1")
 	noApp := activePlanIn(t, l, "team", "")
 	subIn := &subscription.Subscription{TenantID: "acme", PlanID: inApp.ID, AppID: "app_1"}
+
 	subOut := &subscription.Subscription{TenantID: "acme", PlanID: noApp.ID}
 	for _, s := range []*subscription.Subscription{subIn, subOut} {
 		if err := l.CreateSubscription(ctx, s); err != nil {
 			t.Fatalf("CreateSubscription: %v", err)
 		}
 	}
+
 	src.invoices = map[string]func() *invoice.Invoice{
 		"in_1": func() *invoice.Invoice { return importedBill("acme", subIn.ID) },
 	}
-	if _, err := l.ImportInvoiceFromProvider(ctx, "", "in_1", ledger.ImportInto("app_1")); err != nil {
+
+	if _, err := l.ImportInvoiceFromProvider(
+		ctx,
+		"",
+		"in_1",
+		ledger.ImportInto("app_1"),
+	); err != nil {
 		t.Fatalf("import into app_1: %v", err)
 	}
 
@@ -542,10 +874,12 @@ func TestImportedInvoiceDuplicateCheckStaysInItsApp(t *testing.T) {
 	// scope: the store lists every app's invoices for an empty app, so only
 	// the engine's own filter keeps app_1's copy from blocking this one.
 	src.invoices["in_1"] = func() *invoice.Invoice { return importedBill("acme", subOut.ID) }
+
 	inv, err := l.ImportInvoiceFromProvider(ctx, "", "in_1", ledger.ImportInto(""))
 	if err != nil {
 		t.Fatalf("the no-app scope must not see app_1's invoice as a duplicate: %v", err)
 	}
+
 	if inv.AppID != "" || inv.SubscriptionID != subOut.ID {
 		t.Errorf("imported %+v; want it in the no-app scope on its own subscription", inv)
 	}
@@ -556,11 +890,30 @@ func TestImportedInvoiceDuplicateCheckStaysInItsApp(t *testing.T) {
 func importedBill(tenant string, sub id.SubscriptionID) *invoice.Invoice {
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	paid := start.AddDate(0, 0, 2)
+
 	return &invoice.Invoice{
-		TenantID: tenant, SubscriptionID: sub, Status: invoice.StatusPaid, PaidAt: &paid, Currency: "usd",
-		Subtotal: types.USD(4900), Total: types.USD(4900), TaxAmount: types.Zero("usd"), DiscountAmount: types.Zero("usd"),
-		PeriodStart: start, PeriodEnd: start.AddDate(0, 1, 0),
-		LineItems: []invoice.LineItem{{Description: "Pro plan", Quantity: 1, UnitAmount: types.USD(4900), Amount: types.USD(4900), Type: invoice.LineItemBase}},
+		TenantID:       tenant,
+		SubscriptionID: sub,
+		Status:         invoice.StatusPaid,
+		PaidAt:         &paid,
+		Currency:       "usd",
+		Subtotal: types.USD(
+			4900,
+		),
+		Total:          types.USD(4900),
+		TaxAmount:      types.Zero("usd"),
+		DiscountAmount: types.Zero("usd"),
+		PeriodStart:    start,
+		PeriodEnd:      start.AddDate(0, 1, 0),
+		LineItems: []invoice.LineItem{
+			{
+				Description: "Pro plan",
+				Quantity:    1,
+				UnitAmount:  types.USD(4900),
+				Amount:      types.USD(4900),
+				Type:        invoice.LineItemBase,
+			},
+		},
 	}
 }
 
@@ -569,10 +922,12 @@ func TestImportedInvoicesAreCheckedLikeGeneratedOnes(t *testing.T) {
 	src := &importSource{}
 	l, st := newImportLedger(src)
 	p := activePlanIn(t, l, "pro", "app_1")
+
 	sub := &subscription.Subscription{TenantID: "acme", PlanID: p.ID, AppID: "app_1"}
 	if err := l.CreateSubscription(ctx, sub); err != nil {
 		t.Fatalf("CreateSubscription: %v", err)
 	}
+
 	due := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
 
 	bad := map[string]func(*invoice.Invoice){
@@ -589,7 +944,16 @@ func TestImportedInvoicesAreCheckedLikeGeneratedOnes(t *testing.T) {
 		},
 		"a tax amount with tax lines that disagree": func(i *invoice.Invoice) {
 			i.TaxAmount, i.Total = types.USD(500), types.USD(5400)
-			i.LineItems = append(i.LineItems, invoice.LineItem{Description: "Tax", Quantity: 1, UnitAmount: types.USD(400), Amount: types.USD(400), Type: invoice.LineItemTax})
+			i.LineItems = append(
+				i.LineItems,
+				invoice.LineItem{
+					Description: "Tax",
+					Quantity:    1,
+					UnitAmount:  types.USD(400),
+					Amount:      types.USD(400),
+					Type:        invoice.LineItemTax,
+				},
+			)
 		},
 		"a period that ends before it starts": func(i *invoice.Invoice) { i.PeriodEnd = i.PeriodStart.Add(-time.Hour) },
 		"no period start":                     func(i *invoice.Invoice) { i.PeriodStart = time.Time{} },
@@ -597,17 +961,28 @@ func TestImportedInvoicesAreCheckedLikeGeneratedOnes(t *testing.T) {
 		"pending with no due date":            func(i *invoice.Invoice) { i.Status, i.PaidAt = invoice.StatusPending, nil },
 		"past due with no due date":           func(i *invoice.Invoice) { i.Status, i.PaidAt = invoice.StatusPastDue, nil },
 	}
+
 	src.invoices = map[string]func() *invoice.Invoice{}
 	for name, mutate := range bad {
 		src.invoices[name] = func() *invoice.Invoice {
 			inv := importedBill("acme", sub.ID)
 			mutate(inv)
+
 			return inv
 		}
-		if _, err := l.ImportInvoiceFromProvider(ctx, "", name, ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrInvalidInput) {
+		if _, err := l.ImportInvoiceFromProvider(
+			ctx,
+			"",
+			name,
+			ledger.ImportInto("app_1"),
+		); !errors.Is(
+			err,
+			ledger.ErrInvalidInput,
+		) {
 			t.Errorf("%s: got %v, want ErrInvalidInput", name, err)
 		}
 	}
+
 	if rows, _ := st.ListInvoices(ctx, "acme", "app_1", invoice.ListOpts{}); len(rows) != 0 {
 		t.Errorf("%d invoices stored after refused imports, want 0", len(rows))
 	}
@@ -619,10 +994,26 @@ func TestImportedInvoicesAreCheckedLikeGeneratedOnes(t *testing.T) {
 		inv := importedBill("acme", sub.ID)
 		inv.Status, inv.PaidAt, inv.DueDate = invoice.StatusPending, nil, &due
 		inv.DiscountAmount, inv.Total = types.USD(6000), types.Zero("usd")
-		inv.LineItems = append(inv.LineItems, invoice.LineItem{Description: "Discount", Quantity: 1, UnitAmount: types.USD(-6000), Amount: types.USD(-6000), Type: invoice.LineItemDiscount})
+		inv.LineItems = append(
+			inv.LineItems,
+			invoice.LineItem{
+				Description: "Discount",
+				Quantity:    1,
+				UnitAmount:  types.USD(-6000),
+				Amount:      types.USD(-6000),
+				Type:        invoice.LineItemDiscount,
+			},
+		)
+
 		return inv
 	}
-	if _, err := l.ImportInvoiceFromProvider(ctx, "", "free", ledger.ImportInto("app_1")); err != nil {
+
+	if _, err := l.ImportInvoiceFromProvider(
+		ctx,
+		"",
+		"free",
+		ledger.ImportInto("app_1"),
+	); err != nil {
 		t.Errorf("an invoice the engine could have generated: %v", err)
 	}
 }
@@ -634,33 +1025,55 @@ func TestImportedInvoiceRulesAcrossAppsAndTenants(t *testing.T) {
 	ours := activePlanIn(t, l, "pro", "app_1")
 	theirs := activePlanIn(t, l, "pro", "app_2")
 	mine := &subscription.Subscription{TenantID: "acme", PlanID: ours.ID, AppID: "app_1"}
+
 	foreign := &subscription.Subscription{TenantID: "acme", PlanID: theirs.ID, AppID: "app_2"}
 	for _, s := range []*subscription.Subscription{mine, foreign} {
 		if err := l.CreateSubscription(ctx, s); err != nil {
 			t.Fatalf("CreateSubscription: %v", err)
 		}
 	}
+
 	src.invoices = map[string]func() *invoice.Invoice{
 		"in_foreign_sub": func() *invoice.Invoice { return importedBill("acme", foreign.ID) },
 		"in_theirs": func() *invoice.Invoice {
 			inv := importedBill("acme", mine.ID)
 			inv.AppID = "app_2"
+
 			return inv
 		},
 		"in_padded": func() *invoice.Invoice { return importedBill(" acme  ", mine.ID) },
 	}
 
-	if _, err := l.ImportInvoiceFromProvider(ctx, "", "in_foreign_sub", ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrInvalidInput) {
+	if _, err := l.ImportInvoiceFromProvider(
+		ctx,
+		"",
+		"in_foreign_sub",
+		ledger.ImportInto("app_1"),
+	); !errors.Is(
+		err,
+		ledger.ErrInvalidInput,
+	) {
 		t.Errorf("a subscription in another app: got %v, want ErrInvalidInput", err)
 	}
-	if _, err := l.ImportInvoiceFromProvider(ctx, "", "in_theirs", ledger.ImportInto("app_1")); !errors.Is(err, ledger.ErrInvoiceNotFound) {
+
+	if _, err := l.ImportInvoiceFromProvider(
+		ctx,
+		"",
+		"in_theirs",
+		ledger.ImportInto("app_1"),
+	); !errors.Is(
+		err,
+		ledger.ErrInvoiceNotFound,
+	) {
 		t.Errorf("an invoice filed under another app: got %v, want ErrInvoiceNotFound", err)
 	}
+
 	for _, app := range []string{"app_1", "app_2"} {
 		if rows, _ := st.ListInvoices(ctx, "acme", app, invoice.ListOpts{}); len(rows) != 0 {
 			t.Errorf("%s holds %d invoices after refused imports, want 0", app, len(rows))
 		}
 	}
+
 	inv, err := l.ImportInvoiceFromProvider(ctx, "", "in_padded", ledger.ImportInto("app_1"))
 	if err != nil || inv.TenantID != "acme" {
 		t.Errorf("a padded tenant: %+v, %v; want it trimmed to acme", inv, err)
@@ -672,6 +1085,7 @@ func TestImportedInvoiceRefusesALineItemOfAnUnknownType(t *testing.T) {
 	src := &importSource{}
 	l, st := newImportLedger(src)
 	p := activePlanIn(t, l, "pro", "app_1")
+
 	sub := &subscription.Subscription{TenantID: "acme", PlanID: p.ID, AppID: "app_1"}
 	if err := l.CreateSubscription(ctx, sub); err != nil {
 		t.Fatalf("CreateSubscription: %v", err)
@@ -681,20 +1095,36 @@ func TestImportedInvoiceRefusesALineItemOfAnUnknownType(t *testing.T) {
 	// one-based position. Its amount makes the charges add up, which means
 	// nothing but the type check can refuse it.
 	src.invoices = map[string]func() *invoice.Invoice{}
+
 	for _, typ := range []invoice.LineItemType{"", "subscription", "invoiceitem", "Base"} {
 		pid := "in_" + string(typ)
 		src.invoices[pid] = func() *invoice.Invoice {
 			inv := importedBill("acme", sub.ID)
 			inv.LineItems[0].Amount, inv.LineItems[0].UnitAmount = types.USD(4000), types.USD(4000)
-			inv.LineItems = append(inv.LineItems, invoice.LineItem{Description: "Other", Quantity: 1, UnitAmount: types.USD(900), Amount: types.USD(900), Type: typ})
+			inv.LineItems = append(
+				inv.LineItems,
+				invoice.LineItem{
+					Description: "Other",
+					Quantity:    1,
+					UnitAmount:  types.USD(900),
+					Amount:      types.USD(900),
+					Type:        typ,
+				},
+			)
+
 			return inv
 		}
 		_, err := l.ImportInvoiceFromProvider(ctx, "", pid, ledger.ImportInto("app_1"))
-		want := fmt.Sprintf("ledger: invalid input: the provider's invoice has line item 2 of unknown type %q", typ)
+
+		want := fmt.Sprintf(
+			"ledger: invalid input: the provider's invoice has line item 2 of unknown type %q",
+			typ,
+		)
 		if !errors.Is(err, ledger.ErrInvalidInput) || err.Error() != want {
 			t.Errorf("type %q: got %v, want %q", typ, err, want)
 		}
 	}
+
 	if rows, _ := st.ListInvoices(ctx, "acme", "app_1", invoice.ListOpts{}); len(rows) != 0 {
 		t.Errorf("%d invoices stored after refused imports, want 0", len(rows))
 	}
@@ -703,16 +1133,45 @@ func TestImportedInvoiceRefusesALineItemOfAnUnknownType(t *testing.T) {
 	src.invoices["in_all"] = func() *invoice.Invoice {
 		inv := importedBill("acme", sub.ID)
 		line := func(typ invoice.LineItemType, cents int64) invoice.LineItem {
-			return invoice.LineItem{Description: string(typ), Quantity: 1, UnitAmount: types.USD(cents), Amount: types.USD(cents), Type: typ}
+			return invoice.LineItem{
+				Description: string(typ),
+				Quantity:    1,
+				UnitAmount:  types.USD(cents),
+				Amount:      types.USD(cents),
+				Type:        typ,
+			}
 		}
 		inv.LineItems = []invoice.LineItem{
-			line(invoice.LineItemBase, 2000), line(invoice.LineItemUsage, 1000), line(invoice.LineItemOverage, 900),
-			line(invoice.LineItemSeat, 1000), line(invoice.LineItemDiscount, -500), line(invoice.LineItemTax, 300),
+			line(
+				invoice.LineItemBase,
+				2000,
+			),
+			line(invoice.LineItemUsage, 1000),
+			line(invoice.LineItemOverage, 900),
+			line(
+				invoice.LineItemSeat,
+				1000,
+			),
+			line(invoice.LineItemDiscount, -500),
+			line(invoice.LineItemTax, 300),
 		}
-		inv.DiscountAmount, inv.TaxAmount, inv.Total = types.USD(500), types.USD(300), types.USD(4700)
+		inv.DiscountAmount, inv.TaxAmount, inv.Total = types.USD(
+			500,
+		), types.USD(
+			300,
+		), types.USD(
+			4700,
+		)
+
 		return inv
 	}
-	if _, err := l.ImportInvoiceFromProvider(ctx, "", "in_all", ledger.ImportInto("app_1")); err != nil {
+
+	if _, err := l.ImportInvoiceFromProvider(
+		ctx,
+		"",
+		"in_all",
+		ledger.ImportInto("app_1"),
+	); err != nil {
 		t.Errorf("an invoice using all six line item types: %v", err)
 	}
 }
@@ -750,18 +1209,29 @@ func TestImportedSubscriptionPeriodIsValidated(t *testing.T) {
 			t.Errorf("%s: got %v, want %q", pid, err, want)
 		}
 	}
-	if rows, _ := st.ListSubscriptions(ctx, "acme", "app_1", subscription.ListOpts{}); len(rows) != 0 {
+
+	if rows, _ := st.ListSubscriptions(
+		ctx,
+		"acme",
+		"app_1",
+		subscription.ListOpts{},
+	); len(
+		rows,
+	) != 0 {
 		t.Errorf("%d subscriptions stored after refused imports, want 0", len(rows))
 	}
 
 	ok, err := l.ImportSubscriptionFromProvider(ctx, "", "sub_ok", ledger.ImportInto("app_1"))
-	if err != nil || !ok.CurrentPeriodStart.Equal(start) || !ok.CurrentPeriodEnd.Equal(start.AddDate(0, 1, 0)) {
+	if err != nil || !ok.CurrentPeriodStart.Equal(start) ||
+		!ok.CurrentPeriodEnd.Equal(start.AddDate(0, 1, 0)) {
 		t.Errorf("a whole period: %+v, %v; want it kept as sent", ok, err)
 	}
 	// A provider that sends no period at all still gets the engine's default.
 	src.subs["sub_none"] = withPeriod(time.Time{}, time.Time{})
+
 	none, err := l.ImportSubscriptionFromProvider(ctx, "", "sub_none", ledger.ImportInto("app_1"))
-	if err != nil || none.CurrentPeriodStart.IsZero() || !none.CurrentPeriodEnd.After(none.CurrentPeriodStart) {
+	if err != nil || none.CurrentPeriodStart.IsZero() ||
+		!none.CurrentPeriodEnd.After(none.CurrentPeriodStart) {
 		t.Errorf("no period sent: %+v, %v; want the engine's default period", none, err)
 	}
 }
@@ -770,16 +1240,31 @@ func TestImportedDraftFeatureIsRefusedInPlainWords(t *testing.T) {
 	ctx := context.Background()
 	src := &importSource{features: map[string]func() *feature.Feature{
 		"mtr_draft": func() *feature.Feature {
-			return &feature.Feature{Key: "d", Name: "D", Type: feature.FeatureBoolean, Status: feature.StatusDraft}
+			return &feature.Feature{
+				Key:    "d",
+				Name:   "D",
+				Type:   feature.FeatureBoolean,
+				Status: feature.StatusDraft,
+			}
 		},
 		"mtr_odd": func() *feature.Feature {
-			return &feature.Feature{Key: "o", Name: "O", Type: feature.FeatureBoolean, Status: "retired"}
+			return &feature.Feature{
+				Key:    "o",
+				Name:   "O",
+				Type:   feature.FeatureBoolean,
+				Status: "retired",
+			}
 		},
 	}}
+
 	l, _ := newImportLedger(src)
 	for pid, status := range map[string]string{"mtr_draft": "draft", "mtr_odd": "retired"} {
 		_, err := l.ImportFeatureFromProvider(ctx, "", pid, ledger.ImportInto("app_1"))
-		want := fmt.Sprintf("ledger: invalid input: a feature imports as active or archived, not %q", status)
+
+		want := fmt.Sprintf(
+			"ledger: invalid input: a feature imports as active or archived, not %q",
+			status,
+		)
 		if !errors.Is(err, ledger.ErrInvalidInput) || err.Error() != want {
 			t.Errorf("%s: got %v, want %q", pid, err, want)
 		}

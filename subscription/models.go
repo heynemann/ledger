@@ -82,11 +82,14 @@ func StretchColumns(st *Stretch) (start, end, originalEnd, floor *time.Time) {
 	if st == nil {
 		return nil, nil, nil, nil
 	}
+
 	utc := func(t time.Time) *time.Time { t = t.UTC(); return &t }
+
 	start, end, originalEnd = utc(st.Start), utc(st.End), utc(st.OriginalEnd)
 	if st.Floor != nil {
 		floor = utc(*st.Floor)
 	}
+
 	return start, end, originalEnd, floor
 }
 
@@ -96,6 +99,7 @@ func StretchFromColumns(start, end, originalEnd, floor *time.Time) *Stretch {
 	if start == nil || end == nil || originalEnd == nil {
 		return nil
 	}
+
 	return &Stretch{Start: *start, End: *end, OriginalEnd: *originalEnd, Floor: floor}
 }
 

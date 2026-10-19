@@ -10,6 +10,18 @@ Ledger is a Go library for usage-based billing in SaaS products. You define plan
 
 [Documentation](https://www.xraph.com/docs/ledger) · [Quick start](#quick-start) · [Features](#why-ledger) · [Stores](#pick-a-store) · [Forge](#use-it-with-forge) · [Configuration](#configuration) · [FAQ](#faq)
 
+## Hepg spending fork: USD cutover
+
+This checkout is the `heynemann/ledger` fork. Its canonical Go module and imports remain `github.com/xraph/ledger`; consumers select a published fork version with a versioned `replace`, not a local checkout path.
+
+**Breaking money change:** every native USD `Money.Amount` is an `int64` count of micros (1 USD = 1,000,000), and USD formatting has six decimals. Upstream cents data is not reinterpreted safely: migrate existing USD amounts by multiplying by 10,000 with overflow checks before using this fork, including stored plans, tiers, invoices, discounts, and provider adapters. Other currencies retain upstream precision, but `spending.Engine` accepts only USD. Provider integrations must explicitly translate units; the spending engine does not collect external payments.
+
+`spending.New()` is an immutable, stateless domain engine over native `plan.Plan` definitions. `PriceTier.UnitQuantity` is the denominator of `UnitAmount` (zero retains one-unit pricing); e.g. 3 USD micros per million tokens uses amount 3 and denominator 1,000,000. Native invoice math keeps rational tier charges through summation and allowance subtraction, then rounds nearest/ties-even. Spending differences rounded cumulative all-meter totals, so splitting fractional usage across requests cannot lose money. Base fees are separate recurring entries, not per-request charges.
+
+Budget decisions use settled provider cost or customer charge, UTC calendar day/month or lifetime windows, and an enabled finite limit, including zero. They are post-settlement stops, not reservations or hard caps: concurrent requests, in-flight work, and settlement lag can overshoot. Unknown usage remains distinct from known zero. Debit-only spending plans reject decreasing flat fees and decreasing volume rate ratios; native invoicing outside spending still supports discounts.
+
+The original buffered `Ledger.Meter` is **unchanged and not durable**: its channel holds 10,000 events, defaults to 100-event batches/5-second flushes, returns `ErrMeterBufferFull` when full, and discards a batch after a failed flush without replay. Successful enqueue is not durable acceptance. Hepg's durable financial path does not use it or cached native entitlements as admission authority; transactionality, tenant isolation, replay, and persistence belong to the consumer's financial adapter.
+
 ## Quick start
 
 You need [Go 1.26 or later](https://go.dev/dl/).
@@ -55,7 +67,7 @@ func main() {
 			{Key: "sso", Name: "Single sign-on", Type: plan.FeatureBoolean, Limit: 1},
 		},
 		Pricing: &plan.Pricing{
-			BaseAmount:    types.USD(4900), // $49.00
+			BaseAmount:    types.USD(49_000_000), // $49.000000
 			BillingPeriod: plan.PeriodMonthly,
 		},
 	}
@@ -94,7 +106,7 @@ Run it with `go run .` and you'll see something like this:
 
 ```text
 api_calls allowed=true remaining=10000
-invoice inv_01m4xw3arsegprh53198t2n0dg total $49.00
+invoice inv_01m4xw3arsegprh53198t2n0dg total $49.000000
 ```
 
 You should know two things before you go further. First, `Entitled` and `Meter` take the tenant and app from the context values `"tenant_id"` and `"app_id"` (plain string keys), and if either one is missing, `Meter` returns `ErrInvalidInput` and `Entitled` answers not allowed. Second, `Meter` doesn't write anything on the spot: it drops the event into a buffer that a background worker flushes to the store every 5 seconds, or sooner once 100 events have piled up, which means the usage you just recorded only counts toward your next quota check or invoice after that flush has happened. `Stop` flushes the rest.

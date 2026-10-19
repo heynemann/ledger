@@ -45,10 +45,16 @@ func bounded[T any](rows []T) ([]T, bool) {
 	if len(rows) > statsScanLimit {
 		return rows[:statsScanLimit], true
 	}
+
 	return rows, false
 }
 
-func overviewStats(ctx context.Context, eng *ledger.Ledger, sc scope, _ struct{}) (OverviewStats, error) {
+func overviewStats(
+	ctx context.Context,
+	eng *ledger.Ledger,
+	sc scope,
+	_ struct{},
+) (OverviewStats, error) {
 	st := eng.Store()
 	out := OverviewStats{SubscriptionsByStatus: map[string]int{}}
 
@@ -56,8 +62,10 @@ func overviewStats(ctx context.Context, eng *ledger.Ledger, sc scope, _ struct{}
 	if err != nil {
 		return OverviewStats{}, err
 	}
+
 	plans, capped := bounded(plans)
 	out.Capped = out.Capped || capped
+
 	out.Plans = len(plans)
 	for _, p := range plans {
 		if p.Status == plan.StatusActive {
@@ -65,11 +73,18 @@ func overviewStats(ctx context.Context, eng *ledger.Ledger, sc scope, _ struct{}
 		}
 	}
 
-	subs, err := st.ListSubscriptions(ctx, "", sc.AppID, subscription.ListOpts{Limit: statsScanLimit + 1})
+	subs, err := st.ListSubscriptions(
+		ctx,
+		"",
+		sc.AppID,
+		subscription.ListOpts{Limit: statsScanLimit + 1},
+	)
 	if err != nil {
 		return OverviewStats{}, err
 	}
+
 	subs, capped = bounded(subs)
+
 	out.Capped = out.Capped || capped
 	for _, s := range subs {
 		out.SubscriptionsByStatus[string(s.Status)]++
@@ -80,6 +95,7 @@ func overviewStats(ctx context.Context, eng *ledger.Ledger, sc scope, _ struct{}
 	if err != nil {
 		return OverviewStats{}, err
 	}
+
 	pending, capped = bounded(pending)
 	out.Capped = out.Capped || capped
 	out.PendingInvoices = len(pending)
@@ -87,10 +103,16 @@ func overviewStats(ctx context.Context, eng *ledger.Ledger, sc scope, _ struct{}
 	// Past-due invoices are counted apart: the lifecycle clock moves overdue
 	// invoices out of pending, so without this they would vanish from the
 	// overview.
-	pastDue, err := st.ListInvoices(ctx, "", sc.AppID, invoice.ListOpts{Status: invoice.StatusPastDue, Limit: statsScanLimit + 1})
+	pastDue, err := st.ListInvoices(
+		ctx,
+		"",
+		sc.AppID,
+		invoice.ListOpts{Status: invoice.StatusPastDue, Limit: statsScanLimit + 1},
+	)
 	if err != nil {
 		return OverviewStats{}, err
 	}
+
 	pastDue, capped = bounded(pastDue)
 	out.Capped = out.Capped || capped
 	out.PastDueInvoices = len(pastDue)
@@ -99,6 +121,7 @@ func overviewStats(ctx context.Context, eng *ledger.Ledger, sc scope, _ struct{}
 	if err != nil {
 		return OverviewStats{}, err
 	}
+
 	coupons, capped = bounded(coupons)
 	out.Capped = out.Capped || capped
 	out.Coupons = len(coupons)
@@ -110,24 +133,34 @@ type RecentInvoicesInput struct {
 	Limit int `json:"limit"`
 }
 
-func overviewRecentInvoices(ctx context.Context, eng *ledger.Ledger, sc scope, in RecentInvoicesInput) ([]*invoice.Invoice, error) {
+func overviewRecentInvoices(
+	ctx context.Context,
+	eng *ledger.Ledger,
+	sc scope,
+	in RecentInvoicesInput,
+) ([]*invoice.Invoice, error) {
 	limit := in.Limit
 	if limit <= 0 {
 		limit = recentInvoicesDefault
 	}
+
 	if limit > recentInvoicesMax {
 		limit = recentInvoicesMax
 	}
+
 	rows, err := eng.Store().ListInvoices(ctx, "", sc.AppID, invoice.ListOpts{Limit: limit})
 	if err != nil {
 		return nil, err
 	}
+
 	if rows == nil {
 		rows = []*invoice.Invoice{}
 	}
+
 	for _, inv := range rows {
 		withLineItems(inv)
 	}
+
 	return rows, nil
 }
 
@@ -148,6 +181,7 @@ func settingsDetailFor(deps Deps) handlerFn[struct{}, SettingsDetail] {
 		if deps.Settings != nil {
 			view = deps.Settings()
 		}
+
 		return SettingsDetail{
 			SettingsView:    view,
 			AppID:           deps.AppID,

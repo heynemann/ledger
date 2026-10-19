@@ -73,9 +73,10 @@
 //	    l.Meter(ctx, "api_calls", 1)
 //	}
 //
-// All monetary calculations use integer arithmetic to avoid floating-point
-// precision issues. The Money type represents amounts in the smallest currency
-// unit (cents for USD, pence for GBP, etc).
+// Monetary calculations do not use floating point. In this fork, USD Money
+// amounts are micros (six decimal places); other currencies retain upstream
+// precision. Tier rates may have rational UnitQuantity denominators, retained
+// through tier sums and allowance differences before nearest/ties-even rounding.
 //
 // # Integration
 //

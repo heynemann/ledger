@@ -27,24 +27,37 @@ const InstrumentationName = "github.com/xraph/ledger"
 func Tracer() trace.Tracer { return otel.Tracer(InstrumentationName) }
 
 // Start starts an internal span.
-func Start(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+func Start(
+	ctx context.Context,
+	name string,
+	opts ...trace.SpanStartOption,
+) (context.Context, trace.Span) {
 	return Tracer().Start(ctx, name, append(opts, trace.WithSpanKind(trace.SpanKindInternal))...)
 }
 
 // StartRoot starts an internal span that begins its own trace, for
 // background work whose context may still carry the span of whatever
 // started the worker.
-func StartRoot(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+func StartRoot(
+	ctx context.Context,
+	name string,
+	opts ...trace.SpanStartOption,
+) (context.Context, trace.Span) {
 	return Start(ctx, name, append(opts, trace.WithNewRoot())...)
 }
 
 // StartChild starts an internal span only when ctx already carries one, so a
 // hot call made outside any trace does not begin a trace of its own. Without
 // a parent it returns ctx and a span that records nothing.
-func StartChild(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+func StartChild(
+	ctx context.Context,
+	name string,
+	opts ...trace.SpanStartOption,
+) (context.Context, trace.Span) {
 	if !trace.SpanContextFromContext(ctx).IsValid() {
 		return ctx, trace.SpanFromContext(ctx)
 	}
+
 	return Start(ctx, name, opts...)
 }
 
@@ -74,12 +87,14 @@ func TypeOf(err error) string {
 			if next == nil {
 				return fmt.Sprintf("%T", err)
 			}
+
 			err = next
 		case interface{ Unwrap() []error }:
 			errs := e.Unwrap()
 			if len(errs) == 0 || errs[0] == nil {
 				return fmt.Sprintf("%T", err)
 			}
+
 			err = errs[0]
 		default:
 			return fmt.Sprintf("%T", err)
@@ -111,35 +126,44 @@ func (v *vec[T]) with(values []string) (child T, ok bool) {
 	if len(values) != len(v.labels) {
 		return child, false
 	}
+
 	var buf [96]byte
+
 	key := buf[:0]
+
 	for i, s := range values {
 		if i > 0 {
 			key = append(key, 0xff)
 		}
+
 		key = append(key, s...)
 	}
 
 	v.mu.RLock()
 	child, ok = v.children[string(key)]
 	v.mu.RUnlock()
+
 	if ok {
 		return child, true
 	}
 
 	v.mu.Lock()
 	defer v.mu.Unlock()
+
 	if child, ok = v.children[string(key)]; ok {
 		return child, true
 	}
+
 	l := make(map[string]string, len(values))
 	for i, name := range v.labels {
 		l[name] = values[i]
 	}
+
 	child = v.build(l)
 	if len(v.children) < maxCachedSeries {
 		v.children[string(key)] = child
 	}
+
 	return child, true
 }
 
@@ -151,6 +175,7 @@ func NewCounterVec(m gometrics.Metrics, name, help string, labels ...string) *Co
 	if m == nil {
 		return nil
 	}
+
 	return &CounterVec{v: newVec(labels, func(l map[string]string) gometrics.Counter {
 		return m.Counter(name, gometrics.WithDescription(help), gometrics.WithLabels(l))
 	})}
@@ -161,6 +186,7 @@ func (c *CounterVec) Add(n float64, values ...string) {
 	if c == nil {
 		return
 	}
+
 	if child, ok := c.v.with(values); ok {
 		child.Add(n)
 	}
@@ -174,10 +200,16 @@ type HistogramVec struct{ v *vec[gometrics.Histogram] }
 
 // NewHistogramVec declares a histogram in seconds on m. It returns nil when m
 // is nil.
-func NewHistogramVec(m gometrics.Metrics, name, help string, buckets []float64, labels ...string) *HistogramVec {
+func NewHistogramVec(
+	m gometrics.Metrics,
+	name, help string,
+	buckets []float64,
+	labels ...string,
+) *HistogramVec {
 	if m == nil {
 		return nil
 	}
+
 	return &HistogramVec{v: newVec(labels, func(l map[string]string) gometrics.Histogram {
 		return m.Histogram(name,
 			gometrics.WithDescription(help),
@@ -193,6 +225,7 @@ func (h *HistogramVec) ObserveSince(start time.Time, values ...string) {
 	if h == nil {
 		return
 	}
+
 	if child, ok := h.v.with(values); ok {
 		child.Observe(time.Since(start).Seconds())
 	}

@@ -28,17 +28,22 @@ func TestLifecycleWorkerRunsTheClock(t *testing.T) {
 	if err := l.Start(ctx); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
+
 	deadline := time.Now().Add(2 * time.Second)
+
 	for {
 		got, err := s.GetSubscription(ctx, sub.ID)
 		if err == nil && got.Status == subscription.StatusCanceled {
 			break
 		}
+
 		if time.Now().After(deadline) {
 			t.Fatalf("the worker did not enact the cancel within 2s: %+v, %v", got, err)
 		}
+
 		time.Sleep(5 * time.Millisecond)
 	}
+
 	if err := l.Stop(); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
@@ -66,6 +71,7 @@ func TestStartAndStopWithTheClockOff(t *testing.T) {
 	if err := l.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
+
 	if err := l.Stop(); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
@@ -79,20 +85,30 @@ func TestLifecycleWorkerRunsWithoutMigrate(t *testing.T) {
 		ledger.WithLifecycleInterval(5*time.Millisecond),
 		ledger.WithClock(func() time.Time { return at(2026, 3, 1) }),
 	)
+
 	p := activePlan(t, l, "pro", "app_1", 0)
+
 	sub := seedSub(t, s, p, func(x *subscription.Subscription) { x.CancelAt = ptr(at(2026, 2, 1)) })
 	if err := l.Start(ctx); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	defer l.Stop()
+
 	deadline := time.Now().Add(2 * time.Second)
+
 	for {
-		if got, err := s.GetSubscription(ctx, sub.ID); err == nil && got.Status == subscription.StatusCanceled {
+		if got, err := s.GetSubscription(
+			ctx,
+			sub.ID,
+		); err == nil &&
+			got.Status == subscription.StatusCanceled {
 			return
 		}
+
 		if time.Now().After(deadline) {
 			t.Fatal("the worker did not run with WithoutMigrate")
 		}
+
 		time.Sleep(5 * time.Millisecond)
 	}
 }
@@ -110,17 +126,26 @@ func TestLifecycleWorkerSurvivesACanceledStartContext(t *testing.T) {
 	if err := l.Start(startCtx); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
+
 	cancel()
+
 	defer l.Stop()
 
 	deadline := time.Now().Add(2 * time.Second)
+
 	for {
-		if got, err := s.GetSubscription(context.Background(), sub.ID); err == nil && got.Status == subscription.StatusCanceled {
+		if got, err := s.GetSubscription(
+			context.Background(),
+			sub.ID,
+		); err == nil &&
+			got.Status == subscription.StatusCanceled {
 			return
 		}
+
 		if time.Now().After(deadline) {
 			t.Fatal("the worker stopped with the Start context")
 		}
+
 		time.Sleep(5 * time.Millisecond)
 	}
 }
@@ -133,23 +158,29 @@ type dueStore struct {
 	hook  func(ctx context.Context, call int32) error
 }
 
-func (s *dueStore) ListDueSubscriptions(ctx context.Context, opts subscription.DueOpts) ([]*subscription.Subscription, error) {
+func (s *dueStore) ListDueSubscriptions(
+	ctx context.Context,
+	opts subscription.DueOpts,
+) ([]*subscription.Subscription, error) {
 	n := s.calls.Add(1)
 	if s.hook != nil {
 		if err := s.hook(ctx, n); err != nil {
 			return nil, err
 		}
 	}
+
 	return s.Store.ListDueSubscriptions(ctx, opts)
 }
 
 func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Helper()
+
 	deadline := time.Now().Add(2 * time.Second)
 	for !cond() {
 		if time.Now().After(deadline) {
 			t.Fatalf("gave up after 2s waiting for %s", what)
 		}
+
 		time.Sleep(2 * time.Millisecond)
 	}
 }
@@ -159,16 +190,20 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 // deadline, and Stop is not logged as a failure.
 func TestStopCancelsALifecycleRunInFlight(t *testing.T) {
 	const interval = 600 * time.Millisecond
+
 	entered := make(chan struct{})
 	s := &dueStore{Store: memory.New(), hook: func(ctx context.Context, _ int32) error {
 		select {
 		case entered <- struct{}{}:
 		default:
 		}
+
 		<-ctx.Done()
+
 		return ctx.Err()
 	}}
 	logger := log.NewTestLogger().(*log.TestLogger)
+
 	l := ledger.New(s, ledger.WithLogger(logger), ledger.WithLifecycleInterval(interval))
 	if err := l.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -182,7 +217,9 @@ func TestStopCancelsALifecycleRunInFlight(t *testing.T) {
 
 	stopped := make(chan error, 1)
 	began := time.Now()
+
 	go func() { stopped <- l.Stop() }()
+
 	select {
 	case err := <-stopped:
 		if err != nil {
@@ -191,14 +228,20 @@ func TestStopCancelsALifecycleRunInFlight(t *testing.T) {
 		// The run's own deadline is the full interval: returning in under
 		// half of it means Stop cancelled the run.
 		if took := time.Since(began); took > interval/2 {
-			t.Errorf("Stop took %v with a run blocked in the store, want well under the %v interval", took, interval)
+			t.Errorf(
+				"Stop took %v with a run blocked in the store, want well under the %v interval",
+				took,
+				interval,
+			)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("Stop is still waiting on the lifecycle run after 3s")
 	}
+
 	if n := logger.CountLogs("WARN"); n != 0 {
 		t.Errorf("a run cut short by Stop logged %d warnings, want none", n)
 	}
+
 	if n := s.calls.Load(); n != 1 {
 		t.Errorf("%d runs started, want exactly the one Stop cancelled", n)
 	}
@@ -211,9 +254,11 @@ func TestLifecycleWorkerSurvivesAPanic(t *testing.T) {
 		if call == 1 {
 			panic("driver blew up")
 		}
+
 		return nil
 	}}
 	logger := log.NewTestLogger().(*log.TestLogger)
+
 	l := ledger.New(s, ledger.WithLogger(logger), ledger.WithLifecycleInterval(5*time.Millisecond))
 	if err := l.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -221,6 +266,7 @@ func TestLifecycleWorkerSurvivesAPanic(t *testing.T) {
 	defer l.Stop()
 
 	waitFor(t, "a run after the panicking one", func() bool { return s.calls.Load() >= 3 })
+
 	if !logger.AssertHasLog("ERROR", "ledger: lifecycle run panicked") {
 		t.Errorf("the panic was not logged at Error: %d error entries", logger.CountLogs("ERROR"))
 	}
@@ -228,15 +274,23 @@ func TestLifecycleWorkerSurvivesAPanic(t *testing.T) {
 
 // A failed run is logged as a warning, for an operator to see.
 func TestLifecycleRunErrorIsLogged(t *testing.T) {
-	s := &dueStore{Store: memory.New(), hook: func(context.Context, int32) error { return errors.New("due query failed") }}
+	s := &dueStore{
+		Store: memory.New(),
+		hook:  func(context.Context, int32) error { return errors.New("due query failed") },
+	}
 	logger := log.NewTestLogger().(*log.TestLogger)
+
 	l := ledger.New(s, ledger.WithLogger(logger), ledger.WithLifecycleInterval(5*time.Millisecond))
 	if err := l.Start(context.Background()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	defer l.Stop()
 
-	waitFor(t, "the warning", func() bool { return logger.AssertHasLog("WARN", "ledger: lifecycle run left work undone") })
+	waitFor(
+		t,
+		"the warning",
+		func() bool { return logger.AssertHasLog("WARN", "ledger: lifecycle run left work undone") },
+	)
 }
 
 // A subscription created through the engine is stamped from its clock: the
@@ -254,27 +308,44 @@ func TestCreateSubscriptionReadsTheInjectedClock(t *testing.T) {
 	if err := l.CreateSubscription(ctx, sub); err != nil {
 		t.Fatalf("CreateSubscription: %v", err)
 	}
+
 	if !sub.CreatedAt.Equal(now) || !sub.UpdatedAt.Equal(now) {
 		t.Errorf("stamps %v, %v; want the clock's %v", sub.CreatedAt, sub.UpdatedAt, now)
 	}
+
 	samePeriod(t, sub, at(2031, 3, 15), at(2031, 4, 15))
-	if sub.Status != subscription.StatusTrialing || sub.TrialStart == nil || !sub.TrialStart.Equal(now) ||
-		sub.TrialEnd == nil || !sub.TrialEnd.Equal(at(2031, 3, 29)) {
-		t.Errorf("trial %v to %v (%s), want 15 to 29 March 2031", sub.TrialStart, sub.TrialEnd, sub.Status)
+
+	if sub.Status != subscription.StatusTrialing || sub.TrialStart == nil ||
+		!sub.TrialStart.Equal(now) ||
+		sub.TrialEnd == nil ||
+		!sub.TrialEnd.Equal(at(2031, 3, 29)) {
+		t.Errorf(
+			"trial %v to %v (%s), want 15 to 29 March 2031",
+			sub.TrialStart,
+			sub.TrialEnd,
+			sub.Status,
+		)
 	}
 
 	// Two months on, the clock ends the trial and rolls the period, and each
 	// ended period can be invoiced.
 	now = at(2031, 5, 20)
+
 	report, err := l.Advance(ctx, now)
 	if err != nil || len(report.PeriodsAdvanced) != 1 || len(report.TrialsEnded) != 1 {
 		t.Fatalf("Advance: %+v, %v; want the period rolled and the trial ended", report, err)
 	}
+
 	if len(ev.renewals) != 1 || len(ev.renewals[0].Ended) != 2 {
 		t.Fatalf("renewals %+v, want one listing two ended periods", ev.renewals)
 	}
+
 	for _, period := range ev.renewals[0].Ended {
-		if _, err := l.GenerateInvoice(ctx, sub.ID, ledger.ForPeriod(period.Start, period.End)); err != nil {
+		if _, err := l.GenerateInvoice(
+			ctx,
+			sub.ID,
+			ledger.ForPeriod(period.Start, period.End),
+		); err != nil {
 			t.Errorf("GenerateInvoice for %v to %v: %v", period.Start, period.End, err)
 		}
 	}
@@ -298,16 +369,25 @@ func TestInvoicingReadsTheInjectedClock(t *testing.T) {
 	if _, err := l.Advance(ctx, now); err != nil {
 		t.Fatalf("Advance: %v", err)
 	}
+
 	if len(ev.renewals) != 1 || len(ev.renewals[0].Ended) < 2 {
 		t.Fatalf("renewals %+v, want one listing every ended period", ev.renewals)
 	}
+
 	for _, period := range ev.renewals[0].Ended {
 		inv, err := l.GenerateInvoice(ctx, sub.ID, ledger.ForPeriod(period.Start, period.End))
 		if err != nil {
 			t.Fatalf("GenerateInvoice for %v to %v: %v", period.Start, period.End, err)
 		}
+
 		if !inv.PeriodStart.Equal(period.Start) || !inv.PeriodEnd.Equal(period.End) {
-			t.Errorf("invoice period %v to %v, want %v to %v", inv.PeriodStart, inv.PeriodEnd, period.Start, period.End)
+			t.Errorf(
+				"invoice period %v to %v, want %v to %v",
+				inv.PeriodStart,
+				inv.PeriodEnd,
+				period.Start,
+				period.End,
+			)
 		}
 	}
 }
@@ -330,21 +410,28 @@ func TestCouponWindowAndDueDateReadTheInjectedClock(t *testing.T) {
 	c := baseCoupon()
 	c.ValidUntil = &until
 	mustCreateCoupon(t, s, c)
+
 	if _, err := l.ApplyCoupon(ctx, sub.ID, c.Code); !errors.Is(err, ledger.ErrCouponExpired) {
-		t.Errorf("a coupon that ended before the engine's clock: got %v, want ErrCouponExpired", err)
+		t.Errorf(
+			"a coupon that ended before the engine's clock: got %v, want ErrCouponExpired",
+			err,
+		)
 	}
 
 	inv, err := l.GenerateInvoice(ctx, sub.ID)
 	if err != nil {
 		t.Fatalf("GenerateInvoice: %v", err)
 	}
+
 	if err = l.FinalizeInvoice(ctx, inv.ID); err != nil {
 		t.Fatalf("FinalizeInvoice: %v", err)
 	}
+
 	got, err := s.GetInvoice(ctx, inv.ID)
 	if err != nil || got.Status != invoice.StatusPending || got.DueDate == nil {
 		t.Fatalf("invoice %+v, %v; want pending with a due date", got, err)
 	}
+
 	if want := now.AddDate(0, 0, 30); !got.DueDate.Equal(want) {
 		t.Errorf("due date %v, want 30 days after the engine's clock, %v", got.DueDate, want)
 	}
