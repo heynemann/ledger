@@ -253,6 +253,7 @@ func (m *MetricsExtension) OnUsageIngested(_ context.Context, events []interface
 	count := float64(len(events))
 	m.UsageEventsIngested.Add(count)
 	m.UsageBatchSize.Observe(count)
+
 	return nil
 }
 
@@ -306,11 +307,17 @@ func (m *MetricsExtension) OnInvoicePaid(_ context.Context, _ interface{}) error
 // ──────────────────────────────────────────────────
 
 // OnProviderSync implements plugin.OnProviderSync.
-func (m *MetricsExtension) OnProviderSync(_ context.Context, _ string, success bool, _ error) error {
+func (m *MetricsExtension) OnProviderSync(
+	_ context.Context,
+	_ string,
+	success bool,
+	_ error,
+) error {
 	if success {
 		m.ProviderSyncSuccess.Inc()
 	} else {
 		m.ProviderSyncFailure.Inc()
 	}
+
 	return nil
 }

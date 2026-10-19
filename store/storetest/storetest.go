@@ -29,67 +29,199 @@ func Run(t *testing.T, newStore func(t *testing.T) ledgerstore.Store) {
 	t.Helper()
 
 	t.Run("PlanRoundTrip", func(t *testing.T) { testPlanRoundTrip(t, newStore(t)) })
-	t.Run("PlanRoundTripWithoutPricingPlanID", func(t *testing.T) { testPlanRoundTripWithoutPricingPlanID(t, newStore(t)) })
-	t.Run("PlanRoundTripWithoutChildIDs", func(t *testing.T) { testPlanRoundTripWithoutChildIDs(t, newStore(t)) })
+	t.Run(
+		"PlanRoundTripWithoutPricingPlanID",
+		func(t *testing.T) { testPlanRoundTripWithoutPricingPlanID(t, newStore(t)) },
+	)
+	t.Run(
+		"PlanRoundTripWithoutChildIDs",
+		func(t *testing.T) { testPlanRoundTripWithoutChildIDs(t, newStore(t)) },
+	)
 	t.Run("CouponRoundTrip", func(t *testing.T) { testCouponRoundTrip(t, newStore(t)) })
 	t.Run("GetCouponByIDUnknown", func(t *testing.T) { testGetCouponByIDUnknown(t, newStore(t)) })
 	t.Run("PlanAppIsolation", func(t *testing.T) { testPlanAppIsolation(t, newStore(t)) })
 	t.Run("CouponAppIsolation", func(t *testing.T) { testCouponAppIsolation(t, newStore(t)) })
-	t.Run("ApplyCouponRecordsTheRedemption", func(t *testing.T) { testApplyCouponRecordsTheRedemption(t, newStore(t)) })
-	t.Run("ApplyCouponIsIdempotentPerSubscription", func(t *testing.T) { testApplyCouponIsIdempotentPerSubscription(t, newStore(t)) })
-	t.Run("ListAppliedCouponsIsScopedToOneSubscription", func(t *testing.T) { testListAppliedCouponsIsScopedToOneSubscription(t, newStore(t)) })
+	t.Run(
+		"ApplyCouponRecordsTheRedemption",
+		func(t *testing.T) { testApplyCouponRecordsTheRedemption(t, newStore(t)) },
+	)
+	t.Run(
+		"ApplyCouponIsIdempotentPerSubscription",
+		func(t *testing.T) { testApplyCouponIsIdempotentPerSubscription(t, newStore(t)) },
+	)
+	t.Run(
+		"ListAppliedCouponsIsScopedToOneSubscription",
+		func(t *testing.T) { testListAppliedCouponsIsScopedToOneSubscription(t, newStore(t)) },
+	)
 	t.Run("ListAppliedCouponsOnUnknownSubscriptionIsEmptyNotAnError", func(t *testing.T) {
 		testListAppliedCouponsOnUnknownSubscriptionIsEmptyNotAnError(t, newStore(t))
 	})
-	t.Run("IncrementCouponRedemptions", func(t *testing.T) { testIncrementCouponRedemptions(t, newStore(t)) })
-	t.Run("IncrementCouponRedemptionsOnUnknownCoupon", func(t *testing.T) { testIncrementCouponRedemptionsOnUnknownCoupon(t, newStore(t)) })
-	t.Run("ApplyCouponOnUnknownCoupon", func(t *testing.T) { testApplyCouponOnUnknownCoupon(t, newStore(t)) })
-	t.Run("ApplyCouponThenDeleteCouponThenList", func(t *testing.T) { testApplyCouponThenDeleteCouponThenList(t, newStore(t)) })
-	t.Run("ListAppliedCouponsReturnsInApplyOrder", func(t *testing.T) { testListAppliedCouponsReturnsInApplyOrder(t, newStore(t)) })
-	t.Run("ApplyCouponRejectsInvalidSubscriptionID", func(t *testing.T) { testApplyCouponRejectsInvalidSubscriptionID(t, newStore(t)) })
-	t.Run("ListAppliedCouponsWithNilSubscriptionID", func(t *testing.T) { testListAppliedCouponsWithNilSubscriptionID(t, newStore(t)) })
-	t.Run("ApplyCouponConcurrentDoubleApply", func(t *testing.T) { testApplyCouponConcurrentDoubleApply(t, newStore(t)) })
-	t.Run("RedeemCouponRecordsAndCounts", func(t *testing.T) { testRedeemCouponRecordsAndCounts(t, newStore(t)) })
-	t.Run("RedeemCouponRespectsTheCap", func(t *testing.T) { testRedeemCouponRespectsTheCap(t, newStore(t)) })
+	t.Run(
+		"IncrementCouponRedemptions",
+		func(t *testing.T) { testIncrementCouponRedemptions(t, newStore(t)) },
+	)
+	t.Run(
+		"IncrementCouponRedemptionsOnUnknownCoupon",
+		func(t *testing.T) { testIncrementCouponRedemptionsOnUnknownCoupon(t, newStore(t)) },
+	)
+	t.Run(
+		"ApplyCouponOnUnknownCoupon",
+		func(t *testing.T) { testApplyCouponOnUnknownCoupon(t, newStore(t)) },
+	)
+	t.Run(
+		"ApplyCouponThenDeleteCouponThenList",
+		func(t *testing.T) { testApplyCouponThenDeleteCouponThenList(t, newStore(t)) },
+	)
+	t.Run(
+		"ListAppliedCouponsReturnsInApplyOrder",
+		func(t *testing.T) { testListAppliedCouponsReturnsInApplyOrder(t, newStore(t)) },
+	)
+	t.Run(
+		"ApplyCouponRejectsInvalidSubscriptionID",
+		func(t *testing.T) { testApplyCouponRejectsInvalidSubscriptionID(t, newStore(t)) },
+	)
+	t.Run(
+		"ListAppliedCouponsWithNilSubscriptionID",
+		func(t *testing.T) { testListAppliedCouponsWithNilSubscriptionID(t, newStore(t)) },
+	)
+	t.Run(
+		"ApplyCouponConcurrentDoubleApply",
+		func(t *testing.T) { testApplyCouponConcurrentDoubleApply(t, newStore(t)) },
+	)
+	t.Run(
+		"RedeemCouponRecordsAndCounts",
+		func(t *testing.T) { testRedeemCouponRecordsAndCounts(t, newStore(t)) },
+	)
+	t.Run(
+		"RedeemCouponRespectsTheCap",
+		func(t *testing.T) { testRedeemCouponRespectsTheCap(t, newStore(t)) },
+	)
 	t.Run("RedeemCouponUnlimited", func(t *testing.T) { testRedeemCouponUnlimited(t, newStore(t)) })
-	t.Run("RedeemCouponNegativeCapIsUnlimited", func(t *testing.T) { testRedeemCouponNegativeCapIsUnlimited(t, newStore(t)) })
+	t.Run(
+		"RedeemCouponNegativeCapIsUnlimited",
+		func(t *testing.T) { testRedeemCouponNegativeCapIsUnlimited(t, newStore(t)) },
+	)
 	t.Run("RedeemCouponDuplicate", func(t *testing.T) { testRedeemCouponDuplicate(t, newStore(t)) })
-	t.Run("RedeemCouponRejectsBadInput", func(t *testing.T) { testRedeemCouponRejectsBadInput(t, newStore(t)) })
-	t.Run("RedeemCouponConcurrentCap", func(t *testing.T) { testRedeemCouponConcurrentCap(t, newStore(t)) })
-	t.Run("UpdateCouponLeavesTimesRedeemedAlone", func(t *testing.T) { testUpdateCouponLeavesTimesRedeemedAlone(t, newStore(t)) })
-	t.Run("SubscriptionTenantIsolation", func(t *testing.T) { testSubscriptionTenantIsolation(t, newStore(t)) })
-	t.Run("SubscriptionQuantityRoundTrip", func(t *testing.T) { testSubscriptionQuantityRoundTrip(t, newStore(t)) })
-	t.Run("InvoiceTenantIsolation", func(t *testing.T) { testInvoiceTenantIsolation(t, newStore(t)) })
+	t.Run(
+		"RedeemCouponRejectsBadInput",
+		func(t *testing.T) { testRedeemCouponRejectsBadInput(t, newStore(t)) },
+	)
+	t.Run(
+		"RedeemCouponConcurrentCap",
+		func(t *testing.T) { testRedeemCouponConcurrentCap(t, newStore(t)) },
+	)
+	t.Run(
+		"UpdateCouponLeavesTimesRedeemedAlone",
+		func(t *testing.T) { testUpdateCouponLeavesTimesRedeemedAlone(t, newStore(t)) },
+	)
+	t.Run(
+		"SubscriptionTenantIsolation",
+		func(t *testing.T) { testSubscriptionTenantIsolation(t, newStore(t)) },
+	)
+	t.Run(
+		"SubscriptionQuantityRoundTrip",
+		func(t *testing.T) { testSubscriptionQuantityRoundTrip(t, newStore(t)) },
+	)
+	t.Run(
+		"InvoiceTenantIsolation",
+		func(t *testing.T) { testInvoiceTenantIsolation(t, newStore(t)) },
+	)
 	t.Run("UsageTenantIsolation", func(t *testing.T) { testUsageTenantIsolation(t, newStore(t)) })
 	t.Run("EmptyTenantIDBehavior", func(t *testing.T) { testEmptyTenantIDBehavior(t, newStore(t)) })
-	t.Run("IngestKeylessEventsAreAllCounted", func(t *testing.T) { testIngestKeylessEventsAreAllCounted(t, newStore(t)) })
-	t.Run("IngestDuplicateKeyIsCountedOnce", func(t *testing.T) { testIngestDuplicateKeyIsCountedOnce(t, newStore(t)) })
-	t.Run("IngestKeyedAndKeylessMix", func(t *testing.T) { testIngestKeyedAndKeylessMix(t, newStore(t)) })
-	t.Run("QueryUsageWindowIsHalfOpen", func(t *testing.T) { testQueryUsageWindowIsHalfOpen(t, newStore(t)) })
+	t.Run(
+		"IngestKeylessEventsAreAllCounted",
+		func(t *testing.T) { testIngestKeylessEventsAreAllCounted(t, newStore(t)) },
+	)
+	t.Run(
+		"IngestDuplicateKeyIsCountedOnce",
+		func(t *testing.T) { testIngestDuplicateKeyIsCountedOnce(t, newStore(t)) },
+	)
+	t.Run(
+		"IngestKeyedAndKeylessMix",
+		func(t *testing.T) { testIngestKeyedAndKeylessMix(t, newStore(t)) },
+	)
+	t.Run(
+		"QueryUsageWindowIsHalfOpen",
+		func(t *testing.T) { testQueryUsageWindowIsHalfOpen(t, newStore(t)) },
+	)
 	t.Run("SubscriptionPeriodsRoundTripFromTimeNow", func(t *testing.T) {
 		testSubscriptionPeriodsRoundTripFromTimeNow(t, newStore(t))
 	})
-	t.Run("UsageEventRoundTripsFromTimeNow", func(t *testing.T) { testUsageEventRoundTripsFromTimeNow(t, newStore(t)) })
-	t.Run("CancelSubscriptionAtNowEndsIt", func(t *testing.T) { testCancelSubscriptionAtNowEndsIt(t, newStore(t)) })
-	t.Run("ArchivePlanStoresTheArchive", func(t *testing.T) { testArchivePlanStoresTheArchive(t, newStore(t)) })
-	t.Run("ArchiveFeatureStoresTheArchive", func(t *testing.T) { testArchiveFeatureStoresTheArchive(t, newStore(t)) })
-	t.Run("MarkInvoicePaidStoresThePayment", func(t *testing.T) { testMarkInvoicePaidStoresThePayment(t, newStore(t)) })
-	t.Run("MarkInvoiceVoidedStoresTheVoid", func(t *testing.T) { testMarkInvoiceVoidedStoresTheVoid(t, newStore(t)) })
+	t.Run(
+		"UsageEventRoundTripsFromTimeNow",
+		func(t *testing.T) { testUsageEventRoundTripsFromTimeNow(t, newStore(t)) },
+	)
+	t.Run(
+		"CancelSubscriptionAtNowEndsIt",
+		func(t *testing.T) { testCancelSubscriptionAtNowEndsIt(t, newStore(t)) },
+	)
+	t.Run(
+		"ArchivePlanStoresTheArchive",
+		func(t *testing.T) { testArchivePlanStoresTheArchive(t, newStore(t)) },
+	)
+	t.Run(
+		"ArchiveFeatureStoresTheArchive",
+		func(t *testing.T) { testArchiveFeatureStoresTheArchive(t, newStore(t)) },
+	)
+	t.Run(
+		"MarkInvoicePaidStoresThePayment",
+		func(t *testing.T) { testMarkInvoicePaidStoresThePayment(t, newStore(t)) },
+	)
+	t.Run(
+		"MarkInvoiceVoidedStoresTheVoid",
+		func(t *testing.T) { testMarkInvoiceVoidedStoresTheVoid(t, newStore(t)) },
+	)
 	t.Run("ListFiltersCombine", func(t *testing.T) { testListFiltersCombine(t, newStore(t)) })
-	t.Run("LookupsMatchEveryArgument", func(t *testing.T) { testLookupsMatchEveryArgument(t, newStore(t)) })
-	t.Run("UpdateOfAMissingRowReportsIt", func(t *testing.T) { testUpdateOfAMissingRowReportsIt(t, newStore(t)) })
-	t.Run("ListInvoicesBoundsAreInstants", func(t *testing.T) { testListInvoicesBoundsAreInstants(t, newStore(t)) })
-	t.Run("UsageEventNearABoundaryInALocalZone", func(t *testing.T) { testUsageEventNearABoundaryInALocalZone(t, newStore(t)) })
-	t.Run("ListsPageInAStableOrder", func(t *testing.T) { testListsPageInAStableOrder(t, newStore(t)) })
-	t.Run("ListsPageStablyOnEqualTimestamps", func(t *testing.T) { testListsPageStablyOnEqualTimestamps(t, newStore(t)) })
-	t.Run("AggregateOpensPeriodsInUTC", func(t *testing.T) { testAggregateOpensPeriodsInUTC(t, newStore(t)) })
+	t.Run(
+		"LookupsMatchEveryArgument",
+		func(t *testing.T) { testLookupsMatchEveryArgument(t, newStore(t)) },
+	)
+	t.Run(
+		"UpdateOfAMissingRowReportsIt",
+		func(t *testing.T) { testUpdateOfAMissingRowReportsIt(t, newStore(t)) },
+	)
+	t.Run(
+		"ListInvoicesBoundsAreInstants",
+		func(t *testing.T) { testListInvoicesBoundsAreInstants(t, newStore(t)) },
+	)
+	t.Run(
+		"UsageEventNearABoundaryInALocalZone",
+		func(t *testing.T) { testUsageEventNearABoundaryInALocalZone(t, newStore(t)) },
+	)
+	t.Run(
+		"ListsPageInAStableOrder",
+		func(t *testing.T) { testListsPageInAStableOrder(t, newStore(t)) },
+	)
+	t.Run(
+		"ListsPageStablyOnEqualTimestamps",
+		func(t *testing.T) { testListsPageStablyOnEqualTimestamps(t, newStore(t)) },
+	)
+	t.Run(
+		"AggregateOpensPeriodsInUTC",
+		func(t *testing.T) { testAggregateOpensPeriodsInUTC(t, newStore(t)) },
+	)
 	t.Run("ListDueSubscriptions", func(t *testing.T) { testListDueSubscriptions(t, newStore(t)) })
 	t.Run("ListOverdueInvoices", func(t *testing.T) { testListOverdueInvoices(t, newStore(t)) })
-	t.Run("LifecycleTransitionsAreConditional", func(t *testing.T) { testLifecycleTransitionsAreConditional(t, newStore(t)) })
-	t.Run("LifecycleTransitionsApplyOnce", func(t *testing.T) { testLifecycleTransitionsApplyOnce(t, newStore(t)) })
-	t.Run("LifecycleScheduledCancelRacesTheAdvance", func(t *testing.T) { testLifecycleScheduledCancelRacesTheAdvance(t, newStore(t)) })
-	t.Run("OperatorWritesAreConditional", func(t *testing.T) { testOperatorWritesAreConditional(t, newStore(t)) })
-	t.Run("OperatorWritesRaceTheClock", func(t *testing.T) { testOperatorWritesRaceTheClock(t, newStore(t)) })
+	t.Run(
+		"LifecycleTransitionsAreConditional",
+		func(t *testing.T) { testLifecycleTransitionsAreConditional(t, newStore(t)) },
+	)
+	t.Run(
+		"LifecycleTransitionsApplyOnce",
+		func(t *testing.T) { testLifecycleTransitionsApplyOnce(t, newStore(t)) },
+	)
+	t.Run(
+		"LifecycleScheduledCancelRacesTheAdvance",
+		func(t *testing.T) { testLifecycleScheduledCancelRacesTheAdvance(t, newStore(t)) },
+	)
+	t.Run(
+		"OperatorWritesAreConditional",
+		func(t *testing.T) { testOperatorWritesAreConditional(t, newStore(t)) },
+	)
+	t.Run(
+		"OperatorWritesRaceTheClock",
+		func(t *testing.T) { testOperatorWritesRaceTheClock(t, newStore(t)) },
+	)
 }
 
 // uniqueSuffix returns a value that differs on every call, including across
@@ -130,12 +262,15 @@ func testPlanRoundTrip(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("GetPlan: %v", err)
 	}
+
 	if got.Slug != slug {
 		t.Errorf("got slug %q, want %q", got.Slug, slug)
 	}
+
 	if got.Pricing == nil {
 		t.Fatal("Pricing did not survive the round trip")
 	}
+
 	if !got.Pricing.BaseAmount.Equal(types.USD(4900)) {
 		t.Errorf("got base amount %v, want $49.00", got.Pricing.BaseAmount)
 	}
@@ -170,11 +305,16 @@ func testPlanRoundTripWithoutPricingPlanID(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("GetPlan: %v", err)
 	}
+
 	if got.Pricing == nil {
 		t.Fatal("Pricing did not survive the round trip")
 	}
+
 	if !got.Pricing.PlanID.IsNil() {
-		t.Errorf("got Pricing.PlanID %q, want nil (an unset PlanID must round-trip as nil)", got.Pricing.PlanID)
+		t.Errorf(
+			"got Pricing.PlanID %q, want nil (an unset PlanID must round-trip as nil)",
+			got.Pricing.PlanID,
+		)
 	}
 }
 
@@ -213,17 +353,27 @@ func testPlanRoundTripWithoutChildIDs(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("GetPlan: %v", err)
 	}
+
 	if len(got.Features) != 1 {
 		t.Fatalf("got %d feature(s), want exactly 1", len(got.Features))
 	}
+
 	if !got.Features[0].ID.IsNil() {
-		t.Errorf("got Features[0].ID %q, want nil (an unset feature ID must round-trip as nil)", got.Features[0].ID)
+		t.Errorf(
+			"got Features[0].ID %q, want nil (an unset feature ID must round-trip as nil)",
+			got.Features[0].ID,
+		)
 	}
+
 	if got.Pricing == nil {
 		t.Fatal("Pricing did not survive the round trip")
 	}
+
 	if !got.Pricing.ID.IsNil() {
-		t.Errorf("got Pricing.ID %q, want nil (an unset pricing ID must round-trip as nil)", got.Pricing.ID)
+		t.Errorf(
+			"got Pricing.ID %q, want nil (an unset pricing ID must round-trip as nil)",
+			got.Pricing.ID,
+		)
 	}
 }
 
@@ -246,6 +396,7 @@ func testCouponRoundTrip(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("GetCouponByID: %v", err)
 	}
+
 	if byID.Code != code {
 		t.Errorf("got code %q, want %q", byID.Code, code)
 	}
@@ -254,6 +405,7 @@ func testCouponRoundTrip(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("GetCoupon: %v", err)
 	}
+
 	if byCode.ID.String() != c.ID.String() {
 		t.Errorf("got id %s, want %s", byCode.ID, c.ID)
 	}
@@ -284,9 +436,11 @@ func testPlanAppIsolation(t *testing.T, s ledgerstore.Store) {
 		Name: "Plan B", Slug: "plan-b-" + uniqueSuffix(), Currency: "usd",
 		Status: plan.StatusActive, AppID: appB,
 	}
+
 	if err := s.CreatePlan(ctx, pA); err != nil {
 		t.Fatalf("CreatePlan(appA): %v", err)
 	}
+
 	if err := s.CreatePlan(ctx, pB); err != nil {
 		t.Fatalf("CreatePlan(appB): %v", err)
 	}
@@ -295,12 +449,15 @@ func testPlanAppIsolation(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("ListPlans(appA): %v", err)
 	}
+
 	if len(got) != 1 {
 		t.Fatalf("ListPlans(appA): got %d rows, want exactly 1", len(got))
 	}
+
 	if got[0].ID.String() != pA.ID.String() {
 		t.Errorf("ListPlans(appA): got id %s, want %s", got[0].ID, pA.ID)
 	}
+
 	for _, g := range got {
 		if g.ID.String() == pB.ID.String() {
 			t.Errorf("ListPlans(appA) leaked appB's plan %s", pB.ID)
@@ -327,9 +484,11 @@ func testCouponAppIsolation(t *testing.T, s ledgerstore.Store) {
 		Type: coupon.CouponTypePercentage, Percentage: 10,
 		Currency: "usd", AppID: appB,
 	}
+
 	if err := s.CreateCoupon(ctx, cA); err != nil {
 		t.Fatalf("CreateCoupon(appA): %v", err)
 	}
+
 	if err := s.CreateCoupon(ctx, cB); err != nil {
 		t.Fatalf("CreateCoupon(appB): %v", err)
 	}
@@ -338,12 +497,15 @@ func testCouponAppIsolation(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("ListCoupons(appA): %v", err)
 	}
+
 	if len(got) != 1 {
 		t.Fatalf("ListCoupons(appA): got %d rows, want exactly 1", len(got))
 	}
+
 	if got[0].ID.String() != cA.ID.String() {
 		t.Errorf("ListCoupons(appA): got id %s, want %s", got[0].ID, cA.ID)
 	}
+
 	for _, g := range got {
 		if g.ID.String() == cB.ID.String() {
 			t.Errorf("ListCoupons(appA) leaked appB's coupon %s", cB.ID)
@@ -367,6 +529,7 @@ func newTestFeature(appID string) *feature.Feature {
 
 func newTestCoupon(appID string) *coupon.Coupon {
 	code := "LAUNCH10-" + uniqueSuffix()
+
 	return &coupon.Coupon{
 		Entity: types.NewEntity(), ID: id.NewCouponID(),
 		Code: code, Name: code,
@@ -395,9 +558,11 @@ func testApplyCouponRecordsTheRedemption(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("ListAppliedCoupons: %v", err)
 	}
+
 	if len(applied) != 1 {
 		t.Fatalf("got %d applied coupons, want 1", len(applied))
 	}
+
 	if applied[0].ID.String() != c.ID.String() {
 		t.Errorf("got coupon id %s, want %s", applied[0].ID, c.ID)
 	}
@@ -429,6 +594,7 @@ func testApplyCouponIsIdempotentPerSubscription(t *testing.T, s ledgerstore.Stor
 	if err != nil {
 		t.Fatalf("ListAppliedCoupons: %v", err)
 	}
+
 	if len(applied) != 1 {
 		t.Errorf("got %d applied coupons after a duplicate apply, want 1", len(applied))
 	}
@@ -455,6 +621,7 @@ func testListAppliedCouponsIsScopedToOneSubscription(t *testing.T, s ledgerstore
 	if err != nil {
 		t.Fatalf("ListAppliedCoupons: %v", err)
 	}
+
 	if len(applied) != 0 {
 		t.Errorf("got %d applied coupons on an untouched subscription, want 0", len(applied))
 	}
@@ -462,16 +629,23 @@ func testListAppliedCouponsIsScopedToOneSubscription(t *testing.T, s ledgerstore
 
 // testListAppliedCouponsOnUnknownSubscriptionIsEmptyNotAnError asserts an
 // unknown subscription id is a valid, empty answer rather than an error.
-func testListAppliedCouponsOnUnknownSubscriptionIsEmptyNotAnError(t *testing.T, s ledgerstore.Store) {
+func testListAppliedCouponsOnUnknownSubscriptionIsEmptyNotAnError(
+	t *testing.T,
+	s ledgerstore.Store,
+) {
 	ctx := context.Background()
 
 	applied, err := s.ListAppliedCoupons(ctx, id.NewSubscriptionID())
 	if err != nil {
 		t.Fatalf("ListAppliedCoupons on an unknown subscription: %v", err)
 	}
+
 	if applied == nil {
-		t.Error("got a nil slice, want an empty one: a caller ranging over nil sees no difference, but a caller checking len(x) == 0 against a nil map entry does")
+		t.Error(
+			"got a nil slice, want an empty one: a caller ranging over nil sees no difference, but a caller checking len(x) == 0 against a nil map entry does",
+		)
 	}
+
 	if len(applied) != 0 {
 		t.Errorf("got %d applied coupons, want 0", len(applied))
 	}
@@ -497,6 +671,7 @@ func testIncrementCouponRedemptions(t *testing.T, s ledgerstore.Store) {
 		if err != nil {
 			t.Fatalf("GetCouponByID: %v", err)
 		}
+
 		if got.TimesRedeemed != i {
 			t.Errorf("after %d increments: got TimesRedeemed %d, want %d", i, got.TimesRedeemed, i)
 		}
@@ -531,6 +706,7 @@ func testApplyCouponOnUnknownCoupon(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("ListAppliedCoupons: %v", err)
 	}
+
 	if len(applied) != 0 {
 		t.Errorf("got %d applied coupons after a failed apply, want 0", len(applied))
 	}
@@ -562,9 +738,11 @@ func testApplyCouponThenDeleteCouponThenList(t *testing.T, s ledgerstore.Store) 
 	if err != nil {
 		t.Fatalf("ListAppliedCoupons after the coupon was deleted: %v", err)
 	}
+
 	if applied == nil {
 		t.Error("got a nil slice, want an empty one")
 	}
+
 	if len(applied) != 0 {
 		t.Errorf("got %d applied coupons after the coupon was deleted, want 0", len(applied))
 	}
@@ -584,6 +762,7 @@ func testListAppliedCouponsReturnsInApplyOrder(t *testing.T, s ledgerstore.Store
 		if err := s.CreateCoupon(ctx, c); err != nil {
 			t.Fatalf("CreateCoupon %d: %v", i, err)
 		}
+
 		coupons[i] = c
 		if err := s.ApplyCoupon(ctx, subID, c.ID); err != nil {
 			t.Fatalf("ApplyCoupon %d: %v", i, err)
@@ -594,9 +773,11 @@ func testListAppliedCouponsReturnsInApplyOrder(t *testing.T, s ledgerstore.Store
 	if err != nil {
 		t.Fatalf("ListAppliedCoupons: %v", err)
 	}
+
 	if len(applied) != len(coupons) {
 		t.Fatalf("got %d applied coupons, want %d", len(applied), len(coupons))
 	}
+
 	for i, c := range coupons {
 		if applied[i].ID.String() != c.ID.String() {
 			t.Errorf("position %d: got coupon %s, want %s (apply order)", i, applied[i].ID, c.ID)
@@ -636,9 +817,11 @@ func testListAppliedCouponsWithNilSubscriptionID(t *testing.T, s ledgerstore.Sto
 	if err != nil {
 		t.Fatalf("ListAppliedCoupons(id.Nil): got error %v, want nil", err)
 	}
+
 	if applied == nil {
 		t.Error("got a nil slice, want an empty one")
 	}
+
 	if len(applied) != 0 {
 		t.Errorf("got %d applied coupons, want 0", len(applied))
 	}
@@ -669,18 +852,24 @@ func testApplyCouponConcurrentDoubleApply(t *testing.T, s ledgerstore.Store) {
 	subID := id.NewSubscriptionID()
 
 	const n = 10
+
 	errs := make([]error, n)
+
 	var wg sync.WaitGroup
 	wg.Add(n)
+
 	for i := range n {
 		go func(i int) {
 			defer wg.Done()
+
 			errs[i] = s.ApplyCoupon(ctx, subID, c.ID)
 		}(i)
 	}
+
 	wg.Wait()
 
 	var wins, losses int
+
 	for _, err := range errs {
 		switch {
 		case err == nil:
@@ -688,19 +877,32 @@ func testApplyCouponConcurrentDoubleApply(t *testing.T, s ledgerstore.Store) {
 		case errors.Is(err, ledger.ErrCouponAlreadyApplied):
 			losses++
 		default:
-			t.Errorf("got an error from a concurrent ApplyCoupon that is neither nil nor ErrCouponAlreadyApplied: %v", err)
+			t.Errorf(
+				"got an error from a concurrent ApplyCoupon that is neither nil nor ErrCouponAlreadyApplied: %v",
+				err,
+			)
 		}
 	}
+
 	if wins != 1 {
-		t.Errorf("got %d winning ApplyCoupon calls out of %d, want exactly 1 (losses=%d)", wins, n, losses)
+		t.Errorf(
+			"got %d winning ApplyCoupon calls out of %d, want exactly 1 (losses=%d)",
+			wins,
+			n,
+			losses,
+		)
 	}
 
 	applied, err := s.ListAppliedCoupons(ctx, subID)
 	if err != nil {
 		t.Fatalf("ListAppliedCoupons: %v", err)
 	}
+
 	if len(applied) != 1 {
-		t.Errorf("got %d applied coupons after a concurrent double apply, want exactly 1", len(applied))
+		t.Errorf(
+			"got %d applied coupons after a concurrent double apply, want exactly 1",
+			len(applied),
+		)
 	}
 }
 
@@ -725,9 +927,11 @@ func testRedeemCouponRecordsAndCounts(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("ListAppliedCoupons: %v", err)
 	}
+
 	if len(applied) != 1 {
 		t.Fatalf("got %d applied coupons, want 1", len(applied))
 	}
+
 	if applied[0].ID.String() != c.ID.String() {
 		t.Errorf("got applied coupon %s, want %s", applied[0].ID, c.ID)
 	}
@@ -736,6 +940,7 @@ func testRedeemCouponRecordsAndCounts(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("GetCouponByID: %v", err)
 	}
+
 	if got.TimesRedeemed != 1 {
 		t.Errorf("got TimesRedeemed %d, want 1", got.TimesRedeemed)
 	}
@@ -760,6 +965,7 @@ func testUpdateCouponLeavesTimesRedeemedAlone(t *testing.T, s ledgerstore.Store)
 	}
 
 	stale := *c // still carries TimesRedeemed 0
+
 	stale.Name = "Renamed " + uniqueSuffix()
 	if err := s.UpdateCoupon(ctx, &stale); err != nil {
 		t.Fatalf("UpdateCoupon: %v", err)
@@ -769,11 +975,16 @@ func testUpdateCouponLeavesTimesRedeemedAlone(t *testing.T, s ledgerstore.Store)
 	if err != nil {
 		t.Fatalf("GetCouponByID: %v", err)
 	}
+
 	if got.Name != stale.Name {
 		t.Errorf("Name = %q, want %q", got.Name, stale.Name)
 	}
+
 	if got.TimesRedeemed != 2 {
-		t.Errorf("TimesRedeemed = %d, want 2: UpdateCoupon must not write the count", got.TimesRedeemed)
+		t.Errorf(
+			"TimesRedeemed = %d, want 2: UpdateCoupon must not write the count",
+			got.TimesRedeemed,
+		)
 	}
 }
 
@@ -786,6 +997,7 @@ func testRedeemCouponRespectsTheCap(t *testing.T, s ledgerstore.Store) {
 	appID := "app-" + uniqueSuffix()
 
 	c := newTestCoupon(appID)
+
 	c.MaxRedemptions = 2
 	if err := s.CreateCoupon(ctx, c); err != nil {
 		t.Fatalf("CreateCoupon: %v", err)
@@ -796,9 +1008,11 @@ func testRedeemCouponRespectsTheCap(t *testing.T, s ledgerstore.Store) {
 	if err := s.RedeemCoupon(ctx, sub1, c.ID); err != nil {
 		t.Fatalf("RedeemCoupon sub1: %v", err)
 	}
+
 	if err := s.RedeemCoupon(ctx, sub2, c.ID); err != nil {
 		t.Fatalf("RedeemCoupon sub2: %v", err)
 	}
+
 	if err := s.RedeemCoupon(ctx, sub3, c.ID); !errors.Is(err, ledger.ErrCouponExhausted) {
 		t.Fatalf("RedeemCoupon sub3: got %v, want a wrap of ErrCouponExhausted", err)
 	}
@@ -807,6 +1021,7 @@ func testRedeemCouponRespectsTheCap(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("ListAppliedCoupons sub3: %v", err)
 	}
+
 	if len(applied) != 0 {
 		t.Errorf("sub3 got %d applied coupons after an exhausted redeem, want 0", len(applied))
 	}
@@ -815,6 +1030,7 @@ func testRedeemCouponRespectsTheCap(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("GetCouponByID: %v", err)
 	}
+
 	if got.TimesRedeemed != 2 {
 		t.Errorf("got TimesRedeemed %d, want 2", got.TimesRedeemed)
 	}
@@ -828,6 +1044,7 @@ func testRedeemCouponUnlimited(t *testing.T, s ledgerstore.Store) {
 
 	c := newTestCoupon(appID)
 	c.MaxRedemptions = 0
+
 	c.TimesRedeemed = 5
 	if err := s.CreateCoupon(ctx, c); err != nil {
 		t.Fatalf("CreateCoupon: %v", err)
@@ -842,6 +1059,7 @@ func testRedeemCouponUnlimited(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("GetCouponByID: %v", err)
 	}
+
 	if got.TimesRedeemed != 6 {
 		t.Errorf("got TimesRedeemed %d, want 6", got.TimesRedeemed)
 	}
@@ -857,6 +1075,7 @@ func testRedeemCouponNegativeCapIsUnlimited(t *testing.T, s ledgerstore.Store) {
 	appID := "app-" + uniqueSuffix()
 
 	c := newTestCoupon(appID)
+
 	c.MaxRedemptions = -1
 	if err := s.CreateCoupon(ctx, c); err != nil {
 		t.Fatalf("CreateCoupon: %v", err)
@@ -872,6 +1091,7 @@ func testRedeemCouponNegativeCapIsUnlimited(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("GetCouponByID: %v", err)
 	}
+
 	if got.TimesRedeemed != 3 {
 		t.Errorf("got TimesRedeemed %d, want 3", got.TimesRedeemed)
 	}
@@ -893,6 +1113,7 @@ func testRedeemCouponDuplicate(t *testing.T, s ledgerstore.Store) {
 	if err := s.RedeemCoupon(ctx, subID, c.ID); err != nil {
 		t.Fatalf("first RedeemCoupon: %v", err)
 	}
+
 	if err := s.RedeemCoupon(ctx, subID, c.ID); !errors.Is(err, ledger.ErrCouponAlreadyApplied) {
 		t.Fatalf("second RedeemCoupon: got %v, want a wrap of ErrCouponAlreadyApplied", err)
 	}
@@ -901,6 +1122,7 @@ func testRedeemCouponDuplicate(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("GetCouponByID: %v", err)
 	}
+
 	if got.TimesRedeemed != 1 {
 		t.Errorf("got TimesRedeemed %d, want 1", got.TimesRedeemed)
 	}
@@ -909,6 +1131,7 @@ func testRedeemCouponDuplicate(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("ListAppliedCoupons: %v", err)
 	}
+
 	if len(applied) != 1 {
 		t.Errorf("got %d applied coupons, want 1", len(applied))
 	}
@@ -929,19 +1152,23 @@ func testRedeemCouponRejectsBadInput(t *testing.T, s ledgerstore.Store) {
 
 	checkNoRowsNoCountChange := func(t *testing.T, subID id.SubscriptionID) {
 		t.Helper()
+
 		if !subID.IsNil() {
 			applied, err := s.ListAppliedCoupons(ctx, subID)
 			if err != nil {
 				t.Fatalf("ListAppliedCoupons: %v", err)
 			}
+
 			if len(applied) != 0 {
 				t.Errorf("got %d applied coupons after a rejected redeem, want 0", len(applied))
 			}
 		}
+
 		got, err := s.GetCouponByID(ctx, c.ID)
 		if err != nil {
 			t.Fatalf("GetCouponByID: %v", err)
 		}
+
 		if got.TimesRedeemed != 0 {
 			t.Errorf("got TimesRedeemed %d after a rejected redeem, want 0", got.TimesRedeemed)
 		}
@@ -949,14 +1176,24 @@ func testRedeemCouponRejectsBadInput(t *testing.T, s ledgerstore.Store) {
 
 	t.Run("unknown coupon", func(t *testing.T) {
 		subID := id.NewSubscriptionID()
+
 		unknownCoupon := id.NewCouponID()
-		if err := s.RedeemCoupon(ctx, subID, unknownCoupon); !errors.Is(err, ledger.ErrCouponNotFound) {
+		if err := s.RedeemCoupon(
+			ctx,
+			subID,
+			unknownCoupon,
+		); !errors.Is(
+			err,
+			ledger.ErrCouponNotFound,
+		) {
 			t.Fatalf("got %v, want a wrap of ErrCouponNotFound", err)
 		}
+
 		applied, err := s.ListAppliedCoupons(ctx, subID)
 		if err != nil {
 			t.Fatalf("ListAppliedCoupons: %v", err)
 		}
+
 		if len(applied) != 0 {
 			t.Errorf("got %d applied coupons after a rejected redeem, want 0", len(applied))
 		}
@@ -966,6 +1203,7 @@ func testRedeemCouponRejectsBadInput(t *testing.T, s ledgerstore.Store) {
 		if err := s.RedeemCoupon(ctx, id.Nil, c.ID); !errors.Is(err, ledger.ErrInvalidInput) {
 			t.Fatalf("got %v, want a wrap of ErrInvalidInput", err)
 		}
+
 		checkNoRowsNoCountChange(t, id.Nil)
 	})
 
@@ -974,6 +1212,7 @@ func testRedeemCouponRejectsBadInput(t *testing.T, s ledgerstore.Store) {
 		if err := s.RedeemCoupon(ctx, wrongPrefix, c.ID); !errors.Is(err, ledger.ErrInvalidInput) {
 			t.Fatalf("got %v, want a wrap of ErrInvalidInput", err)
 		}
+
 		checkNoRowsNoCountChange(t, wrongPrefix)
 	})
 }
@@ -994,29 +1233,36 @@ func testRedeemCouponConcurrentCap(t *testing.T, s ledgerstore.Store) {
 	appID := "app-" + uniqueSuffix()
 
 	c := newTestCoupon(appID)
+
 	c.MaxRedemptions = 3
 	if err := s.CreateCoupon(ctx, c); err != nil {
 		t.Fatalf("CreateCoupon: %v", err)
 	}
 
 	const n = 12
+
 	subIDs := make([]id.SubscriptionID, n)
 	for i := range subIDs {
 		subIDs[i] = id.NewSubscriptionID()
 	}
 
 	errs := make([]error, n)
+
 	var wg sync.WaitGroup
 	wg.Add(n)
+
 	for i := range n {
 		go func(i int) {
 			defer wg.Done()
+
 			errs[i] = s.RedeemCoupon(ctx, subIDs[i], c.ID)
 		}(i)
 	}
+
 	wg.Wait()
 
 	var wins, exhausted int
+
 	for _, err := range errs {
 		switch {
 		case err == nil:
@@ -1024,32 +1270,51 @@ func testRedeemCouponConcurrentCap(t *testing.T, s ledgerstore.Store) {
 		case errors.Is(err, ledger.ErrCouponExhausted):
 			exhausted++
 		default:
-			t.Errorf("got an error from a concurrent RedeemCoupon that is neither nil nor ErrCouponExhausted: %v", err)
+			t.Errorf(
+				"got an error from a concurrent RedeemCoupon that is neither nil nor ErrCouponExhausted: %v",
+				err,
+			)
 		}
 	}
+
 	if wins != 3 {
-		t.Errorf("got %d winning RedeemCoupon calls out of %d, want exactly 3 (exhausted=%d)", wins, n, exhausted)
+		t.Errorf(
+			"got %d winning RedeemCoupon calls out of %d, want exactly 3 (exhausted=%d)",
+			wins,
+			n,
+			exhausted,
+		)
 	}
+
 	if exhausted != n-3 {
-		t.Errorf("got %d exhausted RedeemCoupon calls out of %d, want exactly %d", exhausted, n, n-3)
+		t.Errorf(
+			"got %d exhausted RedeemCoupon calls out of %d, want exactly %d",
+			exhausted,
+			n,
+			n-3,
+		)
 	}
 
 	got, err := s.GetCouponByID(ctx, c.ID)
 	if err != nil {
 		t.Fatalf("GetCouponByID: %v", err)
 	}
+
 	if got.TimesRedeemed != 3 {
 		t.Errorf("got TimesRedeemed %d, want exactly 3", got.TimesRedeemed)
 	}
 
 	total := 0
+
 	for _, subID := range subIDs {
 		applied, err := s.ListAppliedCoupons(ctx, subID)
 		if err != nil {
 			t.Fatalf("ListAppliedCoupons: %v", err)
 		}
+
 		total += len(applied)
 	}
+
 	if total != 3 {
 		t.Errorf("got %d applications across all 12 subscriptions, want exactly 3", total)
 	}
@@ -1062,6 +1327,7 @@ func testRedeemCouponConcurrentCap(t *testing.T, s ledgerstore.Store) {
 // methods without pulling in the plan fixtures too.
 func newTestSubscription(tenantID, appID string) *subscription.Subscription {
 	now := time.Now().UTC()
+
 	return &subscription.Subscription{
 		Entity:             types.NewEntity(),
 		ID:                 id.NewSubscriptionID(),
@@ -1078,6 +1344,7 @@ func newTestSubscription(tenantID, appID string) *subscription.Subscription {
 // references a freshly minted id rather than a real subscription row.
 func newTestInvoice(tenantID, appID string) *invoice.Invoice {
 	now := time.Now().UTC()
+
 	return &invoice.Invoice{
 		Entity:         types.NewEntity(),
 		ID:             id.NewInvoiceID(),
@@ -1112,6 +1379,7 @@ func hasSubscriptionID(subs []*subscription.Subscription, want id.SubscriptionID
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -1121,6 +1389,7 @@ func hasInvoiceID(invs []*invoice.Invoice, want id.InvoiceID) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -1130,6 +1399,7 @@ func hasUsageEventID(evts []*meter.UsageEvent, want id.UsageEventID) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -1144,9 +1414,11 @@ func testSubscriptionTenantIsolation(t *testing.T, s ledgerstore.Store) {
 
 	subA := newTestSubscription(tenantA, appID)
 	subB := newTestSubscription(tenantB, appID)
+
 	if err := s.CreateSubscription(ctx, subA); err != nil {
 		t.Fatalf("CreateSubscription(tenantA): %v", err)
 	}
+
 	if err := s.CreateSubscription(ctx, subB); err != nil {
 		t.Fatalf("CreateSubscription(tenantB): %v", err)
 	}
@@ -1155,12 +1427,15 @@ func testSubscriptionTenantIsolation(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("ListSubscriptions(tenantA): %v", err)
 	}
+
 	if len(got) != 1 {
 		t.Fatalf("ListSubscriptions(tenantA): got %d rows, want exactly 1", len(got))
 	}
+
 	if got[0].ID.String() != subA.ID.String() {
 		t.Errorf("ListSubscriptions(tenantA): got id %s, want %s", got[0].ID, subA.ID)
 	}
+
 	if hasSubscriptionID(got, subB.ID) {
 		t.Errorf("ListSubscriptions(tenantA) leaked tenantB's subscription %s", subB.ID)
 	}
@@ -1182,6 +1457,7 @@ func testSubscriptionQuantityRoundTrip(t *testing.T, s ledgerstore.Store) {
 	tenantID := "tenant-" + uniqueSuffix()
 
 	sub := newTestSubscription(tenantID, appID)
+
 	sub.Quantity = map[string]int64{"seats": 12, "projects": 3}
 	if err := s.CreateSubscription(ctx, sub); err != nil {
 		t.Fatalf("CreateSubscription: %v", err)
@@ -1191,7 +1467,11 @@ func testSubscriptionQuantityRoundTrip(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("GetSubscription: %v", err)
 	}
-	if want := (map[string]int64{"seats": 12, "projects": 3}); !reflect.DeepEqual(got.Quantity, want) {
+
+	if want := (map[string]int64{"seats": 12, "projects": 3}); !reflect.DeepEqual(
+		got.Quantity,
+		want,
+	) {
 		t.Errorf("Quantity after create: got %v, want %v", got.Quantity, want)
 	}
 
@@ -1199,25 +1479,35 @@ func testSubscriptionQuantityRoundTrip(t *testing.T, s ledgerstore.Store) {
 	if createErr := s.CreateSubscription(ctx, noQtySub); createErr != nil {
 		t.Fatalf("CreateSubscription(nil Quantity): %v", createErr)
 	}
+
 	gotNoQty, err := s.GetSubscription(ctx, noQtySub.ID)
 	if err != nil {
 		t.Fatalf("GetSubscription(nil Quantity): %v", err)
 	}
+
 	if gotNoQty.Quantity == nil {
-		t.Error("Quantity for a subscription created with none came back nil, want an empty non-nil map")
+		t.Error(
+			"Quantity for a subscription created with none came back nil, want an empty non-nil map",
+		)
 	}
+
 	if len(gotNoQty.Quantity) != 0 {
-		t.Errorf("Quantity for a subscription created with none: got %v, want empty", gotNoQty.Quantity)
+		t.Errorf(
+			"Quantity for a subscription created with none: got %v, want empty",
+			gotNoQty.Quantity,
+		)
 	}
 
 	got.Quantity = map[string]int64{"seats": 20}
 	if updateErr := s.UpdateSubscription(ctx, got); updateErr != nil {
 		t.Fatalf("UpdateSubscription: %v", updateErr)
 	}
+
 	gotAfterUpdate, err := s.GetSubscription(ctx, sub.ID)
 	if err != nil {
 		t.Fatalf("GetSubscription after update: %v", err)
 	}
+
 	if want := (map[string]int64{"seats": 20}); !reflect.DeepEqual(gotAfterUpdate.Quantity, want) {
 		t.Errorf("Quantity after update: got %v, want %v", gotAfterUpdate.Quantity, want)
 	}
@@ -1233,9 +1523,11 @@ func testInvoiceTenantIsolation(t *testing.T, s ledgerstore.Store) {
 
 	invA := newTestInvoice(tenantA, appID)
 	invB := newTestInvoice(tenantB, appID)
+
 	if err := s.CreateInvoice(ctx, invA); err != nil {
 		t.Fatalf("CreateInvoice(tenantA): %v", err)
 	}
+
 	if err := s.CreateInvoice(ctx, invB); err != nil {
 		t.Fatalf("CreateInvoice(tenantB): %v", err)
 	}
@@ -1244,12 +1536,15 @@ func testInvoiceTenantIsolation(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("ListInvoices(tenantA): %v", err)
 	}
+
 	if len(got) != 1 {
 		t.Fatalf("ListInvoices(tenantA): got %d rows, want exactly 1", len(got))
 	}
+
 	if got[0].ID.String() != invA.ID.String() {
 		t.Errorf("ListInvoices(tenantA): got id %s, want %s", got[0].ID, invA.ID)
 	}
+
 	if hasInvoiceID(got, invB.ID) {
 		t.Errorf("ListInvoices(tenantA) leaked tenantB's invoice %s", invB.ID)
 	}
@@ -1268,9 +1563,30 @@ func testIngestKeylessEventsAreAllCounted(t *testing.T, s ledgerstore.Store) {
 	featureKey := "keyless-" + uniqueSuffix()
 
 	events := []*meter.UsageEvent{
-		{ID: id.NewUsageEventID(), TenantID: tenantID, AppID: appID, FeatureKey: featureKey, Quantity: 1, Timestamp: time.Now().UTC()},
-		{ID: id.NewUsageEventID(), TenantID: tenantID, AppID: appID, FeatureKey: featureKey, Quantity: 2, Timestamp: time.Now().UTC()},
-		{ID: id.NewUsageEventID(), TenantID: tenantID, AppID: appID, FeatureKey: featureKey, Quantity: 4, Timestamp: time.Now().UTC()},
+		{
+			ID:         id.NewUsageEventID(),
+			TenantID:   tenantID,
+			AppID:      appID,
+			FeatureKey: featureKey,
+			Quantity:   1,
+			Timestamp:  time.Now().UTC(),
+		},
+		{
+			ID:         id.NewUsageEventID(),
+			TenantID:   tenantID,
+			AppID:      appID,
+			FeatureKey: featureKey,
+			Quantity:   2,
+			Timestamp:  time.Now().UTC(),
+		},
+		{
+			ID:         id.NewUsageEventID(),
+			TenantID:   tenantID,
+			AppID:      appID,
+			FeatureKey: featureKey,
+			Quantity:   4,
+			Timestamp:  time.Now().UTC(),
+		},
 	}
 	if err := s.IngestBatch(ctx, events); err != nil {
 		t.Fatalf("IngestBatch: %v", err)
@@ -1280,14 +1596,19 @@ func testIngestKeylessEventsAreAllCounted(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("QueryUsage: %v", err)
 	}
+
 	if len(got) != 3 {
-		t.Fatalf("QueryUsage: got %d event(s), want exactly 3 (every keyless event must be counted, not dropped as a false duplicate)", len(got))
+		t.Fatalf(
+			"QueryUsage: got %d event(s), want exactly 3 (every keyless event must be counted, not dropped as a false duplicate)",
+			len(got),
+		)
 	}
 
 	total, err := s.Aggregate(ctx, tenantID, appID, featureKey, plan.PeriodMonthly)
 	if err != nil {
 		t.Fatalf("Aggregate: %v", err)
 	}
+
 	if total != 7 {
 		t.Errorf("Aggregate: got %d, want 7 (1+2+4)", total)
 	}
@@ -1305,8 +1626,24 @@ func testIngestDuplicateKeyIsCountedOnce(t *testing.T, s ledgerstore.Store) {
 	key := "idem-" + uniqueSuffix()
 
 	events := []*meter.UsageEvent{
-		{ID: id.NewUsageEventID(), TenantID: tenantID, AppID: appID, FeatureKey: featureKey, Quantity: 3, Timestamp: time.Now().UTC(), IdempotencyKey: key},
-		{ID: id.NewUsageEventID(), TenantID: tenantID, AppID: appID, FeatureKey: featureKey, Quantity: 3, Timestamp: time.Now().UTC(), IdempotencyKey: key},
+		{
+			ID:             id.NewUsageEventID(),
+			TenantID:       tenantID,
+			AppID:          appID,
+			FeatureKey:     featureKey,
+			Quantity:       3,
+			Timestamp:      time.Now().UTC(),
+			IdempotencyKey: key,
+		},
+		{
+			ID:             id.NewUsageEventID(),
+			TenantID:       tenantID,
+			AppID:          appID,
+			FeatureKey:     featureKey,
+			Quantity:       3,
+			Timestamp:      time.Now().UTC(),
+			IdempotencyKey: key,
+		},
 	}
 	if err := s.IngestBatch(ctx, events); err != nil {
 		t.Fatalf("IngestBatch: %v", err)
@@ -1316,14 +1653,19 @@ func testIngestDuplicateKeyIsCountedOnce(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("QueryUsage: %v", err)
 	}
+
 	if len(got) != 1 {
-		t.Fatalf("QueryUsage: got %d event(s), want exactly 1 (a repeated idempotency key must collapse to one)", len(got))
+		t.Fatalf(
+			"QueryUsage: got %d event(s), want exactly 1 (a repeated idempotency key must collapse to one)",
+			len(got),
+		)
 	}
 
 	total, err := s.Aggregate(ctx, tenantID, appID, featureKey, plan.PeriodMonthly)
 	if err != nil {
 		t.Fatalf("Aggregate: %v", err)
 	}
+
 	if total != 3 {
 		t.Errorf("Aggregate: got %d, want 3 (counted once, not twice)", total)
 	}
@@ -1338,10 +1680,40 @@ func testIngestKeyedAndKeylessMix(t *testing.T, s ledgerstore.Store) {
 	featureKey := "mixed-" + uniqueSuffix()
 
 	events := []*meter.UsageEvent{
-		{ID: id.NewUsageEventID(), TenantID: tenantID, AppID: appID, FeatureKey: featureKey, Quantity: 1, Timestamp: time.Now().UTC()},
-		{ID: id.NewUsageEventID(), TenantID: tenantID, AppID: appID, FeatureKey: featureKey, Quantity: 1, Timestamp: time.Now().UTC()},
-		{ID: id.NewUsageEventID(), TenantID: tenantID, AppID: appID, FeatureKey: featureKey, Quantity: 1, Timestamp: time.Now().UTC(), IdempotencyKey: "mix-a-" + uniqueSuffix()},
-		{ID: id.NewUsageEventID(), TenantID: tenantID, AppID: appID, FeatureKey: featureKey, Quantity: 1, Timestamp: time.Now().UTC(), IdempotencyKey: "mix-b-" + uniqueSuffix()},
+		{
+			ID:         id.NewUsageEventID(),
+			TenantID:   tenantID,
+			AppID:      appID,
+			FeatureKey: featureKey,
+			Quantity:   1,
+			Timestamp:  time.Now().UTC(),
+		},
+		{
+			ID:         id.NewUsageEventID(),
+			TenantID:   tenantID,
+			AppID:      appID,
+			FeatureKey: featureKey,
+			Quantity:   1,
+			Timestamp:  time.Now().UTC(),
+		},
+		{
+			ID:             id.NewUsageEventID(),
+			TenantID:       tenantID,
+			AppID:          appID,
+			FeatureKey:     featureKey,
+			Quantity:       1,
+			Timestamp:      time.Now().UTC(),
+			IdempotencyKey: "mix-a-" + uniqueSuffix(),
+		},
+		{
+			ID:             id.NewUsageEventID(),
+			TenantID:       tenantID,
+			AppID:          appID,
+			FeatureKey:     featureKey,
+			Quantity:       1,
+			Timestamp:      time.Now().UTC(),
+			IdempotencyKey: "mix-b-" + uniqueSuffix(),
+		},
 	}
 	if err := s.IngestBatch(ctx, events); err != nil {
 		t.Fatalf("IngestBatch: %v", err)
@@ -1351,14 +1723,19 @@ func testIngestKeyedAndKeylessMix(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("QueryUsage: %v", err)
 	}
+
 	if len(got) != 4 {
-		t.Fatalf("QueryUsage: got %d event(s), want exactly 4 (2 keyless + 2 distinctly keyed, all counted)", len(got))
+		t.Fatalf(
+			"QueryUsage: got %d event(s), want exactly 4 (2 keyless + 2 distinctly keyed, all counted)",
+			len(got),
+		)
 	}
 
 	total, err := s.Aggregate(ctx, tenantID, appID, featureKey, plan.PeriodMonthly)
 	if err != nil {
 		t.Fatalf("Aggregate: %v", err)
 	}
+
 	if total != 4 {
 		t.Errorf("Aggregate: got %d, want 4", total)
 	}
@@ -1373,6 +1750,7 @@ func testUsageTenantIsolation(t *testing.T, s ledgerstore.Store) {
 	tenantB := "tenant-b-" + uniqueSuffix()
 
 	evtA := newTestUsageEvent(tenantA, appID)
+
 	evtB := newTestUsageEvent(tenantB, appID)
 	if err := s.IngestBatch(ctx, []*meter.UsageEvent{evtA, evtB}); err != nil {
 		t.Fatalf("IngestBatch: %v", err)
@@ -1382,12 +1760,15 @@ func testUsageTenantIsolation(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("QueryUsage(tenantA): %v", err)
 	}
+
 	if len(got) != 1 {
 		t.Fatalf("QueryUsage(tenantA): got %d rows, want exactly 1", len(got))
 	}
+
 	if got[0].ID.String() != evtA.ID.String() {
 		t.Errorf("QueryUsage(tenantA): got id %s, want %s", got[0].ID, evtA.ID)
 	}
+
 	if hasUsageEventID(got, evtB.ID) {
 		t.Errorf("QueryUsage(tenantA) leaked tenantB's usage event %s", evtB.ID)
 	}
@@ -1426,12 +1807,15 @@ func testEmptyTenantIDBehavior(t *testing.T, s ledgerstore.Store) {
 	subA := newTestSubscription(tenantA, appID)
 	subB := newTestSubscription(tenantB, appID)
 	subOther := newTestSubscription(tenantOther, otherAppID)
+
 	if err := s.CreateSubscription(ctx, subA); err != nil {
 		t.Fatalf("CreateSubscription(tenantA): %v", err)
 	}
+
 	if err := s.CreateSubscription(ctx, subB); err != nil {
 		t.Fatalf("CreateSubscription(tenantB): %v", err)
 	}
+
 	if err := s.CreateSubscription(ctx, subOther); err != nil {
 		t.Fatalf("CreateSubscription(otherApp): %v", err)
 	}
@@ -1439,18 +1823,22 @@ func testEmptyTenantIDBehavior(t *testing.T, s ledgerstore.Store) {
 	invA := newTestInvoice(tenantA, appID)
 	invB := newTestInvoice(tenantB, appID)
 	invOther := newTestInvoice(tenantOther, otherAppID)
+
 	if err := s.CreateInvoice(ctx, invA); err != nil {
 		t.Fatalf("CreateInvoice(tenantA): %v", err)
 	}
+
 	if err := s.CreateInvoice(ctx, invB); err != nil {
 		t.Fatalf("CreateInvoice(tenantB): %v", err)
 	}
+
 	if err := s.CreateInvoice(ctx, invOther); err != nil {
 		t.Fatalf("CreateInvoice(otherApp): %v", err)
 	}
 
 	evtA := newTestUsageEvent(tenantA, appID)
 	evtB := newTestUsageEvent(tenantB, appID)
+
 	evtOther := newTestUsageEvent(tenantOther, otherAppID)
 	if err := s.IngestBatch(ctx, []*meter.UsageEvent{evtA, evtB, evtOther}); err != nil {
 		t.Fatalf("IngestBatch: %v", err)
@@ -1460,48 +1848,77 @@ func testEmptyTenantIDBehavior(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("ListSubscriptions(empty tenant): %v", err)
 	}
+
 	if !hasSubscriptionID(subs, subA.ID) || !hasSubscriptionID(subs, subB.ID) {
-		t.Errorf("ListSubscriptions(tenantID=%q, appID=%s): got %d row(s) not covering both tenants; "+
-			"an empty tenant id is expected, today, to match every tenant under the app", "", appID, len(subs))
+		t.Errorf(
+			"ListSubscriptions(tenantID=%q, appID=%s): got %d row(s) not covering both tenants; "+
+				"an empty tenant id is expected, today, to match every tenant under the app",
+			"",
+			appID,
+			len(subs),
+		)
 	}
+
 	if hasSubscriptionID(subs, subOther.ID) {
 		t.Errorf("ListSubscriptions(tenantID=%q, appID=%s): got otherApp's subscription %s; "+
 			"an empty tenant id must not also drop the appID filter", "", appID, subOther.ID)
 	}
+
 	if len(subs) != 2 {
-		t.Errorf("ListSubscriptions(tenantID=%q, appID=%s): got %d row(s), want exactly 2 (tenantA + tenantB)", "", appID, len(subs))
+		t.Errorf(
+			"ListSubscriptions(tenantID=%q, appID=%s): got %d row(s), want exactly 2 (tenantA + tenantB)",
+			"",
+			appID,
+			len(subs),
+		)
 	}
 
 	invs, err := s.ListInvoices(ctx, "", appID, invoice.ListOpts{})
 	if err != nil {
 		t.Fatalf("ListInvoices(empty tenant): %v", err)
 	}
+
 	if !hasInvoiceID(invs, invA.ID) || !hasInvoiceID(invs, invB.ID) {
 		t.Errorf("ListInvoices(tenantID=%q, appID=%s): got %d row(s) not covering both tenants; "+
 			"an empty tenant id is expected, today, to match every tenant under the app", "", appID, len(invs))
 	}
+
 	if hasInvoiceID(invs, invOther.ID) {
 		t.Errorf("ListInvoices(tenantID=%q, appID=%s): got otherApp's invoice %s; "+
 			"an empty tenant id must not also drop the appID filter", "", appID, invOther.ID)
 	}
+
 	if len(invs) != 2 {
-		t.Errorf("ListInvoices(tenantID=%q, appID=%s): got %d row(s), want exactly 2 (tenantA + tenantB)", "", appID, len(invs))
+		t.Errorf(
+			"ListInvoices(tenantID=%q, appID=%s): got %d row(s), want exactly 2 (tenantA + tenantB)",
+			"",
+			appID,
+			len(invs),
+		)
 	}
 
 	evts, err := s.QueryUsage(ctx, "", appID, meter.QueryOpts{})
 	if err != nil {
 		t.Fatalf("QueryUsage(empty tenant): %v", err)
 	}
+
 	if !hasUsageEventID(evts, evtA.ID) || !hasUsageEventID(evts, evtB.ID) {
 		t.Errorf("QueryUsage(tenantID=%q, appID=%s): got %d row(s) not covering both tenants; "+
 			"an empty tenant id is expected, today, to match every tenant under the app", "", appID, len(evts))
 	}
+
 	if hasUsageEventID(evts, evtOther.ID) {
 		t.Errorf("QueryUsage(tenantID=%q, appID=%s): got otherApp's usage event %s; "+
 			"an empty tenant id must not also drop the appID filter", "", appID, evtOther.ID)
 	}
+
 	if len(evts) != 2 {
-		t.Errorf("QueryUsage(tenantID=%q, appID=%s): got %d row(s), want exactly 2 (tenantA + tenantB)", "", appID, len(evts))
+		t.Errorf(
+			"QueryUsage(tenantID=%q, appID=%s): got %d row(s), want exactly 2 (tenantA + tenantB)",
+			"",
+			appID,
+			len(evts),
+		)
 	}
 }
 
@@ -1535,11 +1952,19 @@ func testQueryUsageWindowIsHalfOpen(t *testing.T, s ledgerstore.Store) {
 	beforeEnd := at(end.Add(-time.Second))
 	atEnd := at(end)
 
-	if err := s.IngestBatch(ctx, []*meter.UsageEvent{beforeStart, atStart, afterStart, beforeEnd, atEnd}); err != nil {
+	if err := s.IngestBatch(
+		ctx,
+		[]*meter.UsageEvent{beforeStart, atStart, afterStart, beforeEnd, atEnd},
+	); err != nil {
 		t.Fatalf("IngestBatch: %v", err)
 	}
 
-	got, err := s.QueryUsage(ctx, tenantID, appID, meter.QueryOpts{FeatureKey: featureKey, Start: start, End: end})
+	got, err := s.QueryUsage(
+		ctx,
+		tenantID,
+		appID,
+		meter.QueryOpts{FeatureKey: featureKey, Start: start, End: end},
+	)
 	if err != nil {
 		t.Fatalf("QueryUsage: %v", err)
 	}
@@ -1556,13 +1981,19 @@ func testQueryUsageWindowIsHalfOpen(t *testing.T, s ledgerstore.Store) {
 			t.Errorf("QueryUsage[Start, End): missing %s; the window is closed at Start", want.name)
 		}
 	}
+
 	if hasUsageEventID(got, beforeStart.ID) {
 		t.Errorf("QueryUsage[Start, End): returned the event a second before Start")
 	}
+
 	if hasUsageEventID(got, atEnd.ID) {
-		t.Errorf("QueryUsage[Start, End): returned the event exactly at End; the window is open at End, "+
-			"and that event belongs to the next billing period (got %d events)", len(got))
+		t.Errorf(
+			"QueryUsage[Start, End): returned the event exactly at End; the window is open at End, "+
+				"and that event belongs to the next billing period (got %d events)",
+			len(got),
+		)
 	}
+
 	if len(got) != 3 {
 		t.Errorf("QueryUsage[Start, End): got %d events, want exactly 3", len(got))
 	}
@@ -1570,15 +2001,21 @@ func testQueryUsageWindowIsHalfOpen(t *testing.T, s ledgerstore.Store) {
 	// The bounds are instants, not strings: the same window written in
 	// another zone selects the same events.
 	zone := time.FixedZone("UTC+5", 5*60*60)
+
 	shifted, err := s.QueryUsage(ctx, tenantID, appID, meter.QueryOpts{
 		FeatureKey: featureKey, Start: start.In(zone), End: end.In(zone),
 	})
 	if err != nil {
 		t.Fatalf("QueryUsage with bounds in another zone: %v", err)
 	}
-	if len(shifted) != 3 || !hasUsageEventID(shifted, atStart.ID) || !hasUsageEventID(shifted, afterStart.ID) ||
+
+	if len(shifted) != 3 || !hasUsageEventID(shifted, atStart.ID) ||
+		!hasUsageEventID(shifted, afterStart.ID) ||
 		!hasUsageEventID(shifted, beforeEnd.ID) {
-		t.Errorf("QueryUsage with bounds in another zone: got %d events, want the same three as the UTC window", len(shifted))
+		t.Errorf(
+			"QueryUsage with bounds in another zone: got %d events, want the same three as the UTC window",
+			len(shifted),
+		)
 	}
 }
 
@@ -1597,6 +2034,7 @@ func nowWithMonotonic(t *testing.T) time.Time {
 	if !strings.Contains(got.String(), "m=+") {
 		t.Fatalf("time.Now() has no monotonic reading: %q", got.String())
 	}
+
 	return got
 }
 
@@ -1624,6 +2062,7 @@ func testSubscriptionPeriodsRoundTripFromTimeNow(t *testing.T, s ledgerstore.Sto
 	sub := newTestSubscription(tenantID, appID)
 	sub.CurrentPeriodStart = start
 	sub.CurrentPeriodEnd = end
+
 	sub.CancelAt = &cancelAt
 	if err := s.CreateSubscription(ctx, sub); err != nil {
 		t.Fatalf("CreateSubscription: %v", err)
@@ -1637,12 +2076,15 @@ func testSubscriptionPeriodsRoundTripFromTimeNow(t *testing.T, s ledgerstore.Sto
 	if got.CurrentPeriodStart.IsZero() || !sameInstantToMillisecond(got.CurrentPeriodStart, start) {
 		t.Errorf("CurrentPeriodStart: got %v, want the instant %v", got.CurrentPeriodStart, start)
 	}
+
 	if got.CurrentPeriodEnd.IsZero() || !sameInstantToMillisecond(got.CurrentPeriodEnd, end) {
 		t.Errorf("CurrentPeriodEnd: got %v, want the instant %v", got.CurrentPeriodEnd, end)
 	}
+
 	if got.CancelAt == nil || got.CancelAt.IsZero() {
 		t.Fatalf("CancelAt: got %v, want the instant %v", got.CancelAt, cancelAt)
 	}
+
 	if !sameInstantToMillisecond(*got.CancelAt, cancelAt) {
 		t.Errorf("CancelAt: got %v, want the instant %v", *got.CancelAt, cancelAt)
 	}
@@ -1659,6 +2101,7 @@ func testUsageEventRoundTripsFromTimeNow(t *testing.T, s ledgerstore.Store) {
 	featureKey := "local-" + uniqueSuffix()
 
 	stamp := nowWithMonotonic(t)
+
 	evt := &meter.UsageEvent{
 		ID: id.NewUsageEventID(), TenantID: tenantID, AppID: appID,
 		FeatureKey: featureKey, Quantity: 1, Timestamp: stamp,
@@ -1675,9 +2118,11 @@ func testUsageEventRoundTripsFromTimeNow(t *testing.T, s ledgerstore.Store) {
 	if err != nil {
 		t.Fatalf("QueryUsage: %v", err)
 	}
+
 	if len(got) != 1 || got[0].ID.String() != evt.ID.String() {
 		t.Fatalf("QueryUsage: got %d events, want exactly the ingested event %s", len(got), evt.ID)
 	}
+
 	if got[0].Timestamp.IsZero() || !sameInstantToMillisecond(got[0].Timestamp, stamp) {
 		t.Errorf("Timestamp: got %v, want the instant %v", got[0].Timestamp, stamp)
 	}
@@ -1698,6 +2143,7 @@ func testUsageEventNearABoundaryInALocalZone(t *testing.T, s ledgerstore.Store) 
 	end := start.AddDate(0, 1, 0)
 
 	local := time.FixedZone("CDT", -5*3600)
+
 	evt := &meter.UsageEvent{
 		ID: id.NewUsageEventID(), TenantID: tenantID, AppID: appID,
 		FeatureKey: featureKey, Quantity: 1, Timestamp: start.Add(30 * time.Minute).In(local),
@@ -1706,13 +2152,22 @@ func testUsageEventNearABoundaryInALocalZone(t *testing.T, s ledgerstore.Store) 
 		t.Fatalf("IngestBatch: %v", err)
 	}
 
-	got, err := s.QueryUsage(ctx, tenantID, appID, meter.QueryOpts{FeatureKey: featureKey, Start: start, End: end})
+	got, err := s.QueryUsage(
+		ctx,
+		tenantID,
+		appID,
+		meter.QueryOpts{FeatureKey: featureKey, Start: start, End: end},
+	)
 	if err != nil {
 		t.Fatalf("QueryUsage: %v", err)
 	}
+
 	if len(got) != 1 || got[0].ID.String() != evt.ID.String() {
-		t.Errorf("QueryUsage[Start, End): got %d events, want the event stamped 30 minutes after Start "+
-			"(its UTC-5 wall clock is the previous evening, and a store that compares text drops it)", len(got))
+		t.Errorf(
+			"QueryUsage[Start, End): got %d events, want the event stamped 30 minutes after Start "+
+				"(its UTC-5 wall clock is the previous evening, and a store that compares text drops it)",
+			len(got),
+		)
 	}
 }
 
@@ -1733,6 +2188,7 @@ func testListInvoicesBoundsAreInstants(t *testing.T, s ledgerstore.Store) {
 	inPeriod := newTestInvoice(tenantID, appID)
 	inPeriod.PeriodStart, inPeriod.PeriodEnd = start, end
 	nextPeriod := newTestInvoice(tenantID, appID)
+
 	nextPeriod.PeriodStart, nextPeriod.PeriodEnd = end, end.AddDate(0, 1, 0)
 	for _, inv := range []*invoice.Invoice{inPeriod, nextPeriod} {
 		if err := s.CreateInvoice(ctx, inv); err != nil {
@@ -1741,12 +2197,22 @@ func testListInvoicesBoundsAreInstants(t *testing.T, s ledgerstore.Store) {
 	}
 
 	for name, zone := range map[string]*time.Location{"UTC": time.UTC, "UTC-5": time.FixedZone("CDT", -5*3600)} {
-		got, err := s.ListInvoices(ctx, tenantID, appID, invoice.ListOpts{Start: start.In(zone), End: end.In(zone)})
+		got, err := s.ListInvoices(
+			ctx,
+			tenantID,
+			appID,
+			invoice.ListOpts{Start: start.In(zone), End: end.In(zone)},
+		)
 		if err != nil {
 			t.Fatalf("ListInvoices with bounds in %s: %v", name, err)
 		}
+
 		if len(got) != 1 || got[0].ID.String() != inPeriod.ID.String() {
-			t.Errorf("ListInvoices with bounds in %s: got %d invoices, want exactly the invoice for [Start, End)", name, len(got))
+			t.Errorf(
+				"ListInvoices with bounds in %s: got %d invoices, want exactly the invoice for [Start, End)",
+				name,
+				len(got),
+			)
 		}
 	}
 }
@@ -1767,7 +2233,13 @@ func testListInvoicesBoundsAreInstants(t *testing.T, s ledgerstore.Store) {
 // the assertion about paging rather than about tie-breaking.
 func testListsPageInAStableOrder(t *testing.T, s ledgerstore.Store) {
 	base := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
-	testListsPage(t, s, func(i int) time.Time { return base.Add(time.Duration(i) * time.Second) }, false)
+
+	testListsPage(
+		t,
+		s,
+		func(i int) time.Time { return base.Add(time.Duration(i) * time.Second) },
+		false,
+	)
 }
 
 // testListsPageStablyOnEqualTimestamps stamps every row with one instant, as
@@ -1777,6 +2249,7 @@ func testListsPageInAStableOrder(t *testing.T, s ledgerstore.Store) {
 // vanishes between two. The id is the tie-break that keeps them in place.
 func testListsPageStablyOnEqualTimestamps(t *testing.T, s ledgerstore.Store) {
 	instant := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
+
 	testListsPage(t, s, func(int) time.Time { return instant }, true)
 }
 
@@ -1790,7 +2263,9 @@ func testListsPage(t *testing.T, s ledgerstore.Store, at func(i int) time.Time, 
 	tenantID := "tenant-" + uniqueSuffix()
 
 	const rows = 5
+
 	var globalIDs []string
+
 	for i := 0; i < rows; i++ {
 		p := &plan.Plan{
 			Entity: types.Entity{CreatedAt: at(i), UpdatedAt: at(i)}, ID: id.NewPlanID(),
@@ -1802,40 +2277,47 @@ func testListsPage(t *testing.T, s ledgerstore.Store, at func(i int) time.Time, 
 		}
 
 		sub := newTestSubscription(tenantID, appID)
+
 		sub.CreatedAt, sub.UpdatedAt = at(i), at(i)
 		if err := s.CreateSubscription(ctx, sub); err != nil {
 			t.Fatalf("CreateSubscription: %v", err)
 		}
 
 		inv := newTestInvoice(tenantID, appID)
+
 		inv.CreatedAt, inv.UpdatedAt = at(i), at(i)
 		if err := s.CreateInvoice(ctx, inv); err != nil {
 			t.Fatalf("CreateInvoice: %v", err)
 		}
 
 		c := newTestCoupon(appID)
+
 		c.CreatedAt, c.UpdatedAt = at(i), at(i)
 		if err := s.CreateCoupon(ctx, c); err != nil {
 			t.Fatalf("CreateCoupon: %v", err)
 		}
 
 		e := newTestUsageEvent(tenantID, appID)
+
 		e.Timestamp = at(i)
 		if err := s.IngestBatch(ctx, []*meter.UsageEvent{e}); err != nil {
 			t.Fatalf("IngestBatch: %v", err)
 		}
 
 		f := newTestFeature(appID)
+
 		f.CreatedAt, f.UpdatedAt = at(i), at(i)
 		if err := s.CreateFeature(ctx, f); err != nil {
 			t.Fatalf("CreateFeature: %v", err)
 		}
 
 		g := newTestFeature("")
+
 		g.CreatedAt, g.UpdatedAt = at(i), at(i)
 		if err := s.CreateFeature(ctx, g); err != nil {
 			t.Fatalf("CreateFeature (global): %v", err)
 		}
+
 		globalIDs = append(globalIDs, g.ID.String())
 	}
 
@@ -1849,58 +2331,87 @@ func testListsPage(t *testing.T, s ledgerstore.Store, at func(i int) time.Time, 
 	}{
 		{"ListPlans", false, func(limit, offset int) ([]string, error) {
 			got, err := s.ListPlans(ctx, appID, plan.ListOpts{Limit: limit, Offset: offset})
+
 			ids := make([]string, len(got))
 			for i, r := range got {
 				ids[i] = r.ID.String()
 			}
+
 			return ids, err
 		}},
 		{"ListSubscriptions", false, func(limit, offset int) ([]string, error) {
-			got, err := s.ListSubscriptions(ctx, tenantID, appID, subscription.ListOpts{Limit: limit, Offset: offset})
+			got, err := s.ListSubscriptions(
+				ctx,
+				tenantID,
+				appID,
+				subscription.ListOpts{Limit: limit, Offset: offset},
+			)
+
 			ids := make([]string, len(got))
 			for i, r := range got {
 				ids[i] = r.ID.String()
 			}
+
 			return ids, err
 		}},
 		{"ListInvoices", false, func(limit, offset int) ([]string, error) {
-			got, err := s.ListInvoices(ctx, tenantID, appID, invoice.ListOpts{Limit: limit, Offset: offset})
+			got, err := s.ListInvoices(
+				ctx,
+				tenantID,
+				appID,
+				invoice.ListOpts{Limit: limit, Offset: offset},
+			)
+
 			ids := make([]string, len(got))
 			for i, r := range got {
 				ids[i] = r.ID.String()
 			}
+
 			return ids, err
 		}},
 		{"ListCoupons", false, func(limit, offset int) ([]string, error) {
 			got, err := s.ListCoupons(ctx, appID, coupon.ListOpts{Limit: limit, Offset: offset})
+
 			ids := make([]string, len(got))
 			for i, r := range got {
 				ids[i] = r.ID.String()
 			}
+
 			return ids, err
 		}},
 		{"QueryUsage", false, func(limit, offset int) ([]string, error) {
-			got, err := s.QueryUsage(ctx, tenantID, appID, meter.QueryOpts{Limit: limit, Offset: offset})
+			got, err := s.QueryUsage(
+				ctx,
+				tenantID,
+				appID,
+				meter.QueryOpts{Limit: limit, Offset: offset},
+			)
+
 			ids := make([]string, len(got))
 			for i, r := range got {
 				ids[i] = r.ID.String()
 			}
+
 			return ids, err
 		}},
 		{"ListFeatures", false, func(limit, offset int) ([]string, error) {
 			got, err := s.ListFeatures(ctx, appID, feature.ListOpts{Limit: limit, Offset: offset})
+
 			ids := make([]string, len(got))
 			for i, r := range got {
 				ids[i] = r.ID.String()
 			}
+
 			return ids, err
 		}},
 		{"ListGlobalFeatures", true, func(limit, offset int) ([]string, error) {
 			got, err := s.ListGlobalFeatures(ctx, feature.ListOpts{Limit: limit, Offset: offset})
+
 			ids := make([]string, len(got))
 			for i, r := range got {
 				ids[i] = r.ID.String()
 			}
+
 			return ids, err
 		}},
 	}
@@ -1912,42 +2423,53 @@ func testListsPage(t *testing.T, s ledgerstore.Store, at func(i int) time.Time, 
 					// Oldest first with ties broken by id, ascending.
 					sort.Strings(globalIDs)
 				}
+
 				testSharedListPages(t, l.list, globalIDs)
 			})
+
 			continue
 		}
+
 		t.Run(l.name, func(t *testing.T) {
 			all, err := l.list(0, 0)
 			if err != nil {
 				t.Fatalf("unpaged: %v", err)
 			}
+
 			if len(all) != rows {
 				t.Fatalf("unpaged: got %d rows, want %d", len(all), rows)
 			}
 
 			var joined []string
+
 			seen := map[string]int{}
+
 			for i, wantSize := range []int{2, 2, 1} {
 				page, pageErr := l.list(2, i*2)
 				if pageErr != nil {
 					t.Fatalf("page at offset %d: %v", i*2, pageErr)
 				}
+
 				if len(page) != wantSize {
 					t.Errorf("page at offset %d: got %d rows, want %d", i*2, len(page), wantSize)
 				}
+
 				for _, rid := range page {
 					seen[rid]++
 					joined = append(joined, rid)
 				}
 			}
+
 			for _, rid := range all {
 				if seen[rid] != 1 {
 					t.Errorf("row %s appears on %d pages, want exactly 1", rid, seen[rid])
 				}
 			}
+
 			if len(seen) != rows {
 				t.Errorf("pages hold %d distinct rows, want %d", len(seen), rows)
 			}
+
 			if !reflect.DeepEqual(joined, all) {
 				t.Errorf("pages read %v, but the unpaged list reads %v", joined, all)
 			}
@@ -1956,6 +2478,7 @@ func testListsPage(t *testing.T, s ledgerstore.Store, at func(i int) time.Time, 
 			if err != nil {
 				t.Fatalf("page past the end: %v", err)
 			}
+
 			if len(past) != 0 {
 				t.Errorf("page past the end: got %d rows, want 0", len(past))
 			}
@@ -1969,7 +2492,11 @@ func testListsPage(t *testing.T, s ledgerstore.Store, at func(i int) time.Time, 
 // read exactly as the unpaged list does, and a page past the end is empty.
 // It also asserts the rows this test created (mine, oldest first) come back
 // in that order, which is the order the backends promise.
-func testSharedListPages(t *testing.T, list func(limit, offset int) ([]string, error), mine []string) {
+func testSharedListPages(
+	t *testing.T,
+	list func(limit, offset int) ([]string, error),
+	mine []string,
+) {
 	t.Helper()
 
 	all, err := list(0, 0)
@@ -1983,34 +2510,46 @@ func testSharedListPages(t *testing.T, list func(limit, offset int) ([]string, e
 			next++
 		}
 	}
+
 	if next != len(mine) {
-		t.Errorf("the unpaged list holds %d of the %d rows created, in creation order; want all of them", next, len(mine))
+		t.Errorf(
+			"the unpaged list holds %d of the %d rows created, in creation order; want all of them",
+			next,
+			len(mine),
+		)
 	}
 
 	var joined []string
+
 	seen := map[string]int{}
+
 	for offset := 0; offset <= len(all); offset += 2 {
 		page, pageErr := list(2, offset)
 		if pageErr != nil {
 			t.Fatalf("page at offset %d: %v", offset, pageErr)
 		}
+
 		want := 2
 		if len(all)-offset < want {
 			want = len(all) - offset
 		}
+
 		if len(page) != want {
 			t.Errorf("page at offset %d: got %d rows, want %d", offset, len(page), want)
 		}
+
 		for _, rid := range page {
 			seen[rid]++
 			joined = append(joined, rid)
 		}
 	}
+
 	for _, rid := range all {
 		if seen[rid] != 1 {
 			t.Errorf("row %s appears on %d pages, want exactly 1", rid, seen[rid])
 		}
 	}
+
 	if !reflect.DeepEqual(joined, all) {
 		t.Errorf("pages read %v, but the unpaged list reads %v", joined, all)
 	}
@@ -2019,6 +2558,7 @@ func testSharedListPages(t *testing.T, list func(limit, offset int) ([]string, e
 	if err != nil {
 		t.Fatalf("page past the end: %v", err)
 	}
+
 	if len(past) != 0 {
 		t.Errorf("page past the end: got %d rows, want 0", len(past))
 	}
@@ -2039,24 +2579,34 @@ func testCancelSubscriptionAtNowEndsIt(t *testing.T, s ledgerstore.Store) {
 	if err := s.CreateSubscription(ctx, sub); err != nil {
 		t.Fatalf("CreateSubscription: %v", err)
 	}
+
 	before := time.Now()
 	returned, err := s.CancelSubscription(ctx, sub.ID, true)
 	after := time.Now()
+
 	if err != nil {
 		t.Fatalf("CancelSubscription: %v", err)
 	}
+
 	requireStampedDuring(t, "the returned cancel_at", returned, before, after)
 
 	got, err := s.GetSubscription(ctx, sub.ID)
 	if err != nil {
 		t.Fatalf("GetSubscription: %v", err)
 	}
+
 	if got.Status != subscription.StatusCanceled {
-		t.Errorf("status after an immediate cancel: got %q, want %q", got.Status, subscription.StatusCanceled)
+		t.Errorf(
+			"status after an immediate cancel: got %q, want %q",
+			got.Status,
+			subscription.StatusCanceled,
+		)
 	}
+
 	if got.CancelAt == nil || !sameInstantToMillisecond(*got.CancelAt, returned) {
 		t.Errorf("cancel_at %v, want the returned %v", got.CancelAt, returned)
 	}
+
 	if got.CanceledAt == nil || !sameInstantToMillisecond(*got.CanceledAt, returned) {
 		t.Errorf("canceled_at %v, want the returned %v", got.CanceledAt, returned)
 	}
@@ -2067,21 +2617,34 @@ func testCancelSubscriptionAtNowEndsIt(t *testing.T, s ledgerstore.Store) {
 	if err = s.CreateSubscription(ctx, later); err != nil {
 		t.Fatalf("CreateSubscription: %v", err)
 	}
+
 	returned, err = s.CancelSubscription(ctx, later.ID, false)
 	if err != nil {
 		t.Fatalf("CancelSubscription (scheduled): %v", err)
 	}
+
 	if !sameInstantToMillisecond(returned, later.CurrentPeriodEnd) {
-		t.Errorf("a scheduled cancel returned %v, want the period end %v", returned, later.CurrentPeriodEnd)
+		t.Errorf(
+			"a scheduled cancel returned %v, want the period end %v",
+			returned,
+			later.CurrentPeriodEnd,
+		)
 	}
+
 	gotLater, err := s.GetSubscription(ctx, later.ID)
 	if err != nil {
 		t.Fatalf("GetSubscription (scheduled): %v", err)
 	}
+
 	if gotLater.Status != subscription.StatusActive || gotLater.CanceledAt != nil ||
 		gotLater.CancelAt == nil || !sameInstantToMillisecond(*gotLater.CancelAt, later.CurrentPeriodEnd) {
-		t.Errorf("a scheduled cancel: status %q cancel_at %v canceled_at %v, want active, the period end %v, and none",
-			gotLater.Status, gotLater.CancelAt, gotLater.CanceledAt, later.CurrentPeriodEnd)
+		t.Errorf(
+			"a scheduled cancel: status %q cancel_at %v canceled_at %v, want active, the period end %v, and none",
+			gotLater.Status,
+			gotLater.CancelAt,
+			gotLater.CanceledAt,
+			later.CurrentPeriodEnd,
+		)
 	}
 }
 
@@ -2108,6 +2671,7 @@ func backdate(e *types.Entity) {
 // precision.
 func requireStampedDuring(t *testing.T, column string, got, start, end time.Time) {
 	t.Helper()
+
 	if got.Before(start.Add(-time.Second)) || got.After(end.Add(time.Second)) {
 		t.Errorf("%s: got %v, want a time between %v and %v", column, got, start, end)
 	}
@@ -2127,23 +2691,28 @@ func testArchivePlanStoresTheArchive(t *testing.T, s ledgerstore.Store) {
 		},
 	}
 	backdate(&p.Entity)
+
 	if err := s.CreatePlan(ctx, p); err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
 
 	start := time.Now()
+
 	if err := s.ArchivePlan(ctx, p.ID); err != nil {
 		t.Fatalf("ArchivePlan: %v", err)
 	}
+
 	end := time.Now()
 
 	got, err := s.GetPlan(ctx, p.ID)
 	if err != nil {
 		t.Fatalf("GetPlan: %v", err)
 	}
+
 	if got.Status != plan.StatusArchived {
 		t.Errorf("status: got %q, want %q", got.Status, plan.StatusArchived)
 	}
+
 	requireStampedDuring(t, "updated_at", got.UpdatedAt, start, end)
 
 	if err = s.ArchivePlan(ctx, id.NewPlanID()); !errors.Is(err, ledger.ErrPlanNotFound) {
@@ -2157,23 +2726,28 @@ func testArchiveFeatureStoresTheArchive(t *testing.T, s ledgerstore.Store) {
 
 	f := newTestFeature(appID)
 	backdate(&f.Entity)
+
 	if err := s.CreateFeature(ctx, f); err != nil {
 		t.Fatalf("CreateFeature: %v", err)
 	}
 
 	start := time.Now()
+
 	if err := s.ArchiveFeature(ctx, f.ID); err != nil {
 		t.Fatalf("ArchiveFeature: %v", err)
 	}
+
 	end := time.Now()
 
 	got, err := s.GetFeature(ctx, f.ID)
 	if err != nil {
 		t.Fatalf("GetFeature: %v", err)
 	}
+
 	if got.Status != feature.StatusArchived {
 		t.Errorf("status: got %q, want %q", got.Status, feature.StatusArchived)
 	}
+
 	requireStampedDuring(t, "updated_at", got.UpdatedAt, start, end)
 
 	if err = s.ArchiveFeature(ctx, id.NewFeatureID()); !errors.Is(err, ledger.ErrFeatureNotFound) {
@@ -2192,37 +2766,55 @@ func testMarkInvoicePaidStoresThePayment(t *testing.T, s ledgerstore.Store) {
 	inv := newTestInvoice(tenantID, appID)
 	inv.Status = invoice.StatusPending
 	backdate(&inv.Entity)
+
 	if err := s.CreateInvoice(ctx, inv); err != nil {
 		t.Fatalf("CreateInvoice: %v", err)
 	}
 
-	paidAt := time.Now().Add(-30 * time.Minute).Truncate(time.Second).In(time.FixedZone("CDT", -5*3600))
+	paidAt := time.Now().
+		Add(-30 * time.Minute).
+		Truncate(time.Second).
+		In(time.FixedZone("CDT", -5*3600))
 	paymentRef := "pi_" + uniqueSuffix()
 
 	start := time.Now()
+
 	if err := s.MarkInvoicePaid(ctx, inv.ID, paidAt, paymentRef); err != nil {
 		t.Fatalf("MarkInvoicePaid: %v", err)
 	}
+
 	end := time.Now()
 
 	got, err := s.GetInvoice(ctx, inv.ID)
 	if err != nil {
 		t.Fatalf("GetInvoice: %v", err)
 	}
+
 	if got.Status != invoice.StatusPaid {
 		t.Errorf("status: got %q, want %q", got.Status, invoice.StatusPaid)
 	}
+
 	if got.PaidAt == nil {
 		t.Error("paid_at was not stored")
 	} else if !got.PaidAt.Equal(paidAt) {
 		t.Errorf("paid_at: got %v, want %v", got.PaidAt, paidAt)
 	}
+
 	if got.PaymentRef != paymentRef {
 		t.Errorf("payment_ref: got %q, want %q", got.PaymentRef, paymentRef)
 	}
+
 	requireStampedDuring(t, "updated_at", got.UpdatedAt, start, end)
 
-	if err = s.MarkInvoicePaid(ctx, id.NewInvoiceID(), paidAt, paymentRef); !errors.Is(err, ledger.ErrInvoiceNotFound) {
+	if err = s.MarkInvoicePaid(
+		ctx,
+		id.NewInvoiceID(),
+		paidAt,
+		paymentRef,
+	); !errors.Is(
+		err,
+		ledger.ErrInvoiceNotFound,
+	) {
 		t.Errorf("MarkInvoicePaid on an unknown invoice: got %v, want ErrInvoiceNotFound", err)
 	}
 }
@@ -2235,6 +2827,7 @@ func testMarkInvoiceVoidedStoresTheVoid(t *testing.T, s ledgerstore.Store) {
 	inv := newTestInvoice(tenantID, appID)
 	inv.Status = invoice.StatusPending
 	backdate(&inv.Entity)
+
 	if err := s.CreateInvoice(ctx, inv); err != nil {
 		t.Fatalf("CreateInvoice: %v", err)
 	}
@@ -2242,29 +2835,42 @@ func testMarkInvoiceVoidedStoresTheVoid(t *testing.T, s ledgerstore.Store) {
 	reason := "duplicate of " + uniqueSuffix()
 
 	start := time.Now()
+
 	if err := s.MarkInvoiceVoided(ctx, inv.ID, reason); err != nil {
 		t.Fatalf("MarkInvoiceVoided: %v", err)
 	}
+
 	end := time.Now()
 
 	got, err := s.GetInvoice(ctx, inv.ID)
 	if err != nil {
 		t.Fatalf("GetInvoice: %v", err)
 	}
+
 	if got.Status != invoice.StatusVoided {
 		t.Errorf("status: got %q, want %q", got.Status, invoice.StatusVoided)
 	}
+
 	if got.VoidedAt == nil {
 		t.Error("voided_at was not stored")
 	} else {
 		requireStampedDuring(t, "voided_at", *got.VoidedAt, start, end)
 	}
+
 	if got.VoidReason != reason {
 		t.Errorf("void_reason: got %q, want %q", got.VoidReason, reason)
 	}
+
 	requireStampedDuring(t, "updated_at", got.UpdatedAt, start, end)
 
-	if err = s.MarkInvoiceVoided(ctx, id.NewInvoiceID(), reason); !errors.Is(err, ledger.ErrInvoiceNotFound) {
+	if err = s.MarkInvoiceVoided(
+		ctx,
+		id.NewInvoiceID(),
+		reason,
+	); !errors.Is(
+		err,
+		ledger.ErrInvoiceNotFound,
+	) {
 		t.Errorf("MarkInvoiceVoided on an unknown invoice: got %v, want ErrInvoiceNotFound", err)
 	}
 }
@@ -2296,6 +2902,7 @@ func testListFiltersCombine(t *testing.T, s ledgerstore.Store) {
 			if err := s.CreatePlan(ctx, p); err != nil {
 				t.Fatalf("CreatePlan: %v", err)
 			}
+
 			return p
 		}
 		want := newPlan(appID, plan.StatusArchived)
@@ -2306,16 +2913,19 @@ func testListFiltersCombine(t *testing.T, s ledgerstore.Store) {
 		if err != nil {
 			t.Fatalf("ListPlans: %v", err)
 		}
+
 		requireIDs(t, "ListPlans", planIDs(got), want.ID.String())
 	})
 
 	t.Run("ListFeatures", func(t *testing.T) {
 		newFeature := func(app string, status feature.Status) *feature.Feature {
 			f := newTestFeature(app)
+
 			f.Status = status
 			if err := s.CreateFeature(ctx, f); err != nil {
 				t.Fatalf("CreateFeature: %v", err)
 			}
+
 			return f
 		}
 		want := newFeature(appID, feature.StatusArchived)
@@ -2326,6 +2936,7 @@ func testListFiltersCombine(t *testing.T, s ledgerstore.Store) {
 		if err != nil {
 			t.Fatalf("ListFeatures: %v", err)
 		}
+
 		requireIDs(t, "ListFeatures", featureIDs(got), want.ID.String())
 
 		// Global features are shared by every run against a persistent
@@ -2333,20 +2944,32 @@ func testListFiltersCombine(t *testing.T, s ledgerstore.Store) {
 		// returned, not an exact list.
 		globalArchived := newFeature("", feature.StatusArchived)
 		globalActive := newFeature("", feature.StatusActive)
+
 		global, err := s.ListGlobalFeatures(ctx, feature.ListOpts{Status: feature.StatusArchived})
 		if err != nil {
 			t.Fatalf("ListGlobalFeatures: %v", err)
 		}
+
 		seen := map[string]bool{}
 		for _, f := range global {
 			seen[f.ID.String()] = true
 			if f.AppID != "" || f.Status != feature.StatusArchived {
-				t.Errorf("ListGlobalFeatures returned %s with app %q status %q, want global and archived", f.ID, f.AppID, f.Status)
+				t.Errorf(
+					"ListGlobalFeatures returned %s with app %q status %q, want global and archived",
+					f.ID,
+					f.AppID,
+					f.Status,
+				)
 			}
 		}
+
 		if !seen[globalArchived.ID.String()] {
-			t.Errorf("ListGlobalFeatures left out the archived global feature %s", globalArchived.ID)
+			t.Errorf(
+				"ListGlobalFeatures left out the archived global feature %s",
+				globalArchived.ID,
+			)
 		}
+
 		if seen[globalActive.ID.String()] || seen[want.ID.String()] {
 			t.Error("ListGlobalFeatures returned an active or app-scoped feature")
 		}
@@ -2355,10 +2978,12 @@ func testListFiltersCombine(t *testing.T, s ledgerstore.Store) {
 	t.Run("ListSubscriptions", func(t *testing.T) {
 		newSub := func(tenant, app string, status subscription.Status) *subscription.Subscription {
 			sub := newTestSubscription(tenant, app)
+
 			sub.Status = status
 			if err := s.CreateSubscription(ctx, sub); err != nil {
 				t.Fatalf("CreateSubscription: %v", err)
 			}
+
 			return sub
 		}
 		want := newSub(tenantID, appID, subscription.StatusTrialing)
@@ -2366,10 +2991,16 @@ func testListFiltersCombine(t *testing.T, s ledgerstore.Store) {
 		newSub(otherTenant, appID, subscription.StatusTrialing)
 		newSub(tenantID, otherApp, subscription.StatusTrialing)
 
-		got, err := s.ListSubscriptions(ctx, tenantID, appID, subscription.ListOpts{Status: subscription.StatusTrialing})
+		got, err := s.ListSubscriptions(
+			ctx,
+			tenantID,
+			appID,
+			subscription.ListOpts{Status: subscription.StatusTrialing},
+		)
 		if err != nil {
 			t.Fatalf("ListSubscriptions: %v", err)
 		}
+
 		requireIDs(t, "ListSubscriptions", subscriptionIDs(got), want.ID.String())
 	})
 
@@ -2379,10 +3010,12 @@ func testListFiltersCombine(t *testing.T, s ledgerstore.Store) {
 			inv := newTestInvoice(tenant, app)
 			inv.Status = status
 			inv.PeriodStart = start
+
 			inv.PeriodEnd = start.AddDate(0, 1, 0)
 			if err := s.CreateInvoice(ctx, inv); err != nil {
 				t.Fatalf("CreateInvoice: %v", err)
 			}
+
 			return inv
 		}
 		want := newInv(tenantID, appID, invoice.StatusPending, base)
@@ -2399,6 +3032,7 @@ func testListFiltersCombine(t *testing.T, s ledgerstore.Store) {
 		if err != nil {
 			t.Fatalf("ListInvoices: %v", err)
 		}
+
 		requireIDs(t, "ListInvoices", invoiceIDs(got), want.ID.String())
 
 		// ListPendingInvoices filters by app and status only, so the
@@ -2407,15 +3041,18 @@ func testListFiltersCombine(t *testing.T, s ledgerstore.Store) {
 		if err != nil {
 			t.Fatalf("ListPendingInvoices: %v", err)
 		}
+
 		ids := invoiceIDs(pending)
 		for _, inv := range []*invoice.Invoice{want, pendingEarlier} {
 			if !containsID(ids, inv.ID.String()) {
 				t.Errorf("ListPendingInvoices left out pending invoice %s", inv.ID)
 			}
 		}
+
 		if containsID(ids, otherAppPending.ID.String()) {
 			t.Error("ListPendingInvoices returned another app's invoice")
 		}
+
 		for _, inv := range pending {
 			if inv.Status != invoice.StatusPending {
 				t.Errorf("ListPendingInvoices returned %s with status %q", inv.ID, inv.Status)
@@ -2428,10 +3065,12 @@ func testListFiltersCombine(t *testing.T, s ledgerstore.Store) {
 		earlier, later := now.Add(-time.Hour), now.Add(time.Hour)
 		newCoupon := func(app string, from, until *time.Time) *coupon.Coupon {
 			c := newTestCoupon(app)
+
 			c.ValidFrom, c.ValidUntil = from, until
 			if err := s.CreateCoupon(ctx, c); err != nil {
 				t.Fatalf("CreateCoupon: %v", err)
 			}
+
 			return c
 		}
 		open := newCoupon(appID, nil, nil)
@@ -2444,6 +3083,7 @@ func testListFiltersCombine(t *testing.T, s ledgerstore.Store) {
 		if err != nil {
 			t.Fatalf("ListCoupons: %v", err)
 		}
+
 		requireIDs(t, "ListCoupons", couponIDs(got), open.ID.String(), inWindow.ID.String())
 	})
 }
@@ -2451,10 +3091,13 @@ func testListFiltersCombine(t *testing.T, s ledgerstore.Store) {
 // requireIDs fails unless got holds exactly the want ids, in any order.
 func requireIDs(t *testing.T, what string, got []string, want ...string) {
 	t.Helper()
+
 	g := append([]string(nil), got...)
 	w := append([]string(nil), want...)
+
 	sort.Strings(g)
 	sort.Strings(w)
+
 	if !reflect.DeepEqual(g, w) {
 		t.Errorf("%s: got ids %v, want %v", what, g, w)
 	}
@@ -2466,6 +3109,7 @@ func containsID(ids []string, want string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -2474,6 +3118,7 @@ func planIDs(ps []*plan.Plan) []string {
 	for i, p := range ps {
 		out[i] = p.ID.String()
 	}
+
 	return out
 }
 
@@ -2482,6 +3127,7 @@ func featureIDs(fs []*feature.Feature) []string {
 	for i, f := range fs {
 		out[i] = f.ID.String()
 	}
+
 	return out
 }
 
@@ -2490,6 +3136,7 @@ func subscriptionIDs(subs []*subscription.Subscription) []string {
 	for i, sub := range subs {
 		out[i] = sub.ID.String()
 	}
+
 	return out
 }
 
@@ -2498,6 +3145,7 @@ func invoiceIDs(invs []*invoice.Invoice) []string {
 	for i, inv := range invs {
 		out[i] = inv.ID.String()
 	}
+
 	return out
 }
 
@@ -2506,6 +3154,7 @@ func couponIDs(cs []*coupon.Coupon) []string {
 	for i, c := range cs {
 		out[i] = c.ID.String()
 	}
+
 	return out
 }
 
@@ -2535,6 +3184,7 @@ func testLookupsMatchEveryArgument(t *testing.T, s ledgerstore.Store) {
 			if err := s.CreatePlan(ctx, p); err != nil {
 				t.Fatalf("CreatePlan: %v", err)
 			}
+
 			return p
 		}
 		mine, theirs := newPlan(appID), newPlan(otherApp)
@@ -2544,26 +3194,39 @@ func testLookupsMatchEveryArgument(t *testing.T, s ledgerstore.Store) {
 			if err != nil {
 				t.Fatalf("GetPlanBySlug(%q): %v", want.AppID, err)
 			}
+
 			if got.ID.String() != want.ID.String() {
 				t.Errorf("GetPlanBySlug(%q): got plan %s, want %s", want.AppID, got.ID, want.ID)
 			}
 		}
-		if _, err := s.GetPlanBySlug(ctx, slug, "app-none-"+uniqueSuffix()); !errors.Is(err, ledger.ErrPlanNotFound) {
+
+		if _, err := s.GetPlanBySlug(
+			ctx,
+			slug,
+			"app-none-"+uniqueSuffix(),
+		); !errors.Is(
+			err,
+			ledger.ErrPlanNotFound,
+		) {
 			t.Errorf("GetPlanBySlug in an app without it: got %v, want ErrPlanNotFound", err)
 		}
 
 		if err := s.DeletePlan(ctx, mine.ID); err != nil {
 			t.Fatalf("DeletePlan: %v", err)
 		}
+
 		if _, err := s.GetPlan(ctx, mine.ID); !errors.Is(err, ledger.ErrPlanNotFound) {
 			t.Errorf("GetPlan after DeletePlan: got %v, want ErrPlanNotFound", err)
 		}
+
 		if _, err := s.GetPlan(ctx, theirs.ID); err != nil {
 			t.Errorf("DeletePlan took the other app's plan with it: %v", err)
 		}
+
 		if err := s.DeletePlan(ctx, mine.ID); !errors.Is(err, ledger.ErrPlanNotFound) {
 			t.Errorf("DeletePlan a second time: got %v, want ErrPlanNotFound", err)
 		}
+
 		if err := s.DeletePlan(ctx, id.NewPlanID()); !errors.Is(err, ledger.ErrPlanNotFound) {
 			t.Errorf("DeletePlan on an unknown plan: got %v, want ErrPlanNotFound", err)
 		}
@@ -2572,6 +3235,7 @@ func testLookupsMatchEveryArgument(t *testing.T, s ledgerstore.Store) {
 	t.Run("GetFeatureByKeyAndDeleteFeature", func(t *testing.T) {
 		mine := newTestFeature(appID)
 		theirs := newTestFeature(otherApp)
+
 		theirs.Key = mine.Key
 		for _, f := range []*feature.Feature{mine, theirs} {
 			if err := s.CreateFeature(ctx, f); err != nil {
@@ -2584,27 +3248,51 @@ func testLookupsMatchEveryArgument(t *testing.T, s ledgerstore.Store) {
 			if err != nil {
 				t.Fatalf("GetFeatureByKey(%q): %v", want.AppID, err)
 			}
+
 			if got.ID.String() != want.ID.String() {
-				t.Errorf("GetFeatureByKey(%q): got feature %s, want %s", want.AppID, got.ID, want.ID)
+				t.Errorf(
+					"GetFeatureByKey(%q): got feature %s, want %s",
+					want.AppID,
+					got.ID,
+					want.ID,
+				)
 			}
 		}
-		if _, err := s.GetFeatureByKey(ctx, mine.Key, "app-none-"+uniqueSuffix()); !errors.Is(err, ledger.ErrFeatureNotFound) {
+
+		if _, err := s.GetFeatureByKey(
+			ctx,
+			mine.Key,
+			"app-none-"+uniqueSuffix(),
+		); !errors.Is(
+			err,
+			ledger.ErrFeatureNotFound,
+		) {
 			t.Errorf("GetFeatureByKey in an app without it: got %v, want ErrFeatureNotFound", err)
 		}
 
 		if err := s.DeleteFeature(ctx, mine.ID); err != nil {
 			t.Fatalf("DeleteFeature: %v", err)
 		}
+
 		if _, err := s.GetFeature(ctx, mine.ID); !errors.Is(err, ledger.ErrFeatureNotFound) {
 			t.Errorf("GetFeature after DeleteFeature: got %v, want ErrFeatureNotFound", err)
 		}
+
 		if _, err := s.GetFeature(ctx, theirs.ID); err != nil {
 			t.Errorf("DeleteFeature took the other app's feature with it: %v", err)
 		}
+
 		if err := s.DeleteFeature(ctx, mine.ID); !errors.Is(err, ledger.ErrFeatureNotFound) {
 			t.Errorf("DeleteFeature a second time: got %v, want ErrFeatureNotFound", err)
 		}
-		if err := s.DeleteFeature(ctx, id.NewFeatureID()); !errors.Is(err, ledger.ErrFeatureNotFound) {
+
+		if err := s.DeleteFeature(
+			ctx,
+			id.NewFeatureID(),
+		); !errors.Is(
+			err,
+			ledger.ErrFeatureNotFound,
+		) {
 			t.Errorf("DeleteFeature on an unknown feature: got %v, want ErrFeatureNotFound", err)
 		}
 	})
@@ -2620,15 +3308,19 @@ func testLookupsMatchEveryArgument(t *testing.T, s ledgerstore.Store) {
 		if err := s.DeleteCoupon(ctx, mine.ID); err != nil {
 			t.Fatalf("DeleteCoupon: %v", err)
 		}
+
 		if _, err := s.GetCouponByID(ctx, mine.ID); !errors.Is(err, ledger.ErrCouponNotFound) {
 			t.Errorf("GetCouponByID after DeleteCoupon: got %v, want ErrCouponNotFound", err)
 		}
+
 		if _, err := s.GetCouponByID(ctx, theirs.ID); err != nil {
 			t.Errorf("DeleteCoupon took the other app's coupon with it: %v", err)
 		}
+
 		if err := s.DeleteCoupon(ctx, mine.ID); !errors.Is(err, ledger.ErrCouponNotFound) {
 			t.Errorf("DeleteCoupon a second time: got %v, want ErrCouponNotFound", err)
 		}
+
 		if err := s.DeleteCoupon(ctx, id.NewCouponID()); !errors.Is(err, ledger.ErrCouponNotFound) {
 			t.Errorf("DeleteCoupon on an unknown coupon: got %v, want ErrCouponNotFound", err)
 		}
@@ -2640,10 +3332,12 @@ func testLookupsMatchEveryArgument(t *testing.T, s ledgerstore.Store) {
 			sub := newTestSubscription(tenant, app)
 			sub.Status = status
 			sub.CreatedAt = base.Add(-age)
+
 			sub.UpdatedAt = sub.CreatedAt
 			if err := s.CreateSubscription(ctx, sub); err != nil {
 				t.Fatalf("CreateSubscription: %v", err)
 			}
+
 			return sub
 		}
 		// The newest active or trialing subscription wins. Every row newer
@@ -2658,14 +3352,33 @@ func testLookupsMatchEveryArgument(t *testing.T, s ledgerstore.Store) {
 		if err != nil {
 			t.Fatalf("GetActiveSubscription: %v", err)
 		}
+
 		if got.ID.String() != want.ID.String() {
-			t.Errorf("GetActiveSubscription: got %s (%s, %s, %s), want %s", got.ID, got.TenantID, got.AppID, got.Status, want.ID)
+			t.Errorf(
+				"GetActiveSubscription: got %s (%s, %s, %s), want %s",
+				got.ID,
+				got.TenantID,
+				got.AppID,
+				got.Status,
+				want.ID,
+			)
 		}
 
 		lapsed := "tenant-lapsed-" + uniqueSuffix()
 		newSub(lapsed, appID, subscription.StatusCanceled, time.Hour)
-		if _, err = s.GetActiveSubscription(ctx, lapsed, appID); !errors.Is(err, ledger.ErrNoActiveSubscription) {
-			t.Errorf("GetActiveSubscription with only a canceled one: got %v, want ErrNoActiveSubscription", err)
+
+		if _, err = s.GetActiveSubscription(
+			ctx,
+			lapsed,
+			appID,
+		); !errors.Is(
+			err,
+			ledger.ErrNoActiveSubscription,
+		) {
+			t.Errorf(
+				"GetActiveSubscription with only a canceled one: got %v, want ErrNoActiveSubscription",
+				err,
+			)
 		}
 	})
 
@@ -2674,10 +3387,12 @@ func testLookupsMatchEveryArgument(t *testing.T, s ledgerstore.Store) {
 		end := start.AddDate(0, 1, 0)
 		newInv := func(tenant, app string, from, to time.Time) *invoice.Invoice {
 			inv := newTestInvoice(tenant, app)
+
 			inv.PeriodStart, inv.PeriodEnd = from, to
 			if err := s.CreateInvoice(ctx, inv); err != nil {
 				t.Fatalf("CreateInvoice: %v", err)
 			}
+
 			return inv
 		}
 		want := newInv(tenantID, appID, start, end)
@@ -2690,17 +3405,37 @@ func testLookupsMatchEveryArgument(t *testing.T, s ledgerstore.Store) {
 		if err != nil {
 			t.Fatalf("GetInvoiceByPeriod: %v", err)
 		}
+
 		if got.ID.String() != want.ID.String() {
 			t.Errorf("GetInvoiceByPeriod: got %s, want %s", got.ID, want.ID)
 		}
-		if _, err = s.GetInvoiceByPeriod(ctx, tenantID, appID, start.Add(-time.Hour), end); !errors.Is(err, ledger.ErrInvoiceNotFound) {
-			t.Errorf("GetInvoiceByPeriod for a period with no invoice: got %v, want ErrInvoiceNotFound", err)
+
+		if _, err = s.GetInvoiceByPeriod(
+			ctx,
+			tenantID,
+			appID,
+			start.Add(-time.Hour),
+			end,
+		); !errors.Is(
+			err,
+			ledger.ErrInvoiceNotFound,
+		) {
+			t.Errorf(
+				"GetInvoiceByPeriod for a period with no invoice: got %v, want ErrInvoiceNotFound",
+				err,
+			)
 		}
 	})
 
 	t.Run("EntitlementCache", func(t *testing.T) {
 		set := func(tenant, app, key string, used int64, ttl time.Duration) {
-			r := &entitlement.Result{Allowed: true, Feature: key, Used: used, Limit: 100, Remaining: 100 - used}
+			r := &entitlement.Result{
+				Allowed:   true,
+				Feature:   key,
+				Used:      used,
+				Limit:     100,
+				Remaining: 100 - used,
+			}
 			if err := s.SetCached(ctx, tenant, app, key, r, ttl); err != nil {
 				t.Fatalf("SetCached: %v", err)
 			}
@@ -2708,17 +3443,28 @@ func testLookupsMatchEveryArgument(t *testing.T, s ledgerstore.Store) {
 		// used tells the entries apart, so a hit on the wrong one shows.
 		requireHit := func(tenant, app, key string, used int64) {
 			t.Helper()
+
 			got, err := s.GetCached(ctx, tenant, app, key)
 			if err != nil {
 				t.Errorf("GetCached(%s, %s, %s): %v", tenant, app, key, err)
 				return
 			}
+
 			if got.Used != used || got.Feature != key {
-				t.Errorf("GetCached(%s, %s, %s): got used %d feature %q, want used %d", tenant, app, key, got.Used, got.Feature, used)
+				t.Errorf(
+					"GetCached(%s, %s, %s): got used %d feature %q, want used %d",
+					tenant,
+					app,
+					key,
+					got.Used,
+					got.Feature,
+					used,
+				)
 			}
 		}
 		requireMiss := func(tenant, app, key string) {
 			t.Helper()
+
 			if _, err := s.GetCached(ctx, tenant, app, key); !errors.Is(err, ledger.ErrCacheMiss) {
 				t.Errorf("GetCached(%s, %s, %s): got %v, want ErrCacheMiss", tenant, app, key, err)
 			}
@@ -2740,6 +3486,7 @@ func testLookupsMatchEveryArgument(t *testing.T, s ledgerstore.Store) {
 		if err := s.InvalidateFeature(ctx, tenantID, appID, keyA); err != nil {
 			t.Fatalf("InvalidateFeature: %v", err)
 		}
+
 		requireMiss(tenantID, appID, keyA)
 		requireHit(tenantID, appID, keyB, 2)
 		requireHit(tenantID, otherApp, keyA, 4)
@@ -2748,6 +3495,7 @@ func testLookupsMatchEveryArgument(t *testing.T, s ledgerstore.Store) {
 		if err := s.Invalidate(ctx, tenantID, appID); err != nil {
 			t.Fatalf("Invalidate: %v", err)
 		}
+
 		requireMiss(tenantID, appID, keyB)
 		requireHit(tenantID, otherApp, keyA, 4)
 		requireHit(otherTenant, appID, keyA, 5)
@@ -2759,6 +3507,7 @@ func testLookupsMatchEveryArgument(t *testing.T, s ledgerstore.Store) {
 		cutoff := time.Date(2001, 6, 1, 0, 0, 0, 0, time.UTC)
 		old := newTestUsageEvent(tenantID, appID)
 		old.Timestamp = cutoff.Add(-24 * time.Hour)
+
 		recent := newTestUsageEvent(tenantID, appID)
 		if err := s.IngestBatch(ctx, []*meter.UsageEvent{old, recent}); err != nil {
 			t.Fatalf("IngestBatch: %v", err)
@@ -2768,17 +3517,21 @@ func testLookupsMatchEveryArgument(t *testing.T, s ledgerstore.Store) {
 		if err != nil {
 			t.Fatalf("PurgeUsage: %v", err)
 		}
+
 		if n < 1 {
 			t.Errorf("PurgeUsage: removed %d events, want at least the one before the cutoff", n)
 		}
+
 		got, err := s.QueryUsage(ctx, tenantID, appID, meter.QueryOpts{})
 		if err != nil {
 			t.Fatalf("QueryUsage: %v", err)
 		}
+
 		ids := make([]string, len(got))
 		for i, e := range got {
 			ids[i] = e.ID.String()
 		}
+
 		requireIDs(t, "QueryUsage after PurgeUsage", ids, recent.ID.String())
 	})
 }
@@ -2803,12 +3556,19 @@ func testUpdateOfAMissingRowReportsIt(t *testing.T, s ledgerstore.Store) {
 	// one that was, and uses get to confirm the missing row is still missing.
 	check := func(t *testing.T, notFound error, update func(existing bool) error, get func() error) {
 		t.Helper()
+
 		if err := update(false); !errors.Is(err, notFound) {
 			t.Errorf("update of a missing row: got %v, want %v", err, notFound)
 		}
+
 		if err := get(); !errors.Is(err, notFound) {
-			t.Errorf("read after updating a missing row: got %v, want %v, so the update wrote it", err, notFound)
+			t.Errorf(
+				"read after updating a missing row: got %v, want %v, so the update wrote it",
+				err,
+				notFound,
+			)
 		}
+
 		for i := 0; i < 20; i++ {
 			if err := update(true); err != nil {
 				t.Errorf("update %d of a stored row: %v", i+1, err)
@@ -2828,15 +3588,18 @@ func testUpdateOfAMissingRowReportsIt(t *testing.T, s ledgerstore.Store) {
 				},
 			}
 		}
+
 		stored, missing := newPlan(), newPlan()
 		if err := s.CreatePlan(ctx, stored); err != nil {
 			t.Fatalf("CreatePlan: %v", err)
 		}
+
 		check(t, ledger.ErrPlanNotFound,
 			func(existing bool) error {
 				if existing {
 					return s.UpdatePlan(ctx, stored)
 				}
+
 				return s.UpdatePlan(ctx, missing)
 			},
 			func() error { _, err := s.GetPlan(ctx, missing.ID); return err })
@@ -2847,26 +3610,36 @@ func testUpdateOfAMissingRowReportsIt(t *testing.T, s ledgerstore.Store) {
 		if err := s.CreateFeature(ctx, stored); err != nil {
 			t.Fatalf("CreateFeature: %v", err)
 		}
+
 		check(t, ledger.ErrFeatureNotFound,
 			func(existing bool) error {
 				if existing {
 					return s.UpdateFeature(ctx, stored)
 				}
+
 				return s.UpdateFeature(ctx, missing)
 			},
 			func() error { _, err := s.GetFeature(ctx, missing.ID); return err })
 	})
 
 	t.Run("UpdateSubscription", func(t *testing.T) {
-		stored, missing := newTestSubscription(tenantID, appID), newTestSubscription(tenantID, appID)
+		stored, missing := newTestSubscription(
+			tenantID,
+			appID,
+		), newTestSubscription(
+			tenantID,
+			appID,
+		)
 		if err := s.CreateSubscription(ctx, stored); err != nil {
 			t.Fatalf("CreateSubscription: %v", err)
 		}
+
 		check(t, ledger.ErrSubscriptionNotFound,
 			func(existing bool) error {
 				if existing {
 					return s.UpdateSubscription(ctx, stored)
 				}
+
 				return s.UpdateSubscription(ctx, missing)
 			},
 			func() error { _, err := s.GetSubscription(ctx, missing.ID); return err })
@@ -2877,11 +3650,13 @@ func testUpdateOfAMissingRowReportsIt(t *testing.T, s ledgerstore.Store) {
 		if err := s.CreateInvoice(ctx, stored); err != nil {
 			t.Fatalf("CreateInvoice: %v", err)
 		}
+
 		check(t, ledger.ErrInvoiceNotFound,
 			func(existing bool) error {
 				if existing {
 					return s.UpdateInvoice(ctx, stored)
 				}
+
 				return s.UpdateInvoice(ctx, missing)
 			},
 			func() error { _, err := s.GetInvoice(ctx, missing.ID); return err })
@@ -2892,11 +3667,13 @@ func testUpdateOfAMissingRowReportsIt(t *testing.T, s ledgerstore.Store) {
 		if err := s.CreateCoupon(ctx, stored); err != nil {
 			t.Fatalf("CreateCoupon: %v", err)
 		}
+
 		check(t, ledger.ErrCouponNotFound,
 			func(existing bool) error {
 				if existing {
 					return s.UpdateCoupon(ctx, stored)
 				}
+
 				return s.UpdateCoupon(ctx, missing)
 			},
 			func() error { _, err := s.GetCouponByID(ctx, missing.ID); return err })

@@ -28,7 +28,10 @@ type Provider interface {
 
 	SyncPlan(ctx context.Context, p *plan.Plan) (providerID string, err error)
 	SyncFeature(ctx context.Context, f *feature.Feature) (providerID string, err error)
-	SyncSubscription(ctx context.Context, s *subscription.Subscription) (providerID string, err error)
+	SyncSubscription(
+		ctx context.Context,
+		s *subscription.Subscription,
+	) (providerID string, err error)
 	SyncInvoice(ctx context.Context, inv *invoice.Invoice) (providerID string, err error)
 
 	// ── Import: pull from provider to local (data recovery) ──

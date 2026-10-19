@@ -98,9 +98,11 @@ func (e MultiError) Error() string {
 	if len(e.Errors) == 0 {
 		return "ledger: no errors"
 	}
+
 	if len(e.Errors) == 1 {
 		return e.Errors[0].Error()
 	}
+
 	return fmt.Sprintf("ledger: %d errors occurred", len(e.Errors))
 }
 
@@ -121,6 +123,7 @@ func (e MultiError) First() error {
 	if len(e.Errors) > 0 {
 		return e.Errors[0]
 	}
+
 	return nil
 }
 

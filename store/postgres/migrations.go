@@ -36,6 +36,7 @@ CREATE INDEX IF NOT EXISTS idx_ledger_plans_app_id ON ledger_plans (app_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_plans_slug_app ON ledger_plans (slug, app_id);
 CREATE INDEX IF NOT EXISTS idx_ledger_plans_status ON ledger_plans (app_id, status);
 `)
+
 				return err
 			},
 			Down: func(ctx context.Context, exec migrate.Executor) error {
@@ -72,6 +73,7 @@ CREATE INDEX IF NOT EXISTS idx_ledger_subs_tenant_app ON ledger_subscriptions (t
 CREATE INDEX IF NOT EXISTS idx_ledger_subs_status ON ledger_subscriptions (tenant_id, app_id, status);
 CREATE INDEX IF NOT EXISTS idx_ledger_subs_plan ON ledger_subscriptions (plan_id);
 `)
+
 				return err
 			},
 			Down: func(ctx context.Context, exec migrate.Executor) error {
@@ -100,6 +102,7 @@ CREATE INDEX IF NOT EXISTS idx_ledger_usage_tenant_app_feature ON ledger_usage_e
 CREATE INDEX IF NOT EXISTS idx_ledger_usage_timestamp ON ledger_usage_events (timestamp);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_usage_idempotency ON ledger_usage_events (idempotency_key) WHERE idempotency_key != '';
 `)
+
 				return err
 			},
 			Down: func(ctx context.Context, exec migrate.Executor) error {
@@ -131,6 +134,7 @@ CREATE TABLE IF NOT EXISTS ledger_entitlement_cache (
 CREATE INDEX IF NOT EXISTS idx_ledger_cache_tenant_app ON ledger_entitlement_cache (tenant_id, app_id);
 CREATE INDEX IF NOT EXISTS idx_ledger_cache_expires ON ledger_entitlement_cache (expires_at);
 `)
+
 				return err
 			},
 			Down: func(ctx context.Context, exec migrate.Executor) error {
@@ -177,6 +181,7 @@ CREATE INDEX IF NOT EXISTS idx_ledger_invoices_status ON ledger_invoices (app_id
 CREATE INDEX IF NOT EXISTS idx_ledger_invoices_period ON ledger_invoices (tenant_id, app_id, period_start, period_end);
 CREATE INDEX IF NOT EXISTS idx_ledger_invoices_sub ON ledger_invoices (subscription_id);
 `)
+
 				return err
 			},
 			Down: func(ctx context.Context, exec migrate.Executor) error {
@@ -211,6 +216,7 @@ CREATE TABLE IF NOT EXISTS ledger_coupons (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_coupons_code_app ON ledger_coupons (code, app_id);
 CREATE INDEX IF NOT EXISTS idx_ledger_coupons_app ON ledger_coupons (app_id);
 `)
+
 				return err
 			},
 			Down: func(ctx context.Context, exec migrate.Executor) error {
@@ -243,6 +249,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_features_key_app ON ledger_features
 CREATE INDEX IF NOT EXISTS idx_ledger_features_app ON ledger_features (app_id);
 CREATE INDEX IF NOT EXISTS idx_ledger_features_status ON ledger_features (app_id, status);
 `)
+
 				return err
 			},
 			Down: func(ctx context.Context, exec migrate.Executor) error {
@@ -261,6 +268,7 @@ ALTER TABLE ledger_features ADD COLUMN IF NOT EXISTS provider_id TEXT NOT NULL D
 ALTER TABLE ledger_features ADD COLUMN IF NOT EXISTS provider_name TEXT NOT NULL DEFAULT '';
 ALTER TABLE ledger_invoices ADD COLUMN IF NOT EXISTS provider_name TEXT NOT NULL DEFAULT '';
 `)
+
 				return err
 			},
 			Down: func(ctx context.Context, exec migrate.Executor) error {
@@ -271,6 +279,7 @@ ALTER TABLE ledger_features DROP COLUMN IF EXISTS provider_id;
 ALTER TABLE ledger_features DROP COLUMN IF EXISTS provider_name;
 ALTER TABLE ledger_invoices DROP COLUMN IF EXISTS provider_name;
 `)
+
 				return err
 			},
 		},
@@ -291,6 +300,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_coupon_apps_pair
 CREATE INDEX IF NOT EXISTS idx_ledger_coupon_apps_sub
     ON ledger_coupon_applications (subscription_id);
 `)
+
 				return err
 			},
 			Down: func(ctx context.Context, exec migrate.Executor) error {
@@ -305,10 +315,15 @@ CREATE INDEX IF NOT EXISTS idx_ledger_coupon_apps_sub
 				_, err := exec.Exec(ctx, `
 ALTER TABLE ledger_subscriptions ADD COLUMN IF NOT EXISTS quantity JSONB NOT NULL DEFAULT '{}';
 `)
+
 				return err
 			},
 			Down: func(ctx context.Context, exec migrate.Executor) error {
-				_, err := exec.Exec(ctx, `ALTER TABLE ledger_subscriptions DROP COLUMN IF EXISTS quantity`)
+				_, err := exec.Exec(
+					ctx,
+					`ALTER TABLE ledger_subscriptions DROP COLUMN IF EXISTS quantity`,
+				)
+
 				return err
 			},
 		},
@@ -322,6 +337,7 @@ CREATE INDEX IF NOT EXISTS idx_ledger_subs_status_trial_end ON ledger_subscripti
 CREATE INDEX IF NOT EXISTS idx_ledger_subs_status_period_end ON ledger_subscriptions (status, current_period_end);
 CREATE INDEX IF NOT EXISTS idx_ledger_invoices_status_due ON ledger_invoices (status, due_date);
 `)
+
 				return err
 			},
 			Down: func(ctx context.Context, exec migrate.Executor) error {
@@ -331,6 +347,7 @@ DROP INDEX IF EXISTS idx_ledger_subs_status_trial_end;
 DROP INDEX IF EXISTS idx_ledger_subs_status_period_end;
 DROP INDEX IF EXISTS idx_ledger_invoices_status_due;
 `)
+
 				return err
 			},
 		},
@@ -349,6 +366,7 @@ ALTER TABLE ledger_subscriptions ADD COLUMN IF NOT EXISTS stretch_end TIMESTAMPT
 ALTER TABLE ledger_subscriptions ADD COLUMN IF NOT EXISTS stretch_original_end TIMESTAMPTZ;
 ALTER TABLE ledger_subscriptions ADD COLUMN IF NOT EXISTS stretch_floor TIMESTAMPTZ;
 `)
+
 				return err
 			},
 			Down: func(ctx context.Context, exec migrate.Executor) error {
@@ -359,6 +377,7 @@ ALTER TABLE ledger_subscriptions DROP COLUMN IF EXISTS stretch_end;
 ALTER TABLE ledger_subscriptions DROP COLUMN IF EXISTS stretch_original_end;
 ALTER TABLE ledger_subscriptions DROP COLUMN IF EXISTS stretch_floor;
 `)
+
 				return err
 			},
 		},

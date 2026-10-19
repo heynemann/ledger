@@ -71,6 +71,7 @@ func NewMemory(t *testing.T) ledgerstore.Store {
 // DSN shape production does and still exercises the real lock behavior.
 func NewSQLite(t *testing.T) ledgerstore.Store {
 	t.Helper()
+
 	ctx := context.Background()
 
 	dbPath := filepath.Join(t.TempDir(), "ledger.db")
@@ -80,6 +81,7 @@ func NewSQLite(t *testing.T) ledgerstore.Store {
 	if err := sdb.Open(ctx, dsn); err != nil {
 		t.Fatalf("storetest: open sqlite driver: %v", err)
 	}
+
 	t.Cleanup(func() { _ = sdb.Close() })
 
 	db, err := grove.Open(sdb)
@@ -114,6 +116,7 @@ func NewPostgres(t *testing.T) ledgerstore.Store {
 	if err := pg.Open(ctx, dsn); err != nil {
 		t.Fatalf("storetest: open postgres driver: %v", err)
 	}
+
 	t.Cleanup(func() { _ = pg.Close() })
 
 	db, err := grove.Open(pg)
@@ -145,6 +148,7 @@ func NewMongo(t *testing.T) ledgerstore.Store {
 	if err := md.Open(ctx, uri); err != nil {
 		t.Fatalf("storetest: open mongo driver: %v", err)
 	}
+
 	t.Cleanup(func() { _ = md.Close() })
 
 	db, err := grove.Open(md)

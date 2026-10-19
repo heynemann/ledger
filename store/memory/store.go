@@ -67,10 +67,12 @@ func copyStringMap(m map[string]string) map[string]string {
 	if m == nil {
 		return nil
 	}
+
 	cp := make(map[string]string, len(m))
 	for k, v := range m {
 		cp[k] = v
 	}
+
 	return cp
 }
 
@@ -82,7 +84,9 @@ func copyPlan(p *plan.Plan) *plan.Plan {
 	if p == nil {
 		return nil
 	}
+
 	cp := *p
+
 	cp.Metadata = copyStringMap(p.Metadata)
 	if p.Features != nil {
 		cp.Features = make([]plan.Feature, len(p.Features))
@@ -91,14 +95,17 @@ func copyPlan(p *plan.Plan) *plan.Plan {
 			cp.Features[i].Metadata = copyStringMap(f.Metadata)
 		}
 	}
+
 	if p.Pricing != nil {
 		pricing := *p.Pricing
 		if p.Pricing.Tiers != nil {
 			pricing.Tiers = make([]plan.PriceTier, len(p.Pricing.Tiers))
 			copy(pricing.Tiers, p.Pricing.Tiers)
 		}
+
 		cp.Pricing = &pricing
 	}
+
 	return &cp
 }
 
@@ -107,8 +114,10 @@ func copyFeature(f *feature.Feature) *feature.Feature {
 	if f == nil {
 		return nil
 	}
+
 	cp := *f
 	cp.Metadata = copyStringMap(f.Metadata)
+
 	return &cp
 }
 
@@ -118,6 +127,7 @@ func copyPlans(in []*plan.Plan) []*plan.Plan {
 	for i, p := range in {
 		out[i] = copyPlan(p)
 	}
+
 	return out
 }
 
@@ -126,6 +136,7 @@ func copyFeatures(in []*feature.Feature) []*feature.Feature {
 	for i, f := range in {
 		out[i] = copyFeature(f)
 	}
+
 	return out
 }
 
@@ -137,7 +148,9 @@ func (s *Store) CreatePlan(_ context.Context, p *plan.Plan) error {
 	if _, exists := s.plans[p.ID.String()]; exists {
 		return ledger.ErrAlreadyExists
 	}
+
 	s.plans[p.ID.String()] = copyPlan(p)
+
 	return nil
 }
 
@@ -148,6 +161,7 @@ func (s *Store) GetPlan(_ context.Context, planID id.PlanID) (*plan.Plan, error)
 	if p, ok := s.plans[planID.String()]; ok {
 		return copyPlan(p), nil
 	}
+
 	return nil, ledger.ErrPlanNotFound
 }
 
@@ -160,6 +174,7 @@ func (s *Store) GetPlanBySlug(_ context.Context, slug, appID string) (*plan.Plan
 			return copyPlan(p), nil
 		}
 	}
+
 	return nil, ledger.ErrPlanNotFound
 }
 
@@ -172,13 +187,16 @@ func window[T any](rows []T, limit, offset int) []T {
 	if start < 0 {
 		start = 0
 	}
+
 	if start > len(rows) {
 		start = len(rows)
 	}
+
 	end := len(rows)
 	if limit > 0 && start+limit < end {
 		end = start + limit
 	}
+
 	return rows[start:end]
 }
 
@@ -194,6 +212,7 @@ func sortOldestFirst[T any](rows []T, at func(T) time.Time, key func(T) string) 
 		if ti, tj := at(rows[i]), at(rows[j]); !ti.Equal(tj) {
 			return ti.Before(tj)
 		}
+
 		return key(rows[i]) < key(rows[j])
 	})
 }
@@ -203,15 +222,21 @@ func sortNewestFirst[T any](rows []T, at func(T) time.Time, key func(T) string) 
 		if ti, tj := at(rows[i]), at(rows[j]); !ti.Equal(tj) {
 			return ti.After(tj)
 		}
+
 		return key(rows[i]) > key(rows[j])
 	})
 }
 
-func (s *Store) ListPlans(_ context.Context, appID string, opts plan.ListOpts) ([]*plan.Plan, error) {
+func (s *Store) ListPlans(
+	_ context.Context,
+	appID string,
+	opts plan.ListOpts,
+) ([]*plan.Plan, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	result := make([]*plan.Plan, 0)
+
 	for _, p := range s.plans {
 		if appID == "" || p.AppID == appID {
 			if opts.Status == "" || p.Status == opts.Status {
@@ -220,7 +245,12 @@ func (s *Store) ListPlans(_ context.Context, appID string, opts plan.ListOpts) (
 		}
 	}
 
-	sortOldestFirst(result, func(p *plan.Plan) time.Time { return p.CreatedAt }, func(p *plan.Plan) string { return p.ID.String() })
+	sortOldestFirst(
+		result,
+		func(p *plan.Plan) time.Time { return p.CreatedAt },
+		func(p *plan.Plan) string { return p.ID.String() },
+	)
+
 	return copyPlans(window(result, opts.Limit, opts.Offset)), nil
 }
 
@@ -231,7 +261,9 @@ func (s *Store) UpdatePlan(_ context.Context, p *plan.Plan) error {
 	if _, exists := s.plans[p.ID.String()]; !exists {
 		return ledger.ErrPlanNotFound
 	}
+
 	s.plans[p.ID.String()] = copyPlan(p)
+
 	return nil
 }
 
@@ -242,7 +274,9 @@ func (s *Store) DeletePlan(_ context.Context, planID id.PlanID) error {
 	if _, ok := s.plans[planID.String()]; !ok {
 		return ledger.ErrPlanNotFound
 	}
+
 	delete(s.plans, planID.String())
+
 	return nil
 }
 
@@ -253,8 +287,10 @@ func (s *Store) ArchivePlan(_ context.Context, planID id.PlanID) error {
 	if p, exists := s.plans[planID.String()]; exists {
 		p.Status = plan.StatusArchived
 		p.UpdatedAt = time.Now().UTC()
+
 		return nil
 	}
+
 	return ledger.ErrPlanNotFound
 }
 
@@ -273,6 +309,7 @@ func copySubscriptionQuantity(m map[string]int64) map[string]int64 {
 	for k, v := range m {
 		out[k] = v
 	}
+
 	return out
 }
 
@@ -282,6 +319,7 @@ func copySubscriptionQuantity(m map[string]int64) map[string]int64 {
 func copySubscription(sub *subscription.Subscription) *subscription.Subscription {
 	cp := *sub
 	cp.Quantity = copySubscriptionQuantity(sub.Quantity)
+
 	return &cp
 }
 
@@ -293,21 +331,30 @@ func (s *Store) CreateSubscription(_ context.Context, sub *subscription.Subscrip
 	if _, exists := s.subscriptions[sub.ID.String()]; exists {
 		return ledger.ErrAlreadyExists
 	}
+
 	s.subscriptions[sub.ID.String()] = copySubscription(sub)
+
 	return nil
 }
 
-func (s *Store) GetSubscription(_ context.Context, subID id.SubscriptionID) (*subscription.Subscription, error) {
+func (s *Store) GetSubscription(
+	_ context.Context,
+	subID id.SubscriptionID,
+) (*subscription.Subscription, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if sub, ok := s.subscriptions[subID.String()]; ok {
 		return copySubscription(sub), nil
 	}
+
 	return nil, ledger.ErrSubscriptionNotFound
 }
 
-func (s *Store) GetActiveSubscription(_ context.Context, tenantID, appID string) (*subscription.Subscription, error) {
+func (s *Store) GetActiveSubscription(
+	_ context.Context,
+	tenantID, appID string,
+) (*subscription.Subscription, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -315,24 +362,37 @@ func (s *Store) GetActiveSubscription(_ context.Context, tenantID, appID string)
 	// newest, as the database backends' ORDER BY does; returning the first
 	// match would pick one at random, since map iteration order is.
 	var live []*subscription.Subscription
+
 	for _, sub := range s.subscriptions {
 		if sub.TenantID == tenantID && sub.AppID == appID &&
 			(sub.Status == subscription.StatusActive || sub.Status == subscription.StatusTrialing) {
 			live = append(live, sub)
 		}
 	}
+
 	if len(live) == 0 {
 		return nil, ledger.ErrNoActiveSubscription
 	}
-	sortNewestFirst(live, func(sub *subscription.Subscription) time.Time { return sub.CreatedAt }, func(sub *subscription.Subscription) string { return sub.ID.String() })
+
+	sortNewestFirst(
+		live,
+		func(sub *subscription.Subscription) time.Time { return sub.CreatedAt },
+		func(sub *subscription.Subscription) string { return sub.ID.String() },
+	)
+
 	return copySubscription(live[0]), nil
 }
 
-func (s *Store) ListSubscriptions(_ context.Context, tenantID, appID string, opts subscription.ListOpts) ([]*subscription.Subscription, error) {
+func (s *Store) ListSubscriptions(
+	_ context.Context,
+	tenantID, appID string,
+	opts subscription.ListOpts,
+) ([]*subscription.Subscription, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	result := make([]*subscription.Subscription, 0)
+
 	for _, sub := range s.subscriptions {
 		if (tenantID == "" || sub.TenantID == tenantID) && (appID == "" || sub.AppID == appID) {
 			if opts.Status == "" || sub.Status == opts.Status {
@@ -340,7 +400,13 @@ func (s *Store) ListSubscriptions(_ context.Context, tenantID, appID string, opt
 			}
 		}
 	}
-	sortNewestFirst(result, func(sub *subscription.Subscription) time.Time { return sub.CreatedAt }, func(sub *subscription.Subscription) string { return sub.ID.String() })
+
+	sortNewestFirst(
+		result,
+		func(sub *subscription.Subscription) time.Time { return sub.CreatedAt },
+		func(sub *subscription.Subscription) string { return sub.ID.String() },
+	)
+
 	return window(result, opts.Limit, opts.Offset), nil
 }
 
@@ -351,11 +417,17 @@ func (s *Store) UpdateSubscription(_ context.Context, sub *subscription.Subscrip
 	if _, ok := s.subscriptions[sub.ID.String()]; !ok {
 		return ledger.ErrSubscriptionNotFound
 	}
+
 	s.subscriptions[sub.ID.String()] = copySubscription(sub)
+
 	return nil
 }
 
-func (s *Store) CancelSubscription(_ context.Context, subID id.SubscriptionID, immediately bool) (time.Time, error) {
+func (s *Store) CancelSubscription(
+	_ context.Context,
+	subID id.SubscriptionID,
+	immediately bool,
+) (time.Time, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -363,12 +435,14 @@ func (s *Store) CancelSubscription(_ context.Context, subID id.SubscriptionID, i
 	if !exists {
 		return time.Time{}, ledger.ErrSubscriptionNotFound
 	}
+
 	switch sub.Status {
 	case subscription.StatusCanceled:
 		return time.Time{}, ledger.ErrSubscriptionCanceled
 	case subscription.StatusExpired:
 		return time.Time{}, ledger.ErrSubscriptionExpired
 	}
+
 	now := time.Now().UTC()
 	// A scheduled cancel ends the period current now, read under the lock.
 	cancelAt := sub.CurrentPeriodEnd.UTC()
@@ -378,9 +452,11 @@ func (s *Store) CancelSubscription(_ context.Context, subID id.SubscriptionID, i
 		sub.Status = subscription.StatusCanceled
 		sub.CanceledAt = &canceledAt
 	}
+
 	stored := cancelAt
 	sub.CancelAt = &stored
 	sub.UpdatedAt = now
+
 	return cancelAt, nil
 }
 
@@ -396,26 +472,35 @@ func (s *Store) IngestBatch(_ context.Context, events []*meter.UsageEvent) error
 		// index design sqlite, postgres and mongo all use.
 		if e.IdempotencyKey != "" {
 			duplicate := false
+
 			for _, existing := range s.usageEvents {
 				if existing.IdempotencyKey == e.IdempotencyKey {
 					duplicate = true
 					break
 				}
 			}
+
 			if duplicate {
 				continue // Skip duplicate
 			}
 		}
+
 		s.usageEvents = append(s.usageEvents, *e)
 	}
+
 	return nil
 }
 
-func (s *Store) Aggregate(_ context.Context, tenantID, appID, featureKey string, period plan.Period) (int64, error) {
+func (s *Store) Aggregate(
+	_ context.Context,
+	tenantID, appID, featureKey string,
+	period plan.Period,
+) (int64, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	var total int64
+
 	now := time.Now()
 	// The period start is inclusive, matching the half-open [Start, End)
 	// window QueryUsage applies: an event stamped exactly at the start of the
@@ -436,23 +521,36 @@ func (s *Store) Aggregate(_ context.Context, tenantID, appID, featureKey string,
 	return total, nil
 }
 
-func (s *Store) AggregateMulti(ctx context.Context, tenantID, appID string, featureKeys []string, period plan.Period) (map[string]int64, error) {
+func (s *Store) AggregateMulti(
+	ctx context.Context,
+	tenantID, appID string,
+	featureKeys []string,
+	period plan.Period,
+) (map[string]int64, error) {
 	result := make(map[string]int64)
+
 	for _, key := range featureKeys {
 		total, err := s.Aggregate(ctx, tenantID, appID, key, period)
 		if err != nil {
 			return nil, err
 		}
+
 		result[key] = total
 	}
+
 	return result, nil
 }
 
-func (s *Store) QueryUsage(_ context.Context, tenantID, appID string, opts meter.QueryOpts) ([]*meter.UsageEvent, error) {
+func (s *Store) QueryUsage(
+	_ context.Context,
+	tenantID, appID string,
+	opts meter.QueryOpts,
+) ([]*meter.UsageEvent, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	result := make([]*meter.UsageEvent, 0)
+
 	for i := range s.usageEvents {
 		e := &s.usageEvents[i]
 		if (tenantID == "" || e.TenantID == tenantID) && (appID == "" || e.AppID == appID) {
@@ -468,7 +566,13 @@ func (s *Store) QueryUsage(_ context.Context, tenantID, appID string, opts meter
 			}
 		}
 	}
-	sortNewestFirst(result, func(e *meter.UsageEvent) time.Time { return e.Timestamp }, func(e *meter.UsageEvent) string { return e.ID.String() })
+
+	sortNewestFirst(
+		result,
+		func(e *meter.UsageEvent) time.Time { return e.Timestamp },
+		func(e *meter.UsageEvent) string { return e.ID.String() },
+	)
+
 	return window(result, opts.Limit, opts.Offset), nil
 }
 
@@ -477,7 +581,9 @@ func (s *Store) PurgeUsage(_ context.Context, before time.Time) (int64, error) {
 	defer s.mu.Unlock()
 
 	var count int64
+
 	newEvents := make([]meter.UsageEvent, 0)
+
 	for _, e := range s.usageEvents {
 		if e.Timestamp.Before(before) {
 			count++
@@ -485,12 +591,17 @@ func (s *Store) PurgeUsage(_ context.Context, before time.Time) (int64, error) {
 			newEvents = append(newEvents, e)
 		}
 	}
+
 	s.usageEvents = newEvents
+
 	return count, nil
 }
 
 // Entitlement Store implementation
-func (s *Store) GetCached(_ context.Context, tenantID, appID, featureKey string) (*entitlement.Result, error) {
+func (s *Store) GetCached(
+	_ context.Context,
+	tenantID, appID, featureKey string,
+) (*entitlement.Result, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -502,16 +613,23 @@ func (s *Store) GetCached(_ context.Context, tenantID, appID, featureKey string)
 			}
 		}
 	}
+
 	return nil, ledger.ErrCacheMiss
 }
 
-func (s *Store) SetCached(_ context.Context, tenantID, appID, featureKey string, result *entitlement.Result, ttl time.Duration) error {
+func (s *Store) SetCached(
+	_ context.Context,
+	tenantID, appID, featureKey string,
+	result *entitlement.Result,
+	ttl time.Duration,
+) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	key := fmt.Sprintf("%s:%s:%s", tenantID, appID, featureKey)
 	s.entitlementCache[key] = result
 	s.cacheExpiry[key] = time.Now().Add(ttl)
+
 	return nil
 }
 
@@ -526,6 +644,7 @@ func (s *Store) Invalidate(_ context.Context, tenantID, appID string) error {
 			delete(s.cacheExpiry, key)
 		}
 	}
+
 	return nil
 }
 
@@ -536,6 +655,7 @@ func (s *Store) InvalidateFeature(_ context.Context, tenantID, appID, featureKey
 	key := fmt.Sprintf("%s:%s:%s", tenantID, appID, featureKey)
 	delete(s.entitlementCache, key)
 	delete(s.cacheExpiry, key)
+
 	return nil
 }
 
@@ -545,6 +665,7 @@ func (s *Store) CreateInvoice(_ context.Context, inv *invoice.Invoice) error {
 	defer s.mu.Unlock()
 
 	s.invoices[inv.ID.String()] = inv
+
 	return nil
 }
 
@@ -555,14 +676,20 @@ func (s *Store) GetInvoice(_ context.Context, invID id.InvoiceID) (*invoice.Invo
 	if inv, ok := s.invoices[invID.String()]; ok {
 		return inv, nil
 	}
+
 	return nil, ledger.ErrInvoiceNotFound
 }
 
-func (s *Store) ListInvoices(_ context.Context, tenantID, appID string, opts invoice.ListOpts) ([]*invoice.Invoice, error) {
+func (s *Store) ListInvoices(
+	_ context.Context,
+	tenantID, appID string,
+	opts invoice.ListOpts,
+) ([]*invoice.Invoice, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	result := make([]*invoice.Invoice, 0)
+
 	for _, inv := range s.invoices {
 		if (tenantID == "" || inv.TenantID == tenantID) && (appID == "" || inv.AppID == appID) {
 			// Start and End select on the period, as in the SQL and mongo
@@ -574,7 +701,13 @@ func (s *Store) ListInvoices(_ context.Context, tenantID, appID string, opts inv
 			}
 		}
 	}
-	sortNewestFirst(result, func(inv *invoice.Invoice) time.Time { return inv.CreatedAt }, func(inv *invoice.Invoice) string { return inv.ID.String() })
+
+	sortNewestFirst(
+		result,
+		func(inv *invoice.Invoice) time.Time { return inv.CreatedAt },
+		func(inv *invoice.Invoice) string { return inv.ID.String() },
+	)
+
 	return window(result, opts.Limit, opts.Offset), nil
 }
 
@@ -585,11 +718,17 @@ func (s *Store) UpdateInvoice(_ context.Context, inv *invoice.Invoice) error {
 	if _, ok := s.invoices[inv.ID.String()]; !ok {
 		return ledger.ErrInvoiceNotFound
 	}
+
 	s.invoices[inv.ID.String()] = inv
+
 	return nil
 }
 
-func (s *Store) GetInvoiceByPeriod(_ context.Context, tenantID, appID string, periodStart, periodEnd time.Time) (*invoice.Invoice, error) {
+func (s *Store) GetInvoiceByPeriod(
+	_ context.Context,
+	tenantID, appID string,
+	periodStart, periodEnd time.Time,
+) (*invoice.Invoice, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -599,6 +738,7 @@ func (s *Store) GetInvoiceByPeriod(_ context.Context, tenantID, appID string, pe
 			return inv, nil
 		}
 	}
+
 	return nil, ledger.ErrInvoiceNotFound
 }
 
@@ -607,16 +747,28 @@ func (s *Store) ListPendingInvoices(_ context.Context, appID string) ([]*invoice
 	defer s.mu.RUnlock()
 
 	result := make([]*invoice.Invoice, 0)
+
 	for _, inv := range s.invoices {
 		if (appID == "" || inv.AppID == appID) && inv.Status == invoice.StatusPending {
 			result = append(result, inv)
 		}
 	}
-	sortNewestFirst(result, func(inv *invoice.Invoice) time.Time { return inv.CreatedAt }, func(inv *invoice.Invoice) string { return inv.ID.String() })
+
+	sortNewestFirst(
+		result,
+		func(inv *invoice.Invoice) time.Time { return inv.CreatedAt },
+		func(inv *invoice.Invoice) string { return inv.ID.String() },
+	)
+
 	return result, nil
 }
 
-func (s *Store) MarkInvoicePaid(_ context.Context, invID id.InvoiceID, paidAt time.Time, paymentRef string) error {
+func (s *Store) MarkInvoicePaid(
+	_ context.Context,
+	invID id.InvoiceID,
+	paidAt time.Time,
+	paymentRef string,
+) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -625,8 +777,10 @@ func (s *Store) MarkInvoicePaid(_ context.Context, invID id.InvoiceID, paidAt ti
 		inv.PaidAt = &paidAt
 		inv.PaymentRef = paymentRef
 		inv.UpdatedAt = time.Now().UTC()
+
 		return nil
 	}
+
 	return ledger.ErrInvoiceNotFound
 }
 
@@ -640,8 +794,10 @@ func (s *Store) MarkInvoiceVoided(_ context.Context, invID id.InvoiceID, reason 
 		inv.VoidedAt = &now
 		inv.VoidReason = reason
 		inv.UpdatedAt = now
+
 		return nil
 	}
+
 	return ledger.ErrInvoiceNotFound
 }
 
@@ -667,6 +823,7 @@ func (s *Store) CreateCoupon(_ context.Context, c *coupon.Coupon) error {
 
 	stored := *c
 	s.coupons[c.ID.String()] = &stored
+
 	return nil
 }
 
@@ -680,6 +837,7 @@ func (s *Store) GetCoupon(_ context.Context, code, appID string) (*coupon.Coupon
 			return &cp, nil
 		}
 	}
+
 	return nil, ledger.ErrCouponNotFound
 }
 
@@ -691,10 +849,15 @@ func (s *Store) GetCouponByID(_ context.Context, couponID id.CouponID) (*coupon.
 		cp := *c
 		return &cp, nil
 	}
+
 	return nil, ledger.ErrCouponNotFound
 }
 
-func (s *Store) ListCoupons(_ context.Context, appID string, opts coupon.ListOpts) ([]*coupon.Coupon, error) {
+func (s *Store) ListCoupons(
+	_ context.Context,
+	appID string,
+	opts coupon.ListOpts,
+) ([]*coupon.Coupon, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -720,7 +883,13 @@ func (s *Store) ListCoupons(_ context.Context, appID string, opts coupon.ListOpt
 			}
 		}
 	}
-	sortNewestFirst(result, func(c *coupon.Coupon) time.Time { return c.CreatedAt }, func(c *coupon.Coupon) string { return c.ID.String() })
+
+	sortNewestFirst(
+		result,
+		func(c *coupon.Coupon) time.Time { return c.CreatedAt },
+		func(c *coupon.Coupon) string { return c.ID.String() },
+	)
+
 	return window(result, opts.Limit, opts.Offset), nil
 }
 
@@ -732,11 +901,13 @@ func (s *Store) UpdateCoupon(_ context.Context, c *coupon.Coupon) error {
 	if !ok {
 		return ledger.ErrCouponNotFound
 	}
+
 	stored := *c
 	// The redemption count belongs to RedeemCoupon. Keep whatever is stored,
 	// whatever the caller's copy carries.
 	stored.TimesRedeemed = current.TimesRedeemed
 	s.coupons[c.ID.String()] = &stored
+
 	return nil
 }
 
@@ -747,7 +918,9 @@ func (s *Store) DeleteCoupon(_ context.Context, couponID id.CouponID) error {
 	if _, ok := s.coupons[couponID.String()]; !ok {
 		return ledger.ErrCouponNotFound
 	}
+
 	delete(s.coupons, couponID.String())
+
 	return nil
 }
 
@@ -764,7 +937,11 @@ func (s *Store) couponApplicationsFor(subID id.SubscriptionID) []*coupon.Applica
 // ApplyCoupon is a low-level operation kept for callers and tests that need
 // it separately. Engine code redeems through RedeemCoupon, which records
 // the application and increments the redemption count as one unit.
-func (s *Store) ApplyCoupon(_ context.Context, subID id.SubscriptionID, couponID id.CouponID) error {
+func (s *Store) ApplyCoupon(
+	_ context.Context,
+	subID id.SubscriptionID,
+	couponID id.CouponID,
+) error {
 	if err := validateSubscriptionID(subID); err != nil {
 		return err
 	}
@@ -793,7 +970,10 @@ func (s *Store) ApplyCoupon(_ context.Context, subID id.SubscriptionID, couponID
 	return nil
 }
 
-func (s *Store) ListAppliedCoupons(_ context.Context, subID id.SubscriptionID) ([]*coupon.Coupon, error) {
+func (s *Store) ListAppliedCoupons(
+	_ context.Context,
+	subID id.SubscriptionID,
+) ([]*coupon.Coupon, error) {
 	if subID.IsNil() {
 		return make([]*coupon.Coupon, 0), nil
 	}
@@ -857,7 +1037,11 @@ func (s *Store) IncrementCouponRedemptions(_ context.Context, couponID id.Coupon
 // coupon rather than mutating the stored pointer in place - see that
 // method's comment for why, and CreateCoupon's for the copy-on-every-
 // crossing rule this store follows throughout.
-func (s *Store) RedeemCoupon(_ context.Context, subID id.SubscriptionID, couponID id.CouponID) error {
+func (s *Store) RedeemCoupon(
+	_ context.Context,
+	subID id.SubscriptionID,
+	couponID id.CouponID,
+) error {
 	if err := validateSubscriptionID(subID); err != nil {
 		return err
 	}
@@ -910,7 +1094,9 @@ func (s *Store) CreateFeature(_ context.Context, f *feature.Feature) error {
 			return ledger.ErrDuplicateFeature
 		}
 	}
+
 	s.features[f.ID.String()] = copyFeature(f)
+
 	return nil
 }
 
@@ -921,6 +1107,7 @@ func (s *Store) GetFeature(_ context.Context, featureID id.FeatureID) (*feature.
 	if f, ok := s.features[featureID.String()]; ok {
 		return copyFeature(f), nil
 	}
+
 	return nil, ledger.ErrFeatureNotFound
 }
 
@@ -933,14 +1120,20 @@ func (s *Store) GetFeatureByKey(_ context.Context, key, appID string) (*feature.
 			return copyFeature(f), nil
 		}
 	}
+
 	return nil, ledger.ErrFeatureNotFound
 }
 
-func (s *Store) ListFeatures(_ context.Context, appID string, opts feature.ListOpts) ([]*feature.Feature, error) {
+func (s *Store) ListFeatures(
+	_ context.Context,
+	appID string,
+	opts feature.ListOpts,
+) ([]*feature.Feature, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	result := make([]*feature.Feature, 0)
+
 	for _, f := range s.features {
 		if appID == "" || f.AppID == appID {
 			if opts.Status == "" || f.Status == opts.Status {
@@ -949,15 +1142,24 @@ func (s *Store) ListFeatures(_ context.Context, appID string, opts feature.ListO
 		}
 	}
 
-	sortOldestFirst(result, func(f *feature.Feature) time.Time { return f.CreatedAt }, func(f *feature.Feature) string { return f.ID.String() })
+	sortOldestFirst(
+		result,
+		func(f *feature.Feature) time.Time { return f.CreatedAt },
+		func(f *feature.Feature) string { return f.ID.String() },
+	)
+
 	return copyFeatures(window(result, opts.Limit, opts.Offset)), nil
 }
 
-func (s *Store) ListGlobalFeatures(_ context.Context, opts feature.ListOpts) ([]*feature.Feature, error) {
+func (s *Store) ListGlobalFeatures(
+	_ context.Context,
+	opts feature.ListOpts,
+) ([]*feature.Feature, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	result := make([]*feature.Feature, 0)
+
 	for _, f := range s.features {
 		if f.AppID == "" {
 			if opts.Status == "" || f.Status == opts.Status {
@@ -966,7 +1168,12 @@ func (s *Store) ListGlobalFeatures(_ context.Context, opts feature.ListOpts) ([]
 		}
 	}
 
-	sortOldestFirst(result, func(f *feature.Feature) time.Time { return f.CreatedAt }, func(f *feature.Feature) string { return f.ID.String() })
+	sortOldestFirst(
+		result,
+		func(f *feature.Feature) time.Time { return f.CreatedAt },
+		func(f *feature.Feature) string { return f.ID.String() },
+	)
+
 	return copyFeatures(window(result, opts.Limit, opts.Offset)), nil
 }
 
@@ -977,7 +1184,9 @@ func (s *Store) UpdateFeature(_ context.Context, f *feature.Feature) error {
 	if _, exists := s.features[f.ID.String()]; !exists {
 		return ledger.ErrFeatureNotFound
 	}
+
 	s.features[f.ID.String()] = copyFeature(f)
+
 	return nil
 }
 
@@ -988,7 +1197,9 @@ func (s *Store) DeleteFeature(_ context.Context, featureID id.FeatureID) error {
 	if _, ok := s.features[featureID.String()]; !ok {
 		return ledger.ErrFeatureNotFound
 	}
+
 	delete(s.features, featureID.String())
+
 	return nil
 }
 
@@ -999,8 +1210,10 @@ func (s *Store) ArchiveFeature(_ context.Context, featureID id.FeatureID) error 
 	if f, exists := s.features[featureID.String()]; exists {
 		f.Status = feature.StatusArchived
 		f.UpdatedAt = time.Now().UTC()
+
 		return nil
 	}
+
 	return ledger.ErrFeatureNotFound
 }
 
@@ -1023,8 +1236,13 @@ func (s *Store) Close() error {
 // the wrong prefix before any storage is touched.
 func validateSubscriptionID(subID id.SubscriptionID) error {
 	if subID.IsNil() || subID.Prefix() != id.PrefixSubscription {
-		return fmt.Errorf("ledger/memory: invalid subscription id %q: %w", subID.String(), ledger.ErrInvalidInput)
+		return fmt.Errorf(
+			"ledger/memory: invalid subscription id %q: %w",
+			subID.String(),
+			ledger.ErrInvalidInput,
+		)
 	}
+
 	return nil
 }
 
@@ -1035,6 +1253,7 @@ func validateSubscriptionID(subID id.SubscriptionID) error {
 // start: the zero time, which every event is after.
 func getStartOfPeriod(t time.Time, period plan.Period) time.Time {
 	t = t.UTC()
+
 	switch period {
 	case plan.PeriodMonthly:
 		return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)

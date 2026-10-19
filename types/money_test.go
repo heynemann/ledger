@@ -16,13 +16,13 @@ func TestMoneyConstructors(t *testing.T) {
 		currency string
 		display  string
 	}{
-		{"USD", USD(4900), 4900, "usd", "$49.00"},
+		{"USD", USD(49_000_000), 49_000_000, "usd", "$49.000000"},
 		{"EUR", EUR(19900), 19900, "eur", "€199.00"},
 		{"GBP", GBP(9900), 9900, "gbp", "£99.00"},
 		{"JPY", JPY(100), 100, "jpy", "¥100"},
 		{"CAD", CAD(2500), 2500, "cad", "C$25.00"},
 		{"AUD", AUD(7550), 7550, "aud", "A$75.50"},
-		{"Zero USD", Zero("USD"), 0, "usd", "$0.00"},
+		{"Zero USD", Zero("USD"), 0, "usd", "$0.000000"},
 		{"Zero EUR", Zero("EUR"), 0, "eur", "€0.00"},
 	}
 
@@ -31,9 +31,11 @@ func TestMoneyConstructors(t *testing.T) {
 			if tt.money.Amount != tt.amount {
 				t.Errorf("Amount: got %d, want %d", tt.money.Amount, tt.amount)
 			}
+
 			if tt.money.Currency != tt.currency {
 				t.Errorf("Currency: got %s, want %s", tt.money.Currency, tt.currency)
 			}
+
 			if tt.money.String() != tt.display {
 				t.Errorf("Display: got %s, want %s", tt.money.String(), tt.display)
 			}
@@ -111,9 +113,11 @@ func TestMoneyComparison(t *testing.T) {
 			if got := tt.a.LessThan(tt.b); got != tt.less {
 				t.Errorf("LessThan: got %v, want %v", got, tt.less)
 			}
+
 			if got := tt.a.GreaterThan(tt.b); got != tt.greater {
 				t.Errorf("GreaterThan: got %v, want %v", got, tt.greater)
 			}
+
 			if got := tt.a.Equal(tt.b); got != tt.equal {
 				t.Errorf("Equal: got %v, want %v", got, tt.equal)
 			}
@@ -138,6 +142,7 @@ func TestMoneyMinMax(t *testing.T) {
 			if minVal := tt.a.Min(tt.b); !minVal.Equal(tt.min) {
 				t.Errorf("Min: got %v, want %v", minVal, tt.min)
 			}
+
 			if maxVal := tt.a.Max(tt.b); !maxVal.Equal(tt.max) {
 				t.Errorf("Max: got %v, want %v", maxVal, tt.max)
 			}
@@ -165,9 +170,11 @@ func TestMoneyPredicates(t *testing.T) {
 			if got := tt.money.IsZero(); got != tt.isZero {
 				t.Errorf("IsZero: got %v, want %v", got, tt.isZero)
 			}
+
 			if got := tt.money.IsPositive(); got != tt.isPositive {
 				t.Errorf("IsPositive: got %v, want %v", got, tt.isPositive)
 			}
+
 			if got := tt.money.IsNegative(); got != tt.isNegative {
 				t.Errorf("IsNegative: got %v, want %v", got, tt.isNegative)
 			}
@@ -180,12 +187,15 @@ func TestMoneyFormatMajor(t *testing.T) {
 		money    Money
 		expected string
 	}{
-		{USD(4900), "49.00"},
-		{USD(100), "1.00"},
-		{USD(1), "0.01"},
-		{USD(0), "0.00"},
-		{USD(-4900), "-49.00"},
-		{USD(-1), "-0.01"},
+		{USD(49_000_000), "49.000000"},
+		{USD(1_000_000), "1.000000"},
+		{USD(1), "0.000001"},
+		{USD(0), "0.000000"},
+		{USD(-49_000_000), "-49.000000"},
+		{USD(-1), "-0.000001"},
+		{USD(math.MaxInt64), "9223372036854.775807"},
+		{USD(math.MinInt64), "-9223372036854.775808"},
+		{EUR(math.MinInt64), "-92233720368547758.08"},
 		{EUR(9999), "99.99"},
 		{JPY(100), "100"},     // No decimals
 		{JPY(12345), "12345"}, // No decimals
@@ -201,7 +211,7 @@ func TestMoneyFormatMajor(t *testing.T) {
 }
 
 func TestMoneyJSON(t *testing.T) {
-	m := USD(4900)
+	m := USD(49_000_000)
 
 	data, err := json.Marshal(m)
 	if err != nil {
@@ -209,7 +219,7 @@ func TestMoneyJSON(t *testing.T) {
 	}
 
 	// Check JSON structure
-	expected := `{"amount":4900,"currency":"usd","display":"$49.00"}`
+	expected := `{"amount":49000000,"currency":"usd","display":"$49.000000"}`
 	if string(data) != expected {
 		t.Errorf("JSON: got %s, want %s", string(data), expected)
 	}
@@ -224,7 +234,7 @@ func TestMoneyJSON(t *testing.T) {
 		t.Fatalf("Unmarshal error: %v", err)
 	}
 
-	if result.Amount != 4900 || result.Currency != "usd" || result.Display != "$49.00" {
+	if result.Amount != 49_000_000 || result.Currency != "usd" || result.Display != "$49.000000" {
 		t.Errorf("Unmarshaled data incorrect: %+v", result)
 	}
 }
@@ -279,7 +289,9 @@ func TestCurrencySymbols(t *testing.T) {
 func BenchmarkMoneyAdd(b *testing.B) {
 	m1 := USD(100)
 	m2 := USD(200)
+
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		_ = m1.Add(m2)
 	}
@@ -287,7 +299,9 @@ func BenchmarkMoneyAdd(b *testing.B) {
 
 func BenchmarkMoneyString(b *testing.B) {
 	m := USD(4900)
+
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		_ = m.String()
 	}
@@ -295,7 +309,9 @@ func BenchmarkMoneyString(b *testing.B) {
 
 func BenchmarkMoneyJSON(b *testing.B) {
 	m := USD(4900)
+
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		_, _ = json.Marshal(m)
 	}
@@ -339,10 +355,22 @@ func TestCheckedAdd(t *testing.T) {
 	}{
 		{"ordinary sum", USD(4900), USD(100), USD(5000), false},
 		{"max plus zero is fine", USD(math.MaxInt64), USD(0), USD(math.MaxInt64), false},
-		{"max minus one plus one is fine", USD(math.MaxInt64 - 1), USD(1), USD(math.MaxInt64), false},
+		{
+			"max minus one plus one is fine",
+			USD(math.MaxInt64 - 1),
+			USD(1),
+			USD(math.MaxInt64),
+			false,
+		},
 		{"max plus one overflows", USD(math.MaxInt64), USD(1), Money{}, true},
 		{"one plus max overflows", USD(1), USD(math.MaxInt64), Money{}, true},
-		{"two large halves overflow", USD(math.MaxInt64/2 + 1), USD(math.MaxInt64/2 + 1), Money{}, true},
+		{
+			"two large halves overflow",
+			USD(math.MaxInt64/2 + 1),
+			USD(math.MaxInt64/2 + 1),
+			Money{},
+			true,
+		},
 		{"min plus zero is fine", USD(math.MinInt64), USD(0), USD(math.MinInt64), false},
 		{"min plus minus one overflows", USD(math.MinInt64), USD(-1), Money{}, true},
 		{"min plus max is minus one", USD(math.MinInt64), USD(math.MaxInt64), USD(-1), false},
@@ -355,11 +383,14 @@ func TestCheckedAdd(t *testing.T) {
 				if !errors.Is(err, ErrOverflow) {
 					t.Fatalf("got err %v, want ErrOverflow", err)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
+
 			if !got.Equal(tt.want) {
 				t.Errorf("got %v, want %v", got, tt.want)
 			}
@@ -378,6 +409,7 @@ func TestCheckedAddCurrencyMismatchIsAnErrorNotAPanic(t *testing.T) {
 	if err == nil {
 		t.Fatal("got nil error for a currency mismatch")
 	}
+
 	if errors.Is(err, ErrOverflow) {
 		t.Errorf("a currency mismatch must not be reported as an overflow: %v", err)
 	}
@@ -405,11 +437,14 @@ func TestCheckedSubtract(t *testing.T) {
 				if !errors.Is(err, ErrOverflow) {
 					t.Fatalf("got err %v, want ErrOverflow", err)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
+
 			if !got.Equal(tt.want) {
 				t.Errorf("got %v, want %v", got, tt.want)
 			}
@@ -437,9 +472,21 @@ func TestCheckedMultiply(t *testing.T) {
 		{"just inside the boundary", USD(math.MaxInt64 / 3), 3, USD(math.MaxInt64 / 3 * 3), false},
 		{"just past the boundary", USD(math.MaxInt64/3 + 1), 3, Money{}, true},
 		{"three cents by half of max overflows", USD(3), math.MaxInt64 / 2, Money{}, true},
-		{"negative amount inside the boundary", USD(math.MinInt64 / 2), 2, USD(math.MinInt64), false},
+		{
+			"negative amount inside the boundary",
+			USD(math.MinInt64 / 2),
+			2,
+			USD(math.MinInt64),
+			false,
+		},
 		{"negative amount past the boundary", USD(math.MinInt64/2 - 1), 2, Money{}, true},
-		{"negative quantity inside the boundary", USD(2), math.MinInt64 / 2, USD(math.MinInt64), false},
+		{
+			"negative quantity inside the boundary",
+			USD(2),
+			math.MinInt64 / 2,
+			USD(math.MinInt64),
+			false,
+		},
 		{"negative quantity past the boundary", USD(3), math.MinInt64/2 - 1, Money{}, true},
 		{"min times minus one overflows", USD(math.MinInt64), -1, Money{}, true},
 		{"minus one times min overflows", USD(-1), math.MinInt64, Money{}, true},
@@ -455,11 +502,14 @@ func TestCheckedMultiply(t *testing.T) {
 				if !errors.Is(err, ErrOverflow) {
 					t.Fatalf("got %v, err %v, want ErrOverflow", got, err)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
+
 			if !got.Equal(tt.want) {
 				t.Errorf("got %v, want %v", got, tt.want)
 			}
@@ -471,6 +521,7 @@ func TestCheckedPercent(t *testing.T) {
 	if _, err := USD(math.MaxInt64).CheckedPercent(2); !errors.Is(err, ErrOverflow) {
 		t.Errorf("CheckedPercent(MaxInt64, 2): got err %v, want ErrOverflow", err)
 	}
+
 	if _, err := USD(math.MinInt64).CheckedPercent(-1); !errors.Is(err, ErrOverflow) {
 		t.Errorf("CheckedPercent(MinInt64, -1): got err %v, want ErrOverflow", err)
 	}
@@ -479,9 +530,11 @@ func TestCheckedPercent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CheckedPercent(MaxInt64, 1): unexpected error %v", err)
 	}
+
 	if want := int64(math.MaxInt64 / 100); got.Amount != want {
 		t.Errorf("CheckedPercent(MaxInt64, 1): got %d, want %d", got.Amount, want)
 	}
+
 	if got, err := USD(math.MaxInt64).CheckedPercent(0); err != nil || !got.IsZero() {
 		t.Errorf("CheckedPercent(MaxInt64, 0): got %v, %v, want zero and no error", got, err)
 	}
@@ -513,8 +566,14 @@ func TestCheckedPercentAgreesWithPercent(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
+
 			if want := tt.base.Percent(tt.pct); !got.Equal(want) {
-				t.Errorf("CheckedPercent(%d): got %v, want %v (what Percent returns)", tt.pct, got, want)
+				t.Errorf(
+					"CheckedPercent(%d): got %v, want %v (what Percent returns)",
+					tt.pct,
+					got,
+					want,
+				)
 			}
 		})
 	}
@@ -524,10 +583,35 @@ func TestCheckedPercentAgreesWithPercent(t *testing.T) {
 // against arbitrary-precision arithmetic over every pair of boundary values.
 func TestCheckedMultiplyMatchesBigInt(t *testing.T) {
 	values := []int64{
-		0, 1, -1, 2, -2, 3, -3, 10, -10, 100, -100,
-		math.MaxInt64, math.MaxInt64 - 1, math.MaxInt64 / 2, math.MaxInt64/2 + 1, math.MaxInt64 / 3, math.MaxInt64/3 + 1,
-		math.MinInt64, math.MinInt64 + 1, math.MinInt64 / 2, math.MinInt64/2 - 1, math.MinInt64 / 3, math.MinInt64/3 - 1,
-		1 << 31, -(1 << 31), 1 << 32, -(1 << 32), 3_037_000_499, 3_037_000_500,
+		0,
+		1,
+		-1,
+		2,
+		-2,
+		3,
+		-3,
+		10,
+		-10,
+		100,
+		-100,
+		math.MaxInt64,
+		math.MaxInt64 - 1,
+		math.MaxInt64 / 2,
+		math.MaxInt64/2 + 1,
+		math.MaxInt64 / 3,
+		math.MaxInt64/3 + 1,
+		math.MinInt64,
+		math.MinInt64 + 1,
+		math.MinInt64 / 2,
+		math.MinInt64/2 - 1,
+		math.MinInt64 / 3,
+		math.MinInt64/3 - 1,
+		1 << 31,
+		-(1 << 31),
+		1 << 32,
+		-(1 << 32),
+		3_037_000_499,
+		3_037_000_500,
 	}
 	lo, hi := big.NewInt(math.MinInt64), big.NewInt(math.MaxInt64)
 
@@ -541,21 +625,50 @@ func TestCheckedMultiplyMatchesBigInt(t *testing.T) {
 			case fits && err != nil:
 				t.Errorf("CheckedMultiply(%d, %d): unexpected error %v", a, b, err)
 			case fits && got.Amount != exact.Int64():
-				t.Errorf("CheckedMultiply(%d, %d): got %d, want %d", a, b, got.Amount, exact.Int64())
+				t.Errorf(
+					"CheckedMultiply(%d, %d): got %d, want %d",
+					a,
+					b,
+					got.Amount,
+					exact.Int64(),
+				)
 			case !fits && !errors.Is(err, ErrOverflow):
-				t.Errorf("CheckedMultiply(%d, %d): got %v, %v, want ErrOverflow (exact product %s)", a, b, got, err, exact)
+				t.Errorf(
+					"CheckedMultiply(%d, %d): got %v, %v, want ErrOverflow (exact product %s)",
+					a,
+					b,
+					got,
+					err,
+					exact,
+				)
 			}
 
 			sum := new(big.Int).Add(big.NewInt(a), big.NewInt(b))
+
 			sumFits := sum.Cmp(lo) >= 0 && sum.Cmp(hi) <= 0
 			if _, err := USD(a).CheckedAdd(USD(b)); sumFits != (err == nil) {
-				t.Errorf("CheckedAdd(%d, %d): err %v, but the exact sum %s fits=%v", a, b, err, sum, sumFits)
+				t.Errorf(
+					"CheckedAdd(%d, %d): err %v, but the exact sum %s fits=%v",
+					a,
+					b,
+					err,
+					sum,
+					sumFits,
+				)
 			}
 
 			diff := new(big.Int).Sub(big.NewInt(a), big.NewInt(b))
+
 			diffFits := diff.Cmp(lo) >= 0 && diff.Cmp(hi) <= 0
 			if _, err := USD(a).CheckedSubtract(USD(b)); diffFits != (err == nil) {
-				t.Errorf("CheckedSubtract(%d, %d): err %v, but the exact difference %s fits=%v", a, b, err, diff, diffFits)
+				t.Errorf(
+					"CheckedSubtract(%d, %d): err %v, but the exact difference %s fits=%v",
+					a,
+					b,
+					err,
+					diff,
+					diffFits,
+				)
 			}
 		}
 	}

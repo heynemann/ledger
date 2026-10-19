@@ -70,7 +70,7 @@ func main() {
 			{Key: "api_calls", Name: "API calls", Type: plan.FeatureMetered, Limit: 10000, Period: plan.PeriodMonthly},
 		},
 		Pricing: &plan.Pricing{
-			BaseAmount:    types.USD(4900), // $49.00
+			BaseAmount:    types.USD(49_000_000), // $49.000000 (USD micros)
 			BillingPeriod: plan.PeriodMonthly,
 		},
 	}

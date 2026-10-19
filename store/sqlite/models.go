@@ -28,7 +28,9 @@ func utcPtr(t *time.Time) *time.Time {
 	if t == nil {
 		return nil
 	}
+
 	u := t.UTC()
+
 	return &u
 }
 
@@ -158,6 +160,7 @@ func toSubscriptionModel(s *subscription.Subscription) *subscriptionModel {
 	if quantity == nil {
 		quantity = make(map[string]int64)
 	}
+
 	quantityJSON, _ := json.Marshal(quantity) //nolint:errcheck // best-effort
 
 	m := &subscriptionModel{
@@ -181,7 +184,10 @@ func toSubscriptionModel(s *subscription.Subscription) *subscriptionModel {
 		CreatedAt:          s.CreatedAt.UTC(),
 		UpdatedAt:          s.UpdatedAt.UTC(),
 	}
-	m.StretchStart, m.StretchEnd, m.StretchOriginalEnd, m.StretchFloor = subscription.StretchColumns(s.Stretch)
+	m.StretchStart, m.StretchEnd, m.StretchOriginalEnd, m.StretchFloor = subscription.StretchColumns(
+		s.Stretch,
+	)
+
 	return m
 }
 
@@ -190,6 +196,7 @@ func fromSubscriptionModel(m *subscriptionModel) (*subscription.Subscription, er
 	if err != nil {
 		return nil, err
 	}
+
 	planID, err := id.ParsePlanID(m.PlanID)
 	if err != nil {
 		return nil, err
@@ -204,6 +211,7 @@ func fromSubscriptionModel(m *subscriptionModel) (*subscription.Subscription, er
 	if m.Quantity != "" && m.Quantity != "null" {
 		_ = json.Unmarshal([]byte(m.Quantity), &quantity) //nolint:errcheck // best-effort
 	}
+
 	if quantity == nil {
 		quantity = make(map[string]int64)
 	}
@@ -225,12 +233,17 @@ func fromSubscriptionModel(m *subscriptionModel) (*subscription.Subscription, er
 		CancelAt:           m.CancelAt,
 		EndedAt:            m.EndedAt,
 		PausedAt:           m.PausedAt,
-		Stretch:            subscription.StretchFromColumns(m.StretchStart, m.StretchEnd, m.StretchOriginalEnd, m.StretchFloor),
-		AppID:              m.AppID,
-		ProviderID:         m.ProviderID,
-		ProviderName:       m.ProviderName,
-		Metadata:           metadata,
-		Quantity:           quantity,
+		Stretch: subscription.StretchFromColumns(
+			m.StretchStart,
+			m.StretchEnd,
+			m.StretchOriginalEnd,
+			m.StretchFloor,
+		),
+		AppID:        m.AppID,
+		ProviderID:   m.ProviderID,
+		ProviderName: m.ProviderName,
+		Metadata:     metadata,
+		Quantity:     quantity,
 	}, nil
 }
 
@@ -309,7 +322,11 @@ type entitlementCacheModel struct {
 	CreatedAt  time.Time `grove:"created_at"`
 }
 
-func toEntitlementCacheModel(tenantID, appID, featureKey string, result *entitlement.Result, expiresAt time.Time) *entitlementCacheModel {
+func toEntitlementCacheModel(
+	tenantID, appID, featureKey string,
+	result *entitlement.Result,
+	expiresAt time.Time,
+) *entitlementCacheModel {
 	return &entitlementCacheModel{
 		CacheKey:   tenantID + ":" + appID + ":" + featureKey,
 		TenantID:   tenantID,
@@ -413,6 +430,7 @@ func fromInvoiceModel(m *invoiceModel) (*invoice.Invoice, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	subID, err := id.ParseSubscriptionID(m.SubscriptionID)
 	if err != nil {
 		return nil, err

@@ -32,6 +32,7 @@ func newInternalTestStore(t *testing.T) *Store {
 	if err := pg.Open(ctx, dsn); err != nil {
 		t.Fatalf("open postgres driver: %v", err)
 	}
+
 	t.Cleanup(func() { _ = pg.Close() })
 
 	db, err := grove.Open(pg)
@@ -43,6 +44,7 @@ func newInternalTestStore(t *testing.T) *Store {
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
+
 	return s
 }
 
@@ -78,15 +80,21 @@ func TestIsUniqueViolationMapsRawDuplicateInsertError(t *testing.T) {
 		SubscriptionID: subID.String(),
 		AppliedAt:      now(),
 	}
+
 	_, err := s.pg.NewInsert(dup).Exec(ctx)
 	if err == nil {
 		t.Fatal("direct duplicate insert: got nil error, want a unique_violation")
 	}
+
 	if !isUniqueViolation(err) {
 		t.Fatalf("isUniqueViolation(%v) = false, want true (raw error: %#v)", err, err)
 	}
+
 	if isForeignKeyViolation(err) {
-		t.Fatalf("isForeignKeyViolation(%v) = true, want false: this is a unique violation, not a foreign key one", err)
+		t.Fatalf(
+			"isForeignKeyViolation(%v) = true, want false: this is a unique violation, not a foreign key one",
+			err,
+		)
 	}
 }
 
@@ -107,14 +115,20 @@ func TestIsForeignKeyViolationMapsRawInsertAgainstUnknownCoupon(t *testing.T) {
 		SubscriptionID: id.NewSubscriptionID().String(),
 		AppliedAt:      now(),
 	}
+
 	_, err := s.pg.NewInsert(m).Exec(ctx)
 	if err == nil {
 		t.Fatal("insert referencing an unknown coupon: got nil error, want a foreign_key_violation")
 	}
+
 	if !isForeignKeyViolation(err) {
 		t.Fatalf("isForeignKeyViolation(%v) = false, want true (raw error: %#v)", err, err)
 	}
+
 	if isUniqueViolation(err) {
-		t.Fatalf("isUniqueViolation(%v) = true, want false: this is a foreign key violation, not a unique one", err)
+		t.Fatalf(
+			"isUniqueViolation(%v) = true, want false: this is a foreign key violation, not a unique one",
+			err,
+		)
 	}
 }

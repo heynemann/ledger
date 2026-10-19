@@ -29,6 +29,7 @@ func (l *Ledger) lifecycleWorker(ctx context.Context) {
 	l.wg.Add(1)
 	go func() {
 		defer l.wg.Done()
+
 		select {
 		case <-l.stopChan:
 			cancel()
@@ -43,6 +44,7 @@ func (l *Ledger) lifecycleWorker(ctx context.Context) {
 		if l.stopping() {
 			return
 		}
+
 		select {
 		case <-l.stopChan:
 			return
@@ -52,6 +54,7 @@ func (l *Ledger) lifecycleWorker(ctx context.Context) {
 			if l.stopping() {
 				return
 			}
+
 			l.runLifecycle(runCtx)
 		}
 	}
@@ -94,6 +97,7 @@ func (l *Ledger) runLifecycle(ctx context.Context) {
 			l.logger.Warn("ledger: lifecycle run left work undone", log.Error(err))
 		}
 	}
+
 	if !report.Empty() {
 		l.logger.Info("ledger: lifecycle run",
 			log.Int("periods_advanced", len(report.PeriodsAdvanced)),

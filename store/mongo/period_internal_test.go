@@ -12,6 +12,7 @@ import (
 // year is 2025, whatever zone the time carries.
 func TestGetStartOfPeriodOpensInUTC(t *testing.T) {
 	in := time.Date(2026, time.January, 1, 5, 0, 0, 0, time.FixedZone("UTC+14", 14*60*60))
+
 	cases := []struct {
 		period plan.Period
 		want   time.Time

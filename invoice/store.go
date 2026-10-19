@@ -12,7 +12,11 @@ type Store interface {
 	Get(ctx context.Context, invID id.InvoiceID) (*Invoice, error)
 	List(ctx context.Context, tenantID, appID string, opts ListOpts) ([]*Invoice, error)
 	Update(ctx context.Context, inv *Invoice) error
-	GetByPeriod(ctx context.Context, tenantID, appID string, periodStart, periodEnd time.Time) (*Invoice, error)
+	GetByPeriod(
+		ctx context.Context,
+		tenantID, appID string,
+		periodStart, periodEnd time.Time,
+	) (*Invoice, error)
 	ListPending(ctx context.Context, appID string) ([]*Invoice, error)
 	MarkPaid(ctx context.Context, invID id.InvoiceID, paidAt time.Time, paymentRef string) error
 	MarkVoided(ctx context.Context, invID id.InvoiceID, reason string) error

@@ -83,6 +83,7 @@ func New(r Recorder, opts ...Option) *Extension {
 	for _, opt := range opts {
 		opt(e)
 	}
+
 	return e
 }
 
@@ -170,11 +171,13 @@ func (e *Extension) OnSubscriptionRenewed(ctx context.Context, renewal interface
 		if len(r.Ended) > 0 {
 			kv = append(kv, "ended_from", r.Ended[0].Start, "ended_to", r.Ended[len(r.Ended)-1].End)
 		}
+
 		return e.record(ctx, ActionSubscriptionRenewed, SeverityInfo, OutcomeSuccess,
 			ResourceSubscription, subscriptionID(r.Subscription), CategorySubscription, nil,
 			subscriptionMeta(r.Subscription, kv...)...,
 		)
 	}
+
 	return e.record(ctx, ActionSubscriptionRenewed, SeverityInfo, OutcomeSuccess,
 		ResourceSubscription, "", CategorySubscription, nil, kv...)
 }
@@ -244,7 +247,11 @@ func (e *Extension) OnInvoicePastDue(ctx context.Context, inv interface{}) error
 // ──────────────────────────────────────────────────
 
 // OnQuotaExceeded implements plugin.OnQuotaExceeded.
-func (e *Extension) OnQuotaExceeded(ctx context.Context, tenantID, featureKey string, used, limit int64) error {
+func (e *Extension) OnQuotaExceeded(
+	ctx context.Context,
+	tenantID, featureKey string,
+	used, limit int64,
+) error {
 	return e.record(ctx, ActionQuotaExceeded, SeverityWarning, OutcomeFailure,
 		ResourceEntitlement, featureKey, CategoryAccess, nil,
 		"tenant_id", tenantID,
@@ -271,6 +278,7 @@ func subscriptionID(v interface{}) string {
 	if sub, ok := v.(*subscription.Subscription); ok && sub != nil {
 		return sub.ID.String()
 	}
+
 	return ""
 }
 
@@ -281,6 +289,7 @@ func subscriptionMeta(v interface{}, kv ...any) []any {
 	if sub, ok := v.(*subscription.Subscription); ok && sub != nil {
 		kv = append(kv, "tenant_id", sub.TenantID, "app_id", sub.AppID)
 	}
+
 	return kv
 }
 
@@ -290,14 +299,24 @@ func invoiceID(v interface{}) string {
 	if inv, ok := v.(*invoice.Invoice); ok && inv != nil {
 		return inv.ID.String()
 	}
+
 	return ""
 }
 
 // invoiceMeta adds the invoice's tenant, app and subscription to kv.
 func invoiceMeta(v interface{}, kv ...any) []any {
 	if inv, ok := v.(*invoice.Invoice); ok && inv != nil {
-		kv = append(kv, "tenant_id", inv.TenantID, "app_id", inv.AppID, "subscription_id", inv.SubscriptionID.String())
+		kv = append(
+			kv,
+			"tenant_id",
+			inv.TenantID,
+			"app_id",
+			inv.AppID,
+			"subscription_id",
+			inv.SubscriptionID.String(),
+		)
 	}
+
 	return kv
 }
 
@@ -319,6 +338,7 @@ func (e *Extension) record(
 		if !ok {
 			key = fmt.Sprintf("%v", kvPairs[i])
 		}
+
 		meta[key] = kvPairs[i+1]
 	}
 
@@ -346,5 +366,6 @@ func (e *Extension) record(
 			log.Error(recErr),
 		)
 	}
+
 	return nil
 }

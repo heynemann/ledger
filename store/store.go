@@ -31,7 +31,11 @@ type Store interface {
 	CreateFeature(ctx context.Context, f *feature.Feature) error
 	GetFeature(ctx context.Context, featureID id.FeatureID) (*feature.Feature, error)
 	GetFeatureByKey(ctx context.Context, key string, appID string) (*feature.Feature, error)
-	ListFeatures(ctx context.Context, appID string, opts feature.ListOpts) ([]*feature.Feature, error)
+	ListFeatures(
+		ctx context.Context,
+		appID string,
+		opts feature.ListOpts,
+	) ([]*feature.Feature, error)
 	ListGlobalFeatures(ctx context.Context, opts feature.ListOpts) ([]*feature.Feature, error)
 	UpdateFeature(ctx context.Context, f *feature.Feature) error
 	DeleteFeature(ctx context.Context, featureID id.FeatureID) error
@@ -39,9 +43,21 @@ type Store interface {
 
 	// Subscription methods
 	CreateSubscription(ctx context.Context, s *subscription.Subscription) error
-	GetSubscription(ctx context.Context, subID id.SubscriptionID) (*subscription.Subscription, error)
-	GetActiveSubscription(ctx context.Context, tenantID string, appID string) (*subscription.Subscription, error)
-	ListSubscriptions(ctx context.Context, tenantID string, appID string, opts subscription.ListOpts) ([]*subscription.Subscription, error)
+	GetSubscription(
+		ctx context.Context,
+		subID id.SubscriptionID,
+	) (*subscription.Subscription, error)
+	GetActiveSubscription(
+		ctx context.Context,
+		tenantID string,
+		appID string,
+	) (*subscription.Subscription, error)
+	ListSubscriptions(
+		ctx context.Context,
+		tenantID string,
+		appID string,
+		opts subscription.ListOpts,
+	) ([]*subscription.Subscription, error)
 	UpdateSubscription(ctx context.Context, s *subscription.Subscription) error
 	// CancelSubscription cancels a subscription and returns the cancel_at it
 	// stored, in UTC. Immediately, it sets cancel_at and canceled_at to now
@@ -55,7 +71,11 @@ type Store interface {
 	// with ledger.ErrSubscriptionCanceled or ledger.ErrSubscriptionExpired, in
 	// the same conditional write, so an operator's cancel racing the clock's
 	// enactment never cancels a subscription twice.
-	CancelSubscription(ctx context.Context, subID id.SubscriptionID, immediately bool) (time.Time, error)
+	CancelSubscription(
+		ctx context.Context,
+		subID id.SubscriptionID,
+		immediately bool,
+	) (time.Time, error)
 
 	// Operator writes that can race the lifecycle clock. Each one writes only
 	// the columns it names in one conditional statement whose WHERE repeats
@@ -76,41 +96,89 @@ type Store interface {
 	// paused_at. current_period_start never changes. The lifecycle clock
 	// never writes a paused row's period or trial, so nothing it does can be
 	// lost here.
-	ResumeSubscription(ctx context.Context, subID id.SubscriptionID, r subscription.Resume) (bool, error)
+	ResumeSubscription(
+		ctx context.Context,
+		subID id.SubscriptionID,
+		r subscription.Resume,
+	) (bool, error)
 	// ChangeSubscriptionPlan sets plan_id and quantity when the status is
 	// neither canceled nor expired. A nil quantity is stored as empty.
-	ChangeSubscriptionPlan(ctx context.Context, subID id.SubscriptionID, planID id.PlanID, quantity map[string]int64) (bool, error)
+	ChangeSubscriptionPlan(
+		ctx context.Context,
+		subID id.SubscriptionID,
+		planID id.PlanID,
+		quantity map[string]int64,
+	) (bool, error)
 	// SetSubscriptionProvider records the provider's id and name for a
 	// subscription, or returns ledger.ErrSubscriptionNotFound.
-	SetSubscriptionProvider(ctx context.Context, subID id.SubscriptionID, providerID, providerName string) error
+	SetSubscriptionProvider(
+		ctx context.Context,
+		subID id.SubscriptionID,
+		providerID, providerName string,
+	) error
 
 	// Meter methods
 	IngestBatch(ctx context.Context, events []*meter.UsageEvent) error
-	Aggregate(ctx context.Context, tenantID, appID, featureKey string, period plan.Period) (int64, error)
-	AggregateMulti(ctx context.Context, tenantID, appID string, featureKeys []string, period plan.Period) (map[string]int64, error)
-	QueryUsage(ctx context.Context, tenantID, appID string, opts meter.QueryOpts) ([]*meter.UsageEvent, error)
+	Aggregate(
+		ctx context.Context,
+		tenantID, appID, featureKey string,
+		period plan.Period,
+	) (int64, error)
+	AggregateMulti(
+		ctx context.Context,
+		tenantID, appID string,
+		featureKeys []string,
+		period plan.Period,
+	) (map[string]int64, error)
+	QueryUsage(
+		ctx context.Context,
+		tenantID, appID string,
+		opts meter.QueryOpts,
+	) ([]*meter.UsageEvent, error)
 	PurgeUsage(ctx context.Context, before time.Time) (int64, error)
 
 	// Entitlement methods
 	GetCached(ctx context.Context, tenantID, appID, featureKey string) (*entitlement.Result, error)
-	SetCached(ctx context.Context, tenantID, appID, featureKey string, result *entitlement.Result, ttl time.Duration) error
+	SetCached(
+		ctx context.Context,
+		tenantID, appID, featureKey string,
+		result *entitlement.Result,
+		ttl time.Duration,
+	) error
 	Invalidate(ctx context.Context, tenantID, appID string) error
 	InvalidateFeature(ctx context.Context, tenantID, appID, featureKey string) error
 
 	// Invoice methods
 	CreateInvoice(ctx context.Context, inv *invoice.Invoice) error
 	GetInvoice(ctx context.Context, invID id.InvoiceID) (*invoice.Invoice, error)
-	ListInvoices(ctx context.Context, tenantID, appID string, opts invoice.ListOpts) ([]*invoice.Invoice, error)
+	ListInvoices(
+		ctx context.Context,
+		tenantID, appID string,
+		opts invoice.ListOpts,
+	) ([]*invoice.Invoice, error)
 	UpdateInvoice(ctx context.Context, inv *invoice.Invoice) error
-	GetInvoiceByPeriod(ctx context.Context, tenantID, appID string, periodStart, periodEnd time.Time) (*invoice.Invoice, error)
+	GetInvoiceByPeriod(
+		ctx context.Context,
+		tenantID, appID string,
+		periodStart, periodEnd time.Time,
+	) (*invoice.Invoice, error)
 	ListPendingInvoices(ctx context.Context, appID string) ([]*invoice.Invoice, error)
-	MarkInvoicePaid(ctx context.Context, invID id.InvoiceID, paidAt time.Time, paymentRef string) error
+	MarkInvoicePaid(
+		ctx context.Context,
+		invID id.InvoiceID,
+		paidAt time.Time,
+		paymentRef string,
+	) error
 	MarkInvoiceVoided(ctx context.Context, invID id.InvoiceID, reason string) error
 	// SetInvoiceProvider records the provider's id and name for an invoice,
 	// and nothing else, so a provider sync cannot put back a status the
 	// lifecycle clock or an operator wrote meanwhile. It returns
 	// ledger.ErrInvoiceNotFound for a missing invoice.
-	SetInvoiceProvider(ctx context.Context, invID id.InvoiceID, providerID, providerName string) error
+	SetInvoiceProvider(
+		ctx context.Context,
+		invID id.InvoiceID,
+		providerID, providerName string,
+	) error
 
 	// Coupon methods
 	CreateCoupon(ctx context.Context, c *coupon.Coupon) error
@@ -141,7 +209,10 @@ type Store interface {
 	// whether a row matched, so two replicas running the clock at once never
 	// apply a transition twice and never overwrite an operator's concurrent
 	// write to other columns. A missing row is false with no error.
-	ListDueSubscriptions(ctx context.Context, opts subscription.DueOpts) ([]*subscription.Subscription, error)
+	ListDueSubscriptions(
+		ctx context.Context,
+		opts subscription.DueOpts,
+	) ([]*subscription.Subscription, error)
 	ListOverdueInvoices(ctx context.Context, opts invoice.OverdueOpts) ([]*invoice.Invoice, error)
 	// EndSubscriptionTrial makes a trialing subscription whose trial_end is at
 	// or before now active.
@@ -149,7 +220,11 @@ type Store interface {
 	// EnactSubscriptionCancel cancels a subscription whose cancel_at is at or
 	// before now and that is not already canceled or expired, and sets
 	// canceled_at to cancel_at, the moment the cancellation took effect.
-	EnactSubscriptionCancel(ctx context.Context, subID id.SubscriptionID, now time.Time) (bool, error)
+	EnactSubscriptionCancel(
+		ctx context.Context,
+		subID id.SubscriptionID,
+		now time.Time,
+	) (bool, error)
 	// AdvanceSubscriptionPeriod sets the current period to [start, end) when
 	// the subscription is active, trialing or past due, its current period
 	// still ends at from (the end the caller listed and worked from) and
@@ -159,7 +234,11 @@ type Store interface {
 	// cannot announce the periods the other one already announced. from
 	// round-trips from the row, so the equality holds on every backend,
 	// sqlite's text timestamps included.
-	AdvanceSubscriptionPeriod(ctx context.Context, subID id.SubscriptionID, from, start, end, now time.Time) (bool, error)
+	AdvanceSubscriptionPeriod(
+		ctx context.Context,
+		subID id.SubscriptionID,
+		from, start, end, now time.Time,
+	) (bool, error)
 	// MarkInvoicePastDue moves a pending invoice whose due_date is before now
 	// to past_due.
 	MarkInvoicePastDue(ctx context.Context, invID id.InvoiceID, now time.Time) (bool, error)

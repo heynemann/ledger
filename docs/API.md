@@ -35,17 +35,17 @@ func MustParse(s string) ID
 
 ### Money
 
-Integer arithmetic in the currency's smallest unit.
+This fork uses USD micros (six decimal places); other currencies retain upstream minor units. Existing upstream USD cents require explicit checked conversion by 10,000. `Divide` and percentage operations retain their documented truncation; tier pricing uses exact rational math with nearest/ties-even rounding only at monetary total boundaries.
 
 ```go
 import "github.com/xraph/ledger/types"
 
 type Money struct {
-    Amount   int64  `json:"amount"`   // cents, pence, etc.
+    Amount   int64  `json:"amount"`   // USD micros; other currencies' minor units
     Currency string `json:"currency"` // ISO 4217, lowercase
 }
 
-func USD(cents int64) Money
+func USD(micros int64) Money
 func EUR(cents int64) Money
 func GBP(pence int64) Money
 func JPY(yen int64) Money
@@ -78,8 +78,8 @@ func (m Money) GreaterThan(other Money) bool
 func (m Money) Min(other Money) Money
 func (m Money) Max(other Money) Money
 
-func (m Money) String() string      // "$49.00"
-func (m Money) FormatMajor() string // "49.00"
+func (m Money) String() string      // "$49.000000"
+func (m Money) FormatMajor() string // "49.000000"
 ```
 
 ### Entity
@@ -191,12 +191,18 @@ type PriceTier struct {
     Type       TierType    `json:"type"`  // TierGraduated, TierVolume, TierFlat
     UpTo       int64       `json:"up_to"` // -1 (or any value <= 0) = unbounded
     UnitAmount types.Money `json:"unit_amount"`
+    UnitQuantity int64     `json:"unit_quantity,omitempty"` // 0 = 1; otherwise positive
     FlatAmount types.Money `json:"flat_amount"`
     Priority   int         `json:"priority"`
 }
 ```
 
 A metered feature's `Limit` is both the quota `Entitled` enforces and the allowance the invoice covers before overage. A boolean feature is allowed when its `Limit` is above zero. Two metadata keys change how a feature is billed: `pricing_strategy` (on the feature, or on the plan for all of its features) names a `PricingStrategy` plugin, and `aggregator` on the feature names a `UsageAggregator` plugin. An unregistered name falls back to the built-in tiers or a plain sum and logs a warning.
+
+The fork's `spending.Engine` uses these native definitions and `ledger.ValidatePlan` rather than a separate pricing DTO. `ValidatePlan` adds USD-only, native measured builtin pricing and debit-only rules (nondecreasing flat fees and volume rate ratios), and rejects plugin pricing/aggregation. `Rate(plan, before, delta)` returns a USD-micros pointer, nil for unknown relevant usage, and pointer-to-zero for known free usage. It excludes base fees and differences rounded cumulative all-meter overages so fractional rates telescope across settlements. Included `Limit` is the allowance; `-1` is unlimited.
+
+`spending.BuiltinMeters()` returns caller-owned catalog storage for requests, input/output/total/cache-read/cache-write/reasoning tokens, and provider cost micros. Customer charge is a result, not a meter. `Window` provides half-open UTC calendar day/month and lifetime-since-epoch intervals. `Exceeded` considers settled spending only; it is not a reservation or a hard cap. The unchanged root buffered `Meter` can lose failed batches and is not the durable financial path. No payment collection or transactional persistence is implied.
+
 
 The catalog's `feature.Feature` is a standalone definition (`Key`, `Name`, `Description`, `Type`, `DefaultLimit`, `Period`, `SoftLimit`, `Status`, `AppID`, provider fields, `Metadata`). An empty `AppID` makes it global.
 

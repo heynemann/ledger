@@ -30,6 +30,7 @@ func testAggregateOpensPeriodsInUTC(t *testing.T, s ledgerstore.Store) {
 	now := time.Now().UTC()
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	yearStart := time.Date(now.Year(), time.January, 1, 0, 0, 0, 0, time.UTC)
+
 	event := func(key string, at time.Time, qty int64) *meter.UsageEvent {
 		return &meter.UsageEvent{
 			ID: id.NewUsageEventID(), TenantID: tenantID, AppID: appID,
@@ -49,10 +50,20 @@ func testAggregateOpensPeriodsInUTC(t *testing.T, s ledgerstore.Store) {
 	if errMonth != nil || errYear != nil {
 		t.Fatalf("Aggregate: monthly %v, yearly %v", errMonth, errYear)
 	}
+
 	if gotMonth != 1 {
-		t.Errorf("monthly total %d, want 1: the month opens at %v, so the event a second earlier is last month's", gotMonth, monthStart)
+		t.Errorf(
+			"monthly total %d, want 1: the month opens at %v, so the event a second earlier is last month's",
+			gotMonth,
+			monthStart,
+		)
 	}
+
 	if gotYear != 1 {
-		t.Errorf("yearly total %d, want 1: the year opens at %v, so the event a second earlier is last year's", gotYear, yearStart)
+		t.Errorf(
+			"yearly total %d, want 1: the year opens at %v, so the event a second earlier is last year's",
+			gotYear,
+			yearStart,
+		)
 	}
 }

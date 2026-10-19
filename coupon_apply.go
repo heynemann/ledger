@@ -25,7 +25,11 @@ import (
 // so the count never caught up. RedeemCoupon closes both gaps by enforcing
 // the cap with a conditional increment inside the same unit that records
 // the application, rather than a read followed by a write.
-func (l *Ledger) ApplyCoupon(ctx context.Context, subID id.SubscriptionID, code string) (*coupon.Coupon, error) {
+func (l *Ledger) ApplyCoupon(
+	ctx context.Context,
+	subID id.SubscriptionID,
+	code string,
+) (*coupon.Coupon, error) {
 	sub, err := l.store.GetSubscription(ctx, subID)
 	if err != nil {
 		return nil, fmt.Errorf("ledger: resolve subscription: %w", err)
@@ -40,6 +44,7 @@ func (l *Ledger) ApplyCoupon(ctx context.Context, subID id.SubscriptionID, code 
 	if c.ValidFrom != nil && now.Before(*c.ValidFrom) {
 		return nil, ErrCouponNotStarted
 	}
+
 	if c.ValidUntil != nil && now.After(*c.ValidUntil) {
 		return nil, ErrCouponExpired
 	}
@@ -62,6 +67,7 @@ func (l *Ledger) ApplyCoupon(ctx context.Context, subID id.SubscriptionID, code 
 	// normalised copy so the caller's coupon is left as the store returned it.
 	norm := *c
 	normaliseCoupon(&norm)
+
 	if shapeErr := validateCouponShape(&norm); shapeErr != nil {
 		return nil, shapeErr
 	}
@@ -90,6 +96,7 @@ func (l *Ledger) ApplyCoupon(ctx context.Context, subID id.SubscriptionID, code 
 				if couponCurrency == "" {
 					couponCurrency = c.Currency
 				}
+
 				if couponCurrency == "" || !strings.EqualFold(couponCurrency, planCurrency) {
 					return nil, fmt.Errorf("%w: coupon is in %q, plan bills in %q",
 						ErrCouponInvalid, couponCurrency, p.Currency)
@@ -108,7 +115,12 @@ func (l *Ledger) ApplyCoupon(ctx context.Context, subID id.SubscriptionID, code 
 
 	for _, v := range l.plugins.GetCouponValidators() {
 		if vErr := v.ValidateCoupon(ctx, c, sub); vErr != nil {
-			return nil, fmt.Errorf("%w: coupon validator %q refused: %w", ErrCouponInvalid, v.Name(), vErr)
+			return nil, fmt.Errorf(
+				"%w: coupon validator %q refused: %w",
+				ErrCouponInvalid,
+				v.Name(),
+				vErr,
+			)
 		}
 	}
 
@@ -136,6 +148,9 @@ func (l *Ledger) ApplyCoupon(ctx context.Context, subID id.SubscriptionID, code 
 
 // ListAppliedCoupons returns the coupons attached to a subscription, oldest
 // application first.
-func (l *Ledger) ListAppliedCoupons(ctx context.Context, subID id.SubscriptionID) ([]*coupon.Coupon, error) {
+func (l *Ledger) ListAppliedCoupons(
+	ctx context.Context,
+	subID id.SubscriptionID,
+) ([]*coupon.Coupon, error) {
 	return l.store.ListAppliedCoupons(ctx, subID)
 }

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	log "github.com/xraph/go-utils/log"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
@@ -35,7 +36,10 @@ var (
 	}
 	// cancellableStatuses are the subscriptions a due cancel still ends.
 	cancellableStatuses = []subscription.Status{
-		subscription.StatusActive, subscription.StatusTrialing, subscription.StatusPastDue, subscription.StatusPaused,
+		subscription.StatusActive,
+		subscription.StatusTrialing,
+		subscription.StatusPastDue,
+		subscription.StatusPaused,
 	}
 )
 
@@ -49,7 +53,15 @@ type LifecycleReport struct {
 
 // Empty reports whether the run changed nothing.
 func (r LifecycleReport) Empty() bool {
-	return len(r.PeriodsAdvanced)+len(r.CancelsEnacted)+len(r.TrialsEnded)+len(r.InvoicesPastDue) == 0
+	return len(
+		r.PeriodsAdvanced,
+	)+len(
+		r.CancelsEnacted,
+	)+len(
+		r.TrialsEnded,
+	)+len(
+		r.InvoicesPastDue,
+	) == 0
 }
 
 // Advance runs every lifecycle step once, as of now, in this order: it moves
@@ -75,7 +87,11 @@ func (l *Ledger) Advance(ctx context.Context, now time.Time) (LifecycleReport, e
 // advance is Advance, traced and timed. background marks a run of the clock's
 // own worker: its span begins a trace of its own, and a run Stop cut short
 // counts as stopped rather than failed.
-func (l *Ledger) advance(ctx context.Context, now time.Time, background bool) (report LifecycleReport, err error) {
+func (l *Ledger) advance(
+	ctx context.Context,
+	now time.Time,
+	background bool,
+) (report LifecycleReport, err error) {
 	start := time.Now()
 	run := &lifecycleRun{parent: ctx, background: background}
 	ctx = context.WithValue(ctx, lifecycleRunKey{}, run)
@@ -83,8 +99,10 @@ func (l *Ledger) advance(ctx context.Context, now time.Time, background bool) (r
 	// finished stays false only when a step panics. The recover lives in the
 	// worker (runLifecycle), or with whoever called Advance.
 	finished := false
+
 	defer func() {
 		result := resultOK
+
 		switch {
 		case !finished:
 			result = resultPanic
@@ -94,16 +112,19 @@ func (l *Ledger) advance(ctx context.Context, now time.Time, background bool) (r
 		default:
 			result = resultError
 		}
+
 		l.metrics.lifecycleRuns.ObserveSince(start, result)
 		run.end(report, result, err)
 	}()
 
 	var errs [4]error
+
 	report.PeriodsAdvanced, errs[0] = l.AdvancePeriods(ctx, now)
 	report.CancelsEnacted, errs[1] = l.EnactCancels(ctx, now)
 	report.TrialsEnded, errs[2] = l.EndTrials(ctx, now)
 	report.InvoicesPastDue, errs[3] = l.MarkInvoicesPastDue(ctx, now)
 	finished = true
+
 	return report, errors.Join(errs[:]...)
 }
 
@@ -130,6 +151,7 @@ func (r *lifecycleRun) begin() context.Context {
 			r.ctx, r.span = telemetry.Start(r.parent, "run lifecycle")
 		}
 	}
+
 	return r.ctx
 }
 
@@ -138,18 +160,21 @@ func (r *lifecycleRun) end(report LifecycleReport, result string, err error) {
 	if r.span == nil {
 		return
 	}
+
 	r.span.SetAttributes(
 		attribute.Int(attrPeriodsAdvanced, len(report.PeriodsAdvanced)),
 		attribute.Int(attrCancelsEnacted, len(report.CancelsEnacted)),
 		attribute.Int(attrTrialsEnded, len(report.TrialsEnded)),
 		attribute.Int(attrInvoicesPastDue, len(report.InvoicesPastDue)),
 	)
+
 	switch result {
 	case resultPanic:
 		telemetry.Fail(r.span, "panic")
 	case resultError:
 		telemetry.Fail(r.span, errorType(err))
 	}
+
 	r.span.End()
 }
 
@@ -172,6 +197,7 @@ func startStep(ctx context.Context, step lifecycleStep) (context.Context, trace.
 	if run, ok := ctx.Value(lifecycleRunKey{}).(*lifecycleRun); ok {
 		parent = run.begin()
 	}
+
 	return telemetry.Start(parent, step.span)
 }
 
@@ -190,70 +216,121 @@ func startStep(ctx context.Context, step lifecycleStep) (context.Context, trace.
 func (l *Ledger) AdvancePeriods(ctx context.Context, now time.Time) ([]id.SubscriptionID, error) {
 	now = now.UTC()
 	plans := map[string]*plan.Plan{}
+
 	var moved []id.SubscriptionID
-	err := eachDue(ctx, l, stepAdvancePeriods, l.dueSubscriptions(subscription.DuePeriodEnd, runningStatuses, now),
+
+	err := eachDue(
+		ctx,
+		l,
+		stepAdvancePeriods,
+		l.dueSubscriptions(subscription.DuePeriodEnd, runningStatuses, now),
 		func(enter func() context.Context, sub *subscription.Subscription) (bool, error) {
 			changed, err := l.advancePeriod(ctx, enter, sub, now, plans)
 			if changed {
 				moved = append(moved, sub.ID)
 			}
+
 			return changed, err
-		})
+		},
+	)
+
 	return moved, err
 }
 
 // advancePeriod moves one subscription on. It reads on ctx, and calls enter
 // for the context of its write once it knows there is one to make (see
 // eachDue).
-func (l *Ledger) advancePeriod(ctx context.Context, enter func() context.Context, sub *subscription.Subscription, now time.Time, plans map[string]*plan.Plan) (bool, error) {
+func (l *Ledger) advancePeriod(
+	ctx context.Context,
+	enter func() context.Context,
+	sub *subscription.Subscription,
+	now time.Time,
+	plans map[string]*plan.Plan,
+) (bool, error) {
 	p, ok := plans[sub.PlanID.String()]
 	if !ok {
 		var err error
 		if p, err = l.store.GetPlan(ctx, sub.PlanID); err != nil {
 			return false, fmt.Errorf("advance subscription %s: %w", sub.ID, err)
 		}
+
 		plans[sub.PlanID.String()] = p
 	}
+
 	period := billingPeriod(p)
 	switch period {
 	case plan.PeriodMonthly, plan.PeriodYearly:
 	case plan.PeriodNone:
 		return false, nil
 	default:
-		return false, fmt.Errorf("advance subscription %s: plan %s has unknown billing period %q", sub.ID, p.ID, period)
+		return false, fmt.Errorf(
+			"advance subscription %s: plan %s has unknown billing period %q",
+			sub.ID,
+			p.ID,
+			period,
+		)
 	}
 
 	start, end := sub.CurrentPeriodStart.UTC(), sub.CurrentPeriodEnd.UTC()
 	if !end.After(start) {
-		return false, fmt.Errorf("advance subscription %s: its period %v to %v is empty", sub.ID, start, end)
+		return false, fmt.Errorf(
+			"advance subscription %s: its period %v to %v is empty",
+			sub.ID,
+			start,
+			end,
+		)
 	}
+
 	var ended []subscription.Period
 	for !end.After(now) && (sub.CancelAt == nil || end.Before(*sub.CancelAt)) {
 		if len(ended) == maxCatchUpPeriods {
-			return false, fmt.Errorf("advance subscription %s: still behind after %d periods", sub.ID, maxCatchUpPeriods)
+			return false, fmt.Errorf(
+				"advance subscription %s: still behind after %d periods",
+				sub.ID,
+				maxCatchUpPeriods,
+			)
 		}
+
 		ended = append(ended, subscription.Period{Start: start, End: end})
 		start, end = nextPeriod(start, end, period)
 	}
+
 	if len(ended) == 0 {
 		return false, nil // a cancellation falls on the current end
 	}
+
 	ctx = enter()
 
 	// Pinned to the end listed here: a replica that listed the row before
 	// another moved it matches nothing and announces nothing.
-	changed, err := l.store.AdvanceSubscriptionPeriod(ctx, sub.ID, sub.CurrentPeriodEnd, start, end, now)
+	changed, err := l.store.AdvanceSubscriptionPeriod(
+		ctx,
+		sub.ID,
+		sub.CurrentPeriodEnd,
+		start,
+		end,
+		now,
+	)
 	if err != nil {
 		return false, fmt.Errorf("advance subscription %s: %w", sub.ID, err)
 	}
+
 	if !changed {
 		return false, nil
 	}
+
 	renewed := l.storedOr(ctx, sub, func(x *subscription.Subscription) {
 		x.CurrentPeriodStart, x.CurrentPeriodEnd = start, end
 	})
-	_ = l.store.Invalidate(ctx, renewed.TenantID, renewed.AppID) //nolint:errcheck // best-effort cache invalidation
-	l.plugins.EmitSubscriptionRenewed(hookContext(ctx), &subscription.Renewal{Subscription: renewed, Ended: ended})
+	if err := l.store.Invalidate(ctx, renewed.TenantID, renewed.AppID); err != nil {
+		l.logger.Warn("entitlement cache invalidation failed", log.Error(err))
+	}
+
+	l.plugins.EmitSubscriptionRenewed(
+		hookContext(ctx),
+		&subscription.Renewal{Subscription: renewed, Ended: ended},
+	)
+
 	return true, nil
 }
 
@@ -274,35 +351,56 @@ func (l *Ledger) advancePeriod(ctx context.Context, enter func() context.Context
 func (l *Ledger) EnactCancels(ctx context.Context, now time.Time) ([]id.SubscriptionID, error) {
 	now = now.UTC()
 	plans := map[string]*plan.Plan{}
+
 	var ended []id.SubscriptionID
-	err := eachDue(ctx, l, stepEnactCancels, l.dueSubscriptions(subscription.DueCancel, cancellableStatuses, now),
+
+	err := eachDue(
+		ctx,
+		l,
+		stepEnactCancels,
+		l.dueSubscriptions(subscription.DueCancel, cancellableStatuses, now),
 		func(enter func() context.Context, sub *subscription.Subscription) (bool, error) {
 			ctx := enter()
+
 			var advanceErr error
 			if slices.Contains(runningStatuses, sub.Status) && !sub.CurrentPeriodEnd.After(now) {
 				// An error here still lets the cancel through: its date has
 				// passed, whatever is wrong with the period.
 				_, advanceErr = l.advancePeriod(ctx, enter, sub, now, plans)
 			}
+
 			changed, err := l.store.EnactSubscriptionCancel(ctx, sub.ID, now)
 			if err != nil {
-				return false, errors.Join(advanceErr, fmt.Errorf("cancel subscription %s: %w", sub.ID, err))
+				return false, errors.Join(
+					advanceErr,
+					fmt.Errorf("cancel subscription %s: %w", sub.ID, err),
+				)
 			}
+
 			if !changed {
 				return false, advanceErr
 			}
+
 			canceled := l.storedOr(ctx, sub, func(x *subscription.Subscription) {
 				if x.CancelAt != nil {
 					canceledAt := *x.CancelAt
 					x.CanceledAt = &canceledAt
 				}
+
 				x.Status = subscription.StatusCanceled
 			})
-			_ = l.store.Invalidate(ctx, canceled.TenantID, canceled.AppID) //nolint:errcheck // best-effort cache invalidation
+			if err := l.store.Invalidate(ctx, canceled.TenantID, canceled.AppID); err != nil {
+				l.logger.Warn("entitlement cache invalidation failed", log.Error(err))
+			}
+
 			l.plugins.EmitSubscriptionCanceled(hookContext(ctx), canceled)
+
 			ended = append(ended, sub.ID)
+
 			return true, advanceErr
-		})
+		},
+	)
+
 	return ended, err
 }
 
@@ -311,25 +409,45 @@ func (l *Ledger) EnactCancels(ctx context.Context, now time.Time) ([]id.Subscrip
 // fires for each.
 func (l *Ledger) EndTrials(ctx context.Context, now time.Time) ([]id.SubscriptionID, error) {
 	now = now.UTC()
+
 	var ended []id.SubscriptionID
-	err := eachDue(ctx, l, stepEndTrials, l.dueSubscriptions(subscription.DueTrialEnd, []subscription.Status{subscription.StatusTrialing}, now),
+
+	err := eachDue(
+		ctx,
+		l,
+		stepEndTrials,
+		l.dueSubscriptions(
+			subscription.DueTrialEnd,
+			[]subscription.Status{subscription.StatusTrialing},
+			now,
+		),
 		func(enter func() context.Context, sub *subscription.Subscription) (bool, error) {
 			ctx := enter()
+
 			changed, err := l.store.EndSubscriptionTrial(ctx, sub.ID, now)
 			if err != nil {
 				return false, fmt.Errorf("end the trial of subscription %s: %w", sub.ID, err)
 			}
+
 			if !changed {
 				return false, nil
 			}
+
 			active := l.storedOr(ctx, sub, func(x *subscription.Subscription) {
 				x.Status = subscription.StatusActive
 			})
-			_ = l.store.Invalidate(ctx, active.TenantID, active.AppID) //nolint:errcheck // best-effort cache invalidation
+			if err := l.store.Invalidate(ctx, active.TenantID, active.AppID); err != nil {
+				l.logger.Warn("entitlement cache invalidation failed", log.Error(err))
+			}
+
 			l.plugins.EmitSubscriptionTrialEnded(hookContext(ctx), active)
+
 			ended = append(ended, sub.ID)
+
 			return true, nil
-		})
+		},
+	)
+
 	return ended, err
 }
 
@@ -338,32 +456,50 @@ func (l *Ledger) EndTrials(ctx context.Context, now time.Time) ([]id.Subscriptio
 // OnInvoicePastDue fires for each.
 func (l *Ledger) MarkInvoicesPastDue(ctx context.Context, now time.Time) ([]id.InvoiceID, error) {
 	now = now.UTC()
+
 	var marked []id.InvoiceID
+
 	list := func(ctx context.Context, offset int) ([]*invoice.Invoice, error) {
-		return l.store.ListOverdueInvoices(ctx, invoice.OverdueOpts{Before: now, Limit: lifecycleBatch, Offset: offset})
+		return l.store.ListOverdueInvoices(
+			ctx,
+			invoice.OverdueOpts{Before: now, Limit: lifecycleBatch, Offset: offset},
+		)
 	}
-	err := eachDue(ctx, l, stepMarkInvoicesDue, list, func(enter func() context.Context, inv *invoice.Invoice) (bool, error) {
-		ctx := enter()
-		changed, err := l.store.MarkInvoicePastDue(ctx, inv.ID, now)
-		if err != nil {
-			return false, fmt.Errorf("mark invoice %s past due: %w", inv.ID, err)
-		}
-		if !changed {
-			return false, nil
-		}
-		// The invoice as stored, falling back to the listed one with its new
-		// status. A copy either way: the memory store hands out its own
-		// pointer.
-		pastDue := *inv
-		pastDue.Status = invoice.StatusPastDue
-		pastDue.Touch()
-		if stored, readErr := l.store.GetInvoice(ctx, inv.ID); readErr == nil {
-			pastDue = *stored
-		}
-		l.plugins.EmitInvoicePastDue(hookContext(ctx), &pastDue)
-		marked = append(marked, inv.ID)
-		return true, nil
-	})
+	err := eachDue(
+		ctx,
+		l,
+		stepMarkInvoicesDue,
+		list,
+		func(enter func() context.Context, inv *invoice.Invoice) (bool, error) {
+			ctx := enter()
+
+			changed, err := l.store.MarkInvoicePastDue(ctx, inv.ID, now)
+			if err != nil {
+				return false, fmt.Errorf("mark invoice %s past due: %w", inv.ID, err)
+			}
+
+			if !changed {
+				return false, nil
+			}
+			// The invoice as stored, falling back to the listed one with its new
+			// status. A copy either way: the memory store hands out its own
+			// pointer.
+			pastDue := *inv
+			pastDue.Status = invoice.StatusPastDue
+			pastDue.Touch()
+
+			if stored, readErr := l.store.GetInvoice(ctx, inv.ID); readErr == nil {
+				pastDue = *stored
+			}
+
+			l.plugins.EmitInvoicePastDue(hookContext(ctx), &pastDue)
+
+			marked = append(marked, inv.ID)
+
+			return true, nil
+		},
+	)
+
 	return marked, err
 }
 
@@ -372,13 +508,19 @@ func (l *Ledger) MarkInvoicesPastDue(ctx context.Context, now time.Time) ([]id.I
 // changed beside the write, such as a plan change landing between the list
 // and the write. If the read fails the write still happened, so the listed
 // row stands in, with apply making the change the write made.
-func (l *Ledger) storedOr(ctx context.Context, listed *subscription.Subscription, apply func(*subscription.Subscription)) *subscription.Subscription {
+func (l *Ledger) storedOr(
+	ctx context.Context,
+	listed *subscription.Subscription,
+	apply func(*subscription.Subscription),
+) *subscription.Subscription {
 	if stored, err := l.store.GetSubscription(ctx, listed.ID); err == nil {
 		return stored
 	}
+
 	fallback := *listed
 	apply(&fallback)
 	fallback.Touch()
+
 	return &fallback
 }
 
@@ -401,7 +543,11 @@ func hookContext(ctx context.Context) context.Context {
 }
 
 // dueSubscriptions lists one batch of subscriptions due on field, across every app.
-func (l *Ledger) dueSubscriptions(field subscription.DueField, statuses []subscription.Status, now time.Time) func(context.Context, int) ([]*subscription.Subscription, error) {
+func (l *Ledger) dueSubscriptions(
+	field subscription.DueField,
+	statuses []subscription.Status,
+	now time.Time,
+) func(context.Context, int) ([]*subscription.Subscription, error) {
 	return func(ctx context.Context, offset int) ([]*subscription.Subscription, error) {
 		return l.store.ListDueSubscriptions(ctx, subscription.DueOpts{
 			Field: field, Before: now, Statuses: statuses, Limit: lifecycleBatch, Offset: offset,
@@ -421,30 +567,44 @@ func (l *Ledger) dueSubscriptions(field subscription.DueField, statuses []subscr
 // records no span. A row that fails starts it too, as does a failed list.
 // Each row moved, and each row that failed to move, counts on the
 // transitions metric.
-func eachDue[T any](ctx context.Context, l *Ledger, step lifecycleStep, list func(context.Context, int) ([]T, error), apply func(enter func() context.Context, row T) (bool, error)) (err error) {
+func eachDue[T any](
+	ctx context.Context,
+	l *Ledger,
+	step lifecycleStep,
+	list func(context.Context, int) ([]T, error),
+	apply func(enter func() context.Context, row T) (bool, error),
+) (err error) {
 	var (
 		errs            []error
 		offset          int
 		span            trace.Span
 		changed, failed int
 	)
+
 	stepCtx := ctx
 	enter := func() context.Context {
 		if span == nil {
 			stepCtx, span = startStep(ctx, step)
 		}
+
 		return stepCtx
 	}
+
 	defer func() {
 		if span == nil {
 			return
 		}
-		span.SetAttributes(attribute.Int(attrStepChanged, changed), attribute.Int(attrStepFailed, failed))
+
+		span.SetAttributes(
+			attribute.Int(attrStepChanged, changed),
+			attribute.Int(attrStepFailed, failed),
+		)
 		// A run that was canceled (Stop does that) with no row failing has
 		// not failed.
 		if err != nil && (failed > 0 || !errors.Is(err, context.Canceled)) {
 			telemetry.Fail(span, errorType(err))
 		}
+
 		span.End()
 	}()
 
@@ -452,29 +612,37 @@ func eachDue[T any](ctx context.Context, l *Ledger, step lifecycleStep, list fun
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return errors.Join(append(errs, ctxErr)...)
 		}
+
 		rows, listErr := list(stepCtx, offset)
 		if listErr != nil {
 			enter()
 			return errors.Join(append(errs, listErr)...)
 		}
+
 		for _, row := range rows {
 			moved, rowErr := apply(enter, row)
 			switch {
 			case moved:
 				changed++
+
 				l.metrics.lifecycleTransitions.Inc(step.label, resultOK)
 			case rowErr != nil:
 				failed++
+
 				l.metrics.lifecycleTransitions.Inc(step.label, resultError)
 			}
+
 			if rowErr != nil {
 				enter()
+
 				errs = append(errs, rowErr)
 			}
+
 			if !moved {
 				offset++
 			}
 		}
+
 		if len(rows) < lifecycleBatch {
 			return errors.Join(errs...)
 		}
@@ -488,6 +656,7 @@ func billingPeriod(p *plan.Plan) plan.Period {
 	if p == nil || p.Pricing == nil || p.Pricing.BillingPeriod == "" {
 		return plan.PeriodMonthly
 	}
+
 	return p.Pricing.BillingPeriod
 }
 
@@ -516,6 +685,7 @@ func anchorDay(start, end time.Time) int {
 	if d := end.Day(); d == daysIn(end.Year(), end.Month()) && start.Day() > d {
 		return start.Day()
 	}
+
 	return end.Day()
 }
 
@@ -525,6 +695,7 @@ func periodMonths(period plan.Period) int {
 	if period == plan.PeriodYearly {
 		return 12
 	}
+
 	return 1
 }
 
@@ -534,6 +705,7 @@ func periodMonths(period plan.Period) int {
 func shiftMonths(from time.Time, months, day int) time.Time {
 	from = from.UTC()
 	first := time.Date(from.Year(), from.Month()+time.Month(months), 1, 0, 0, 0, 0, time.UTC)
+
 	return time.Date(first.Year(), first.Month(), min(day, daysIn(first.Year(), first.Month())),
 		from.Hour(), from.Minute(), from.Second(), from.Nanosecond(), time.UTC)
 }

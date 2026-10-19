@@ -177,10 +177,24 @@ The tier pricing the engine uses is exported:
 ```go
 func ValidateTiers(tiers []plan.PriceTier, currency string) error // wraps ErrInvalidTiers
 func ComputeOverage(tiers []plan.PriceTier, usage, included int64, currency string) (types.Money, error)
+type UsageChange struct {
+	Tiers []plan.PriceTier
+	Before, After, Included int64
+}
+func ComputeIncrementalOverage(changes []UsageChange, currency string) (types.Money, error)
 func SortTiers(tiers []plan.PriceTier) []plan.PriceTier
 
 var ErrInvalidTiers = errors.New("invoice: invalid price tiers")
 ```
+
+`PriceTier.UnitQuantity` is the positive denominator of `UnitAmount`; zero retains whole-unit pricing. `ComputeOverage` preserves rational tier sums and allowance differences, rounding its final amount nearest/ties-even. `ComputeIncrementalOverage` sums exact cumulative amounts across meters, rounds each cumulative total, and differences them so fractional usage telescopes across settlements.
+
+### `github.com/xraph/ledger/spending`
+
+`New() *Engine` constructs an immutable, stateless USD-only engine. `ValidatePlan(*plan.Plan)` reuses exported `ledger.ValidatePlan` plus measured builtin/native pricing restrictions; debit-only spending rejects decreasing flat fees and volume rate ratios. `ValidateBudget(Budget)` accepts provider-cost/customer-charge budgets with day/month/lifetime periods, nonnegative int64 micros, and names of 1–255 characters. `Window(string, time.Time)` returns UTC half-open windows; `Exceeded(Budget, int64)` tests settled totals, not reservations or hard caps.
+
+`Rate(*plan.Plan, map[string]MeterTotal, map[string]*int64) (*int64, error)` returns incremental retail overage, excluding base fees. Nil means unknown relevant usage; pointer-to-zero means known free. `MeterTotal` has `Quantity` and `Unknown` int64 fields. `PlanSnapshot` contains the native `Definition plan.Plan` and `Revision int64`. `BuiltinMeters() []Meter` returns caller-owned measured input descriptors (`Key`, `Name`, `Unit`); customer charge is not an input. Persistence, tenant authorization, durable replay and payment collection are not engine features. The original buffered root `Meter` is unchanged and loses failed flush batches.
+
 
 ### `github.com/xraph/ledger/coupon`
 
@@ -226,7 +240,7 @@ type Money struct {
 	Currency string
 }
 
-func USD(cents int64) Money // also EUR, GBP, JPY, CAD, AUD
+func USD(micros int64) Money // other currency constructors retain upstream units
 func Zero(currency string) Money
 func Sum(values ...Money) Money // panics on mixed currencies; "usd" zero when empty
 
@@ -254,8 +268,8 @@ func (m Money) LessThan(other Money) bool
 func (m Money) GreaterThan(other Money) bool
 func (m Money) Min(other Money) Money
 func (m Money) Max(other Money) Money
-func (m Money) FormatMajor() string // "49.99"
-func (m Money) String() string      // "$49.99"
+func (m Money) FormatMajor() string // "49.990000" for USD(49_990_000)
+func (m Money) String() string      // "$49.990000"
 func (m Money) MarshalJSON() ([]byte, error) // {"amount":..,"currency":..,"display":..}
 
 var ErrOverflow = errors.New("types: money arithmetic overflow")

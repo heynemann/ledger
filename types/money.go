@@ -14,22 +14,23 @@ import (
 // does not fit in an int64. A wrapped amount must never become an invoice.
 var ErrOverflow = errors.New("types: money arithmetic overflow")
 
-// Money represents a monetary value in the smallest currency unit.
-// All arithmetic is integer-only — no floating point.
+// Money represents an integer monetary value. This fork stores USD in micros
+// (six decimals), not upstream's cents. Other currencies retain their upstream
+// precision. Arithmetic never uses floating point.
 //
 // Examples:
-//   - USD(4900) = $49.00 (4900 cents)
+//   - USD(49_000_000) = $49.000000 (49 million micros)
 //   - EUR(19900) = €199.00 (19900 cents)
 //   - GBP(9900) = £99.00 (9900 pence)
 type Money struct {
-	Amount   int64  `json:"amount"`   // Smallest unit (cents, pence, etc)
+	Amount   int64  `json:"amount"`   // USD micros; other currencies' smallest unit
 	Currency string `json:"currency"` // ISO 4217 lowercase: "usd", "eur", "gbp"
 }
 
 // Common currency constructors
 
-// USD creates a Money value in US Dollars (cents).
-func USD(cents int64) Money { return Money{Amount: cents, Currency: "usd"} }
+// USD creates a Money value in US dollar micros (1 USD = 1,000,000 micros).
+func USD(micros int64) Money { return Money{Amount: micros, Currency: "usd"} }
 
 // EUR creates a Money value in Euros (cents).
 func EUR(cents int64) Money { return Money{Amount: cents, Currency: "eur"} }
@@ -76,10 +77,12 @@ func (m Money) CheckedAdd(other Money) (Money, error) {
 	if m.Currency != other.Currency {
 		return Money{}, fmt.Errorf("money: currency mismatch: %s != %s", m.Currency, other.Currency)
 	}
+
 	if (other.Amount > 0 && m.Amount > math.MaxInt64-other.Amount) ||
 		(other.Amount < 0 && m.Amount < math.MinInt64-other.Amount) {
 		return Money{}, fmt.Errorf("%w: %d + %d", ErrOverflow, m.Amount, other.Amount)
 	}
+
 	return Money{Amount: m.Amount + other.Amount, Currency: m.Currency}, nil
 }
 
@@ -90,10 +93,12 @@ func (m Money) CheckedSubtract(other Money) (Money, error) {
 	if m.Currency != other.Currency {
 		return Money{}, fmt.Errorf("money: currency mismatch: %s != %s", m.Currency, other.Currency)
 	}
+
 	if (other.Amount < 0 && m.Amount > math.MaxInt64+other.Amount) ||
 		(other.Amount > 0 && m.Amount < math.MinInt64+other.Amount) {
 		return Money{}, fmt.Errorf("%w: %d - %d", ErrOverflow, m.Amount, other.Amount)
 	}
+
 	return Money{Amount: m.Amount - other.Amount, Currency: m.Currency}, nil
 }
 
@@ -104,6 +109,7 @@ func (m Money) CheckedMultiply(qty int64) (Money, error) {
 	if !ok {
 		return Money{}, fmt.Errorf("%w: %d * %d", ErrOverflow, m.Amount, qty)
 	}
+
 	return Money{Amount: product, Currency: m.Currency}, nil
 }
 
@@ -114,21 +120,27 @@ func mulInt64(a, b int64) (int64, bool) {
 	if a == 0 || b == 0 {
 		return 0, true
 	}
+
 	negative := (a < 0) != (b < 0)
+
 	hi, lo := bits.Mul64(absUint64(a), absUint64(b))
 	if hi != 0 {
 		return 0, false
 	}
+
 	if negative {
 		// The most negative int64 has magnitude 1<<63.
 		if lo > 1<<63 {
 			return 0, false
 		}
+
 		return int64(-lo), true //nolint:gosec // lo <= 1<<63, so the negation fits
 	}
+
 	if lo > math.MaxInt64 {
 		return 0, false
 	}
+
 	return int64(lo), true
 }
 
@@ -138,6 +150,7 @@ func absUint64(v int64) uint64 {
 	if v < 0 {
 		return -uint64(v) //nolint:gosec // two's-complement negation, exact for MinInt64
 	}
+
 	return uint64(v)
 }
 
@@ -146,6 +159,7 @@ func (m Money) Divide(divisor int64) Money {
 	if divisor == 0 {
 		panic("money: division by zero")
 	}
+
 	return Money{Amount: m.Amount / divisor, Currency: m.Currency}
 }
 
@@ -167,6 +181,7 @@ func (m Money) CheckedPercent(pct int) (Money, error) {
 	if !ok {
 		return Money{}, fmt.Errorf("%w: %d * %d%%", ErrOverflow, m.Amount, pct)
 	}
+
 	return Money{Amount: product / 100, Currency: m.Currency}, nil
 }
 
@@ -180,6 +195,7 @@ func (m Money) Abs() Money {
 	if m.Amount < 0 {
 		return Money{Amount: -m.Amount, Currency: m.Currency}
 	}
+
 	return m
 }
 
@@ -214,25 +230,29 @@ func (m Money) GreaterThan(other Money) bool {
 // Min returns the smaller of two Money values. Panics if currencies don't match.
 func (m Money) Min(other Money) Money {
 	m.assertSameCurrency(other)
+
 	if m.Amount < other.Amount {
 		return m
 	}
+
 	return other
 }
 
 // Max returns the larger of two Money values. Panics if currencies don't match.
 func (m Money) Max(other Money) Money {
 	m.assertSameCurrency(other)
+
 	if m.Amount > other.Amount {
 		return m
 	}
+
 	return other
 }
 
 // Formatting methods
 
 // FormatMajor returns the major unit string without currency symbol.
-// For currencies with 2 decimal places: "49.00" for USD(4900).
+// USD has 6 decimal places: "49.000000" for USD(49_000_000).
 // For currencies with 0 decimal places (JPY): "100" for JPY(100).
 func (m Money) FormatMajor() string {
 	decimals := currencyDecimals(m.Currency)
@@ -240,17 +260,14 @@ func (m Money) FormatMajor() string {
 		return fmt.Sprintf("%d", m.Amount)
 	}
 
-	divisor := int64(1)
+	divisor := uint64(1)
 	for i := 0; i < decimals; i++ {
 		divisor *= 10
 	}
 
-	// Handle sign separately
+	// Unsigned magnitude also handles MinInt64, which cannot be negated as int64.
 	isNegative := m.Amount < 0
-	absAmount := m.Amount
-	if isNegative {
-		absAmount = -absAmount
-	}
+	absAmount := absUint64(m.Amount)
 
 	major := absAmount / divisor
 	minor := absAmount % divisor
@@ -261,11 +278,12 @@ func (m Money) FormatMajor() string {
 	if isNegative {
 		return "-" + result
 	}
+
 	return result
 }
 
 // String returns a human-readable string with currency symbol.
-// Examples: "$49.00", "€199.00", "£99.00", "¥100"
+// Examples: "$49.000000", "€199.00", "£99.00", "¥100"
 func (m Money) String() string {
 	symbol := currencySymbol(m.Currency)
 	return symbol + m.FormatMajor()
@@ -310,11 +328,15 @@ func currencySymbol(currency string) string {
 	if sym, ok := symbols[strings.ToLower(currency)]; ok {
 		return sym
 	}
+
 	return strings.ToUpper(currency) + " "
 }
 
 // currencyDecimals returns the number of decimal places for a currency.
 func currencyDecimals(currency string) int {
+	if strings.EqualFold(currency, "usd") {
+		return 6
+	}
 	// Currencies with 0 decimal places
 	zeroDecimal := map[string]bool{
 		"jpy": true, // Japanese Yen
@@ -341,5 +363,6 @@ func Sum(values ...Money) Money {
 	for i := 1; i < len(values); i++ {
 		result = result.Add(values[i])
 	}
+
 	return result
 }

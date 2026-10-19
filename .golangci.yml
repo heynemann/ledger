@@ -32,6 +32,7 @@ linters:
     - nolintlint
     - whitespace
     - predeclared
+    - wsl_v5
 
   settings:
     gocritic:
@@ -104,8 +105,9 @@ linters:
 
 formatters:
   enable:
-    - gofmt
+    - gofumpt
     - goimports
+    - golines
   settings:
     goimports:
       local-prefixes:

@@ -1,3 +1,13 @@
+# Hepg fork cutover
+
+This fork retains module identity `github.com/xraph/ledger`, selected by consumers through a versioned replace to `github.com/heynemann/ledger`. USD `Money.Amount` and `types.USD` now mean micros, not cents; USD display uses six decimals. Existing cents-based persisted amounts and adapters require explicit checked multiplication by 10,000. No automatic data conversion is performed, and other currencies keep upstream precision.
+
+Native plan tiers add `unit_quantity`: omitted/zero means 1; a positive value divides the unit amount. Invoice pricing retains rational intermediates and rounds only its returned total, nearest/ties-even. Spending incremental overage differences rounded cumulative totals across all priced meters to preserve tiny rates across many settlements. Included allowances and unlimited features retain native meaning.
+
+The new stateless `spending.Engine` validates native USD plans, measured builtin meter pricing, budgets, UTC day/month/lifetime windows, and settled budget decisions. Unknown meter values are not free usage. Spending is debit-only: flat fees and rational volume rates must not decrease. Plugin pricing/aggregation, payment collection, persistence transactions, tenant authorization, and pre-dispatch reservations are not provided by this engine.
+
+The original buffered `Ledger.Meter` has not been made durable: its 10,000-event channel defaults to batches of 100 or five seconds; full buffers refuse events and failed flushes lose their batch. Hepg does not use this path for financial settlement. The historical upstream migration notes below describe the original engine, not transactional spending guarantees.
+
 # Migrating off the templ dashboard
 
 Ledger's templ dashboard is gone. The pages that lived under `dashboard/` now run as contract-driven surfaces in the Forge dashboard, and the directory has been deleted. This file is the record of what those pages did and what changed in the engine underneath them.

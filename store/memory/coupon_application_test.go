@@ -43,9 +43,11 @@ func TestApplyCouponRecordsTheRedemption(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListAppliedCoupons: %v", err)
 	}
+
 	if len(applied) != 1 {
 		t.Fatalf("got %d applied coupons, want 1", len(applied))
 	}
+
 	if applied[0].Code != "LAUNCH10" {
 		t.Errorf("got code %q, want LAUNCH10", applied[0].Code)
 	}
@@ -74,6 +76,7 @@ func TestApplyCouponIsIdempotentPerSubscription(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListAppliedCoupons: %v", err)
 	}
+
 	if len(applied) != 1 {
 		t.Errorf("got %d applied coupons after a duplicate apply, want 1", len(applied))
 	}
@@ -97,6 +100,7 @@ func TestListAppliedCouponsIsScopedToOneSubscription(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListAppliedCoupons: %v", err)
 	}
+
 	if len(applied) != 0 {
 		t.Errorf("got %d applied coupons on an untouched subscription, want 0", len(applied))
 	}
@@ -110,9 +114,13 @@ func TestListAppliedCouponsOnUnknownSubscriptionIsEmptyNotAnError(t *testing.T) 
 	if err != nil {
 		t.Fatalf("ListAppliedCoupons on an unknown subscription: %v", err)
 	}
+
 	if applied == nil {
-		t.Error("got a nil slice, want an empty one: a caller ranging over nil sees no difference, but a caller checking len(x) == 0 against a nil map entry does")
+		t.Error(
+			"got a nil slice, want an empty one: a caller ranging over nil sees no difference, but a caller checking len(x) == 0 against a nil map entry does",
+		)
 	}
+
 	if len(applied) != 0 {
 		t.Errorf("got %d applied coupons, want 0", len(applied))
 	}
@@ -136,6 +144,7 @@ func TestIncrementCouponRedemptions(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetCouponByID: %v", err)
 		}
+
 		if got.TimesRedeemed != i {
 			t.Errorf("after %d increments: got TimesRedeemed %d, want %d", i, got.TimesRedeemed, i)
 		}
@@ -162,16 +171,19 @@ func TestApplyCouponStampsAppliedAt(t *testing.T) {
 	}
 
 	before := time.Now().UTC().Add(-time.Second)
+
 	subID := id.NewSubscriptionID()
 	if err := s.ApplyCoupon(ctx, subID, c.ID); err != nil {
 		t.Fatalf("ApplyCoupon: %v", err)
 	}
+
 	after := time.Now().UTC().Add(time.Second)
 
 	apps := s.couponApplicationsFor(subID)
 	if len(apps) != 1 {
 		t.Fatalf("got %d applications, want 1", len(apps))
 	}
+
 	if apps[0].AppliedAt.Before(before) || apps[0].AppliedAt.After(after) {
 		t.Errorf("AppliedAt %v is outside [%v, %v]", apps[0].AppliedAt, before, after)
 	}

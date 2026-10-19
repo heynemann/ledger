@@ -19,10 +19,15 @@ func (f factory) Counter(name string) observability.Counter {
 	if f[name] == nil {
 		f[name] = &counter{}
 	}
+
 	return f[name]
 }
 
-func (f factory) Histogram(name string) observability.Histogram { return f.Counter(name).(*counter) }
+func (f factory) Histogram(
+	name string,
+) observability.Histogram {
+	return f.Counter(name).(*counter)
+}
 
 // The lifecycle clock's transitions and scheduled cancels are counted.
 func TestLifecycleTransitionsAreCounted(t *testing.T) {
@@ -34,6 +39,7 @@ func TestLifecycleTransitionsAreCounted(t *testing.T) {
 	_ = m.OnSubscriptionCancelScheduled(ctx, nil)
 	_ = m.OnSubscriptionCanceled(ctx, nil)
 	_ = m.OnInvoicePastDue(ctx, nil)
+
 	for _, name := range []string{
 		"ledger.subscription.renewed", "ledger.subscription.trial_ended", "ledger.subscription.cancel_scheduled",
 		"ledger.subscription.canceled", "ledger.invoice.past_due",

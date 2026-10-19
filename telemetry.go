@@ -77,9 +77,12 @@ func newEngineMetrics(m gometrics.Metrics) engineMetrics {
 		lifecycleTransitions: telemetry.NewCounterVec(m, metricLifecycleTransitions,
 			"Rows a lifecycle step moved, or failed to move.",
 			"step", "result"),
-		meterEvents: telemetry.NewCounterVec(m, metricMeterEvents,
+		meterEvents: telemetry.NewCounterVec(
+			m,
+			metricMeterEvents,
 			"Usage events by what became of them: stored, lost to a failed flush, or refused by a full buffer.",
-			"result"),
+			"result",
+		),
 		entitlementChecks: telemetry.NewCounterVec(m, metricEntitlementChecks,
 			"Entitlement checks by answer and by whether the cache answered.",
 			"result", "cache"),
@@ -125,6 +128,7 @@ func endSpan(span trace.Span, err error) {
 	if err != nil && !IsNotFound(err) && !errors.Is(err, ErrAlreadyExists) {
 		telemetry.Fail(span, errorType(err))
 	}
+
 	span.End()
 }
 
@@ -197,11 +201,13 @@ func errorType(err error) string {
 	case errors.Is(err, context.DeadlineExceeded):
 		return "context.DeadlineExceeded"
 	}
+
 	for _, s := range sentinels {
 		if errors.Is(err, s.err) {
 			return s.name
 		}
 	}
+
 	return telemetry.TypeOf(err)
 }
 
@@ -210,5 +216,6 @@ func resultOf(err error) string {
 	if err != nil {
 		return resultError
 	}
+
 	return resultOK
 }

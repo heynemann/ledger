@@ -16,9 +16,17 @@ import (
 // ingestAPICalls records qty api_calls for tenant in app.
 func ingestAPICalls(t *testing.T, h *harness, app, tenant string, qty int64) {
 	t.Helper()
-	if err := h.store.IngestBatch(context.Background(), []*meter.UsageEvent{{
-		ID: id.NewUsageEventID(), TenantID: tenant, AppID: app, FeatureKey: "api_calls", Quantity: qty, Timestamp: time.Now().UTC(),
-	}}); err != nil {
+
+	if err := h.store.IngestBatch(context.Background(), []*meter.UsageEvent{
+		{
+			ID:         id.NewUsageEventID(),
+			TenantID:   tenant,
+			AppID:      app,
+			FeatureKey: "api_calls",
+			Quantity:   qty,
+			Timestamp:  time.Now().UTC(),
+		},
+	}); err != nil {
 		t.Fatalf("IngestBatch: %v", err)
 	}
 }
@@ -43,11 +51,13 @@ func TestUsageEventsStayInTheApp(t *testing.T) {
 	if len(all.Items) != 2 {
 		t.Errorf("app_a events = %d, want 2", len(all.Items))
 	}
+
 	for _, e := range all.Items {
 		if e.AppID != "app_a" {
 			t.Errorf("app_a saw an event from %s", e.AppID)
 		}
 	}
+
 	acme := mustCall(h, "app_a", usageEvents, UsageEventsInput{TenantID: "acme"})
 	if len(acme.Items) != 1 || acme.Items[0].Quantity != 5 {
 		t.Errorf("acme in app_a: %+v", acme.Items)
@@ -59,17 +69,50 @@ func TestUsageAggregateNeedsATenant(t *testing.T) {
 	ingestAPICalls(t, h, "app_a", "acme", 5)
 	ingestAPICalls(t, h, "app_a", "acme", 6)
 
-	got := mustCall(h, "app_a", usageAggregate, UsageAggregateInput{TenantID: "acme", FeatureKeys: []string{"api_calls"}, Period: "monthly"})
+	got := mustCall(
+		h,
+		"app_a",
+		usageAggregate,
+		UsageAggregateInput{
+			TenantID:    "acme",
+			FeatureKeys: []string{"api_calls"},
+			Period:      "monthly",
+		},
+	)
 	if got.Totals["api_calls"] != 11 {
 		t.Errorf("total = %d, want 11", got.Totals["api_calls"])
 	}
-	if _, err := call(h, "app_a", usageAggregate, UsageAggregateInput{FeatureKeys: []string{"api_calls"}, Period: "monthly"}); codeOf(err) != dash.CodeBadRequest {
+
+	if _, err := call(
+		h,
+		"app_a",
+		usageAggregate,
+		UsageAggregateInput{FeatureKeys: []string{"api_calls"}, Period: "monthly"},
+	); codeOf(
+		err,
+	) != dash.CodeBadRequest {
 		t.Errorf("no tenant: got %v, want BAD_REQUEST", err)
 	}
-	if _, err := call(h, "app_a", usageAggregate, UsageAggregateInput{TenantID: "acme", Period: "monthly"}); codeOf(err) != dash.CodeBadRequest {
+
+	if _, err := call(
+		h,
+		"app_a",
+		usageAggregate,
+		UsageAggregateInput{TenantID: "acme", Period: "monthly"},
+	); codeOf(
+		err,
+	) != dash.CodeBadRequest {
 		t.Errorf("no feature keys: got %v, want BAD_REQUEST", err)
 	}
-	if _, err := call(h, "app_a", usageAggregate, UsageAggregateInput{TenantID: "acme", FeatureKeys: []string{"api_calls"}, Period: "weekly"}); codeOf(err) != dash.CodeBadRequest {
+
+	if _, err := call(
+		h,
+		"app_a",
+		usageAggregate,
+		UsageAggregateInput{TenantID: "acme", FeatureKeys: []string{"api_calls"}, Period: "weekly"},
+	); codeOf(
+		err,
+	) != dash.CodeBadRequest {
 		t.Errorf("unknown period: got %v, want BAD_REQUEST", err)
 	}
 }
@@ -79,24 +122,63 @@ func TestEntitlementsCheckAndInvalidate(t *testing.T) {
 	h.subscribe("app_a", "acme", h.activePlan("app_a", "p"))
 	ingestAPICalls(t, h, "app_a", "acme", 400)
 
-	got := mustCall(h, "app_a", entitlementsCheck, EntitlementCheckInput{TenantID: "acme", FeatureKey: "api_calls"})
+	got := mustCall(
+		h,
+		"app_a",
+		entitlementsCheck,
+		EntitlementCheckInput{TenantID: "acme", FeatureKey: "api_calls"},
+	)
 	if !got.Allowed || got.Used != 400 || got.Limit != 1000 {
 		t.Errorf("got %+v, want allowed with 400 of 1000 used", got)
 	}
-	other := mustCall(h, "app_b", entitlementsCheck, EntitlementCheckInput{TenantID: "acme", FeatureKey: "api_calls"})
+
+	other := mustCall(
+		h,
+		"app_b",
+		entitlementsCheck,
+		EntitlementCheckInput{TenantID: "acme", FeatureKey: "api_calls"},
+	)
 	if other.Allowed {
 		t.Error("acme has no subscription in app_b, so app_b must not see it as entitled")
 	}
-	if _, err := call(h, "app_a", entitlementsCheck, EntitlementCheckInput{FeatureKey: "api_calls"}); codeOf(err) != dash.CodeBadRequest {
+
+	if _, err := call(
+		h,
+		"app_a",
+		entitlementsCheck,
+		EntitlementCheckInput{FeatureKey: "api_calls"},
+	); codeOf(
+		err,
+	) != dash.CodeBadRequest {
 		t.Errorf("no tenant: got %v, want BAD_REQUEST", err)
 	}
-	if ack := mustCall(h, "app_a", entitlementsInvalidate, EntitlementInvalidateInput{TenantID: "acme"}); !ack.OK {
+
+	if ack := mustCall(
+		h,
+		"app_a",
+		entitlementsInvalidate,
+		EntitlementInvalidateInput{TenantID: "acme"},
+	); !ack.OK {
 		t.Error("invalidate must acknowledge")
 	}
-	if ack := mustCall(h, "app_a", entitlementsInvalidate, EntitlementInvalidateInput{TenantID: "acme", FeatureKey: "api_calls"}); !ack.OK {
+
+	if ack := mustCall(
+		h,
+		"app_a",
+		entitlementsInvalidate,
+		EntitlementInvalidateInput{TenantID: "acme", FeatureKey: "api_calls"},
+	); !ack.OK {
 		t.Error("invalidating one feature must acknowledge")
 	}
-	if _, err := call(h, "app_a", entitlementsInvalidate, EntitlementInvalidateInput{}); codeOf(err) != dash.CodeBadRequest {
+
+	if _, err := call(
+		h,
+		"app_a",
+		entitlementsInvalidate,
+		EntitlementInvalidateInput{},
+	); codeOf(
+		err,
+	) != dash.CodeBadRequest {
 		t.Errorf("invalidate with no tenant: got %v, want BAD_REQUEST", err)
 	}
 }
@@ -104,6 +186,7 @@ func TestEntitlementsCheckAndInvalidate(t *testing.T) {
 func TestPaymentMethodsWithoutAProvider(t *testing.T) {
 	h := newHarness(t)
 	h.subscribe("app_a", "acme", h.activePlan("app_a", "pro"))
+
 	got := mustCall(h, "app_a", paymentMethodsList, PaymentMethodsInput{TenantID: "acme"})
 	if got.Configured || got.Methods == nil || len(got.Methods) != 0 {
 		t.Errorf("got %+v, want configured false and an empty non-nil list", got)
@@ -119,7 +202,10 @@ type cardProvider struct {
 
 func (p *cardProvider) Provider() provider.Provider { return p }
 
-func (p *cardProvider) ListPaymentMethods(_ context.Context, tenantID string) ([]provider.PaymentMethod, error) {
+func (p *cardProvider) ListPaymentMethods(
+	_ context.Context,
+	tenantID string,
+) ([]provider.PaymentMethod, error) {
 	p.asked = append(p.asked, tenantID)
 	return []provider.PaymentMethod{{ID: "pm_1", Type: "card", Last4: "4242", Brand: "visa"}}, nil
 }
@@ -138,6 +224,7 @@ func TestPaymentMethodsRefuseATenantFromAnotherApp(t *testing.T) {
 	if codeOf(err) != dash.CodeNotFound {
 		t.Fatalf("a tenant subscribed only in app_b: got %v, want NOT_FOUND", err)
 	}
+
 	if len(cp.asked) != 0 {
 		t.Errorf("the provider was asked about %v, want no call", cp.asked)
 	}
@@ -150,7 +237,14 @@ func TestPaymentMethodsRefuseATenantFromAnotherApp(t *testing.T) {
 
 func TestPaymentMethodsNeedATenant(t *testing.T) {
 	h := newHarness(t)
-	if _, err := call(h, "app_a", paymentMethodsList, PaymentMethodsInput{}); codeOf(err) != dash.CodeBadRequest {
+	if _, err := call(
+		h,
+		"app_a",
+		paymentMethodsList,
+		PaymentMethodsInput{},
+	); codeOf(
+		err,
+	) != dash.CodeBadRequest {
 		t.Errorf("no tenant: got %v, want BAD_REQUEST", err)
 	}
 }
@@ -160,6 +254,7 @@ func TestPaymentMethodsNeedATenant(t *testing.T) {
 func TestUsageEventsPageStablyWhenTimestampsTie(t *testing.T) {
 	h := newHarness(t)
 	instant := time.Now().UTC().Truncate(time.Second)
+
 	batch := make([]*meter.UsageEvent, 5)
 	for i := range batch {
 		batch[i] = &meter.UsageEvent{
@@ -167,30 +262,50 @@ func TestUsageEventsPageStablyWhenTimestampsTie(t *testing.T) {
 			Quantity: int64(i + 1), Timestamp: instant,
 		}
 	}
+
 	if err := h.store.IngestBatch(context.Background(), batch); err != nil {
 		t.Fatalf("IngestBatch: %v", err)
 	}
 
 	seen := map[string]int{}
+
 	var last Page[*meter.UsageEvent]
 	for offset := 0; offset < 6; offset += 2 {
-		last = mustCall(h, "app_a", usageEvents, UsageEventsInput{PageInput: PageInput{Limit: 2, Offset: offset}})
+		last = mustCall(
+			h,
+			"app_a",
+			usageEvents,
+			UsageEventsInput{PageInput: PageInput{Limit: 2, Offset: offset}},
+		)
 		for _, e := range last.Items {
 			seen[e.ID.String()]++
 		}
 	}
+
 	if len(seen) != 5 {
 		t.Errorf("pages held %d distinct events, want 5", len(seen))
 	}
+
 	for eid, n := range seen {
 		if n != 1 {
 			t.Errorf("event %s appeared on %d pages, want 1", eid, n)
 		}
 	}
+
 	if len(last.Items) != 1 || last.HasMore {
-		t.Errorf("last page = %d items, has_more %v; want 1 item and no more", len(last.Items), last.HasMore)
+		t.Errorf(
+			"last page = %d items, has_more %v; want 1 item and no more",
+			len(last.Items),
+			last.HasMore,
+		)
 	}
-	past := mustCall(h, "app_a", usageEvents, UsageEventsInput{PageInput: PageInput{Limit: 2, Offset: 50}})
+
+	past := mustCall(
+		h,
+		"app_a",
+		usageEvents,
+		UsageEventsInput{PageInput: PageInput{Limit: 2, Offset: 50}},
+	)
 	if len(past.Items) != 0 || past.HasMore {
 		t.Errorf("past the end: %d items, has_more %v; want empty", len(past.Items), past.HasMore)
 	}
@@ -201,7 +316,15 @@ func TestUsageEventsPageStablyWhenTimestampsTie(t *testing.T) {
 func TestUsageEventsRefuseAnEmptyScope(t *testing.T) {
 	h := newHarness(t)
 	ingestAPICalls(t, h, "app_a", "acme", 5)
-	if _, err := call(h, "", usageEvents, UsageEventsInput{}); codeOf(err) != dash.CodePermissionDenied {
+
+	if _, err := call(
+		h,
+		"",
+		usageEvents,
+		UsageEventsInput{},
+	); codeOf(
+		err,
+	) != dash.CodePermissionDenied {
 		t.Errorf("empty scope: got %v, want PERMISSION_DENIED", err)
 	}
 }

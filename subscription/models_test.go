@@ -24,6 +24,7 @@ func TestSubscriptionQuantityRoundTrips(t *testing.T) {
 	if out.Quantity["seats"] != 12 {
 		t.Errorf("got seats %d, want 12", out.Quantity["seats"])
 	}
+
 	if out.Quantity["projects"] != 3 {
 		t.Errorf("got projects %d, want 3", out.Quantity["projects"])
 	}

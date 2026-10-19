@@ -28,6 +28,7 @@ import (
 // ladder with no upper bound.
 func billingFixture(t *testing.T) (*ledger.Ledger, *memory.Store, *subscription.Subscription) {
 	t.Helper()
+
 	ctx := context.Background()
 
 	s := memory.New()
@@ -52,7 +53,12 @@ func billingFixture(t *testing.T) (*ledger.Ledger, *memory.Store, *subscription.
 			BaseAmount:    types.USD(4900),
 			BillingPeriod: plan.PeriodMonthly,
 			Tiers: []plan.PriceTier{
-				{FeatureKey: "api_calls", Type: plan.TierGraduated, UpTo: 0, UnitAmount: types.USD(3)},
+				{
+					FeatureKey: "api_calls",
+					Type:       plan.TierGraduated,
+					UpTo:       0,
+					UnitAmount: types.USD(3),
+				},
 			},
 		},
 	}
@@ -80,6 +86,7 @@ func billingFixture(t *testing.T) (*ledger.Ledger, *memory.Store, *subscription.
 // ingestAPICalls records qty api_calls for sub's tenant and app.
 func ingestAPICalls(t *testing.T, s *memory.Store, sub *subscription.Subscription, qty int64) {
 	t.Helper()
+
 	err := s.IngestBatch(context.Background(), []*meter.UsageEvent{{
 		ID: id.NewUsageEventID(), TenantID: sub.TenantID, AppID: sub.AppID,
 		FeatureKey: "api_calls", Quantity: qty, Timestamp: time.Now().UTC(),
@@ -91,11 +98,13 @@ func ingestAPICalls(t *testing.T, s *memory.Store, sub *subscription.Subscriptio
 
 func lineItemsOfType(inv *invoice.Invoice, kind invoice.LineItemType) []invoice.LineItem {
 	var out []invoice.LineItem
+
 	for _, li := range inv.LineItems {
 		if li.Type == kind {
 			out = append(out, li)
 		}
 	}
+
 	return out
 }
 
@@ -111,9 +120,11 @@ func TestGenerateInvoiceChargesTheBaseFee(t *testing.T) {
 	if len(base) != 1 {
 		t.Fatalf("got %d base line items, want 1", len(base))
 	}
+
 	if !base[0].Amount.Equal(types.USD(4900)) {
 		t.Errorf("got base %v, want $49.00", base[0].Amount)
 	}
+
 	if !inv.Total.Equal(types.USD(4900)) {
 		t.Errorf("got total %v, want $49.00", inv.Total)
 	}
@@ -135,12 +146,18 @@ func TestGenerateInvoicePricesOverageFromTiers(t *testing.T) {
 	if len(over) != 1 {
 		t.Fatalf("got %d overage line items, want 1", len(over))
 	}
+
 	if !over[0].Amount.Equal(types.USD(1500)) {
-		t.Errorf("got overage %v, want $15.00 (this is the bug this task exists to fix: it used to be zero)", over[0].Amount)
+		t.Errorf(
+			"got overage %v, want $15.00 (this is the bug this task exists to fix: it used to be zero)",
+			over[0].Amount,
+		)
 	}
+
 	if over[0].Quantity != 500 {
 		t.Errorf("got overage quantity %d, want 500", over[0].Quantity)
 	}
+
 	if !inv.Total.Equal(types.USD(4900 + 1500)) {
 		t.Errorf("got total %v, want $64.00", inv.Total)
 	}
@@ -154,10 +171,12 @@ func TestGenerateInvoiceChargesSeats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPlan: %v", err)
 	}
+
 	p.Features = append(p.Features, plan.Feature{
 		ID: id.NewFeatureID(), Key: "seats", Name: "Team members",
 		Type: plan.FeatureSeat, Limit: 0, Period: plan.PeriodNone,
 	})
+
 	p.Pricing.Tiers = append(p.Pricing.Tiers, plan.PriceTier{
 		FeatureKey: "seats", Type: plan.TierGraduated, UpTo: 0, UnitAmount: types.USD(800),
 	})
@@ -179,9 +198,11 @@ func TestGenerateInvoiceChargesSeats(t *testing.T) {
 	if len(seats) != 1 {
 		t.Fatalf("got %d seat line items, want 1", len(seats))
 	}
+
 	if seats[0].Quantity != 5 {
 		t.Errorf("got seat quantity %d, want 5", seats[0].Quantity)
 	}
+
 	if !seats[0].Amount.Equal(types.USD(4000)) {
 		t.Errorf("got seat charge %v, want $40.00", seats[0].Amount)
 	}
@@ -191,6 +212,7 @@ func TestGenerateInvoiceChargesSeats(t *testing.T) {
 	if !inv.Subtotal.Equal(types.USD(8900)) {
 		t.Errorf("got subtotal %v, want $89.00 (base plus seats)", inv.Subtotal)
 	}
+
 	if !inv.Total.Equal(types.USD(8900)) {
 		t.Errorf("got total %v, want $89.00", inv.Total)
 	}
@@ -207,6 +229,7 @@ func TestGenerateInvoiceAppliesPercentageCoupon(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreateCoupon: %v", err)
 	}
+
 	if _, err := l.ApplyCoupon(ctx, sub.ID, "LAUNCH10"); err != nil {
 		t.Fatalf("ApplyCoupon: %v", err)
 	}
@@ -219,6 +242,7 @@ func TestGenerateInvoiceAppliesPercentageCoupon(t *testing.T) {
 	if !inv.DiscountAmount.Equal(types.USD(490)) {
 		t.Errorf("got discount %v, want $4.90", inv.DiscountAmount)
 	}
+
 	if !inv.Total.Equal(types.USD(4410)) {
 		t.Errorf("got total %v, want $44.10", inv.Total)
 	}
@@ -227,6 +251,7 @@ func TestGenerateInvoiceAppliesPercentageCoupon(t *testing.T) {
 	if len(disc) != 1 {
 		t.Fatalf("got %d discount line items, want 1", len(disc))
 	}
+
 	if !strings.Contains(disc[0].Description, "LAUNCH10") {
 		t.Errorf("discount line item %q does not name the coupon", disc[0].Description)
 	}
@@ -252,6 +277,7 @@ func TestGenerateInvoiceStacksPercentageBeforeAmount(t *testing.T) {
 		if err := s.CreateCoupon(ctx, c); err != nil {
 			t.Fatalf("CreateCoupon %s: %v", c.Code, err)
 		}
+
 		if _, err := l.ApplyCoupon(ctx, sub.ID, c.Code); err != nil {
 			t.Fatalf("ApplyCoupon %s: %v", c.Code, err)
 		}
@@ -265,6 +291,7 @@ func TestGenerateInvoiceStacksPercentageBeforeAmount(t *testing.T) {
 	if !inv.DiscountAmount.Equal(types.USD(990)) {
 		t.Errorf("got discount %v, want $9.90 (10%% of $49.00 plus $5.00)", inv.DiscountAmount)
 	}
+
 	if !inv.Total.Equal(types.USD(3910)) {
 		t.Errorf("got total %v, want $39.10", inv.Total)
 	}
@@ -282,6 +309,7 @@ func TestGenerateInvoiceClampsTotalAtZero(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreateCoupon: %v", err)
 	}
+
 	if _, err := l.ApplyCoupon(ctx, sub.ID, "HUGE"); err != nil {
 		t.Fatalf("ApplyCoupon: %v", err)
 	}
@@ -294,11 +322,16 @@ func TestGenerateInvoiceClampsTotalAtZero(t *testing.T) {
 	if inv.Total.IsNegative() {
 		t.Errorf("got a negative total %v; an over-large discount must clamp at zero", inv.Total)
 	}
+
 	if !inv.Total.IsZero() {
 		t.Errorf("got total %v, want zero", inv.Total)
 	}
+
 	if !inv.DiscountAmount.Equal(types.USD(100000)) {
-		t.Errorf("got discount %v, want the coupon's full $1000.00 recorded even though it exceeds the subtotal", inv.DiscountAmount)
+		t.Errorf(
+			"got discount %v, want the coupon's full $1000.00 recorded even though it exceeds the subtotal",
+			inv.DiscountAmount,
+		)
 	}
 }
 
@@ -310,7 +343,12 @@ type stubTaxCalculator struct {
 }
 
 func (s *stubTaxCalculator) Name() string { return "stub-tax" }
-func (s *stubTaxCalculator) CalculateTax(_ context.Context, _ interface{}, _ string) (interface{}, error) {
+
+func (s *stubTaxCalculator) CalculateTax(
+	_ context.Context,
+	_ interface{},
+	_ string,
+) (interface{}, error) {
 	return s.result, s.err
 }
 
@@ -340,9 +378,11 @@ func TestGenerateInvoiceCalculatesTax(t *testing.T) {
 	if !inv.TaxAmount.Equal(types.USD(980)) {
 		t.Errorf("got tax %v, want $9.80", inv.TaxAmount)
 	}
+
 	if !inv.Total.Equal(types.USD(5880)) {
 		t.Errorf("got total %v, want $58.80", inv.Total)
 	}
+
 	if len(lineItemsOfType(inv, invoice.LineItemTax)) != 1 {
 		t.Error("no tax line item was emitted")
 	}
@@ -393,8 +433,11 @@ func TestGenerateInvoiceRejectsATaxCalculatorReturningTheWrongType(t *testing.T)
 
 	_, err := l.GenerateInvoice(ctx, sub.ID)
 	if err == nil {
-		t.Fatal("got nil error; a tax plugin returning a non-Money value must fail generation rather than silently contributing nothing")
+		t.Fatal(
+			"got nil error; a tax plugin returning a non-Money value must fail generation rather than silently contributing nothing",
+		)
 	}
+
 	if !strings.Contains(err.Error(), "stub-tax") {
 		t.Errorf("error %q does not name the offending plugin", err.Error())
 	}
@@ -410,9 +453,15 @@ type recordingTaxCalculator struct {
 }
 
 func (r *recordingTaxCalculator) Name() string { return "recording-tax" }
-func (r *recordingTaxCalculator) CalculateTax(_ context.Context, subtotal interface{}, _ string) (interface{}, error) {
+
+func (r *recordingTaxCalculator) CalculateTax(
+	_ context.Context,
+	subtotal interface{},
+	_ string,
+) (interface{}, error) {
 	r.received = subtotal
 	m := subtotal.(types.Money)
+
 	return m.Percent(r.pct), nil
 }
 
@@ -435,6 +484,7 @@ func TestGenerateInvoiceTaxesTheNetAmount(t *testing.T) {
 	if err := s.CreatePlan(ctx, p); err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
+
 	sub := &subscription.Subscription{
 		Entity: types.NewEntity(), ID: id.NewSubscriptionID(),
 		TenantID: "tenant_1", PlanID: p.ID,
@@ -451,6 +501,7 @@ func TestGenerateInvoiceTaxesTheNetAmount(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreateCoupon: %v", err)
 	}
+
 	if _, err := l.ApplyCoupon(ctx, sub.ID, "PCT10"); err != nil {
 		t.Fatalf("ApplyCoupon: %v", err)
 	}
@@ -464,15 +515,19 @@ func TestGenerateInvoiceTaxesTheNetAmount(t *testing.T) {
 	if !ok {
 		t.Fatalf("tax calculator received %T, want types.Money", stub.received)
 	}
+
 	if !got.Equal(types.USD(4410)) {
 		t.Errorf("tax calculator was handed %v, want the net $44.10, not the gross subtotal", got)
 	}
+
 	if !inv.DiscountAmount.Equal(types.USD(490)) {
 		t.Errorf("got discount %v, want $4.90", inv.DiscountAmount)
 	}
+
 	if !inv.TaxAmount.Equal(types.USD(441)) {
 		t.Errorf("got tax %v, want $4.41", inv.TaxAmount)
 	}
+
 	if !inv.Total.Equal(types.USD(4851)) {
 		t.Errorf("got total %v, want $48.51 (4410 + 441)", inv.Total)
 	}
@@ -490,6 +545,7 @@ func TestGenerateInvoiceHandlesAnUppercasePlanCurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPlan: %v", err)
 	}
+
 	p.Currency = "USD"
 	if err = s.UpdatePlan(ctx, p); err != nil {
 		t.Fatalf("UpdatePlan: %v", err)
@@ -502,6 +558,7 @@ func TestGenerateInvoiceHandlesAnUppercasePlanCurrency(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreateCoupon: %v", err)
 	}
+
 	if _, err = l.ApplyCoupon(ctx, sub.ID, "FIVEOFF"); err != nil {
 		t.Fatalf("ApplyCoupon: %v", err)
 	}
@@ -510,6 +567,7 @@ func TestGenerateInvoiceHandlesAnUppercasePlanCurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateInvoice: %v", err)
 	}
+
 	if !inv.Total.Equal(types.USD(4400)) {
 		t.Errorf("got total %v, want $44.00", inv.Total)
 	}
@@ -532,6 +590,7 @@ func TestGenerateInvoiceRejectsABasePriceInAnotherCurrency(t *testing.T) {
 	if err := s.CreatePlan(ctx, p); err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
+
 	sub := &subscription.Subscription{
 		Entity: types.NewEntity(), ID: id.NewSubscriptionID(),
 		TenantID: "tenant_1", PlanID: p.ID,
@@ -563,6 +622,7 @@ func TestGenerateInvoiceRejectsANegativeTaxAmount(t *testing.T) {
 	if err := s.CreatePlan(ctx, p); err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
+
 	sub := &subscription.Subscription{
 		Entity: types.NewEntity(), ID: id.NewSubscriptionID(),
 		TenantID: "tenant_1", PlanID: p.ID,
@@ -574,8 +634,11 @@ func TestGenerateInvoiceRejectsANegativeTaxAmount(t *testing.T) {
 
 	_, err := l.GenerateInvoice(ctx, sub.ID)
 	if err == nil {
-		t.Fatal("got nil error; a tax plugin returning a negative amount must fail generation rather than shrinking the total")
+		t.Fatal(
+			"got nil error; a tax plugin returning a negative amount must fail generation rather than shrinking the total",
+		)
 	}
+
 	if !strings.Contains(err.Error(), "stub-tax") {
 		t.Errorf("error %q does not name the offending plugin", err.Error())
 	}
@@ -597,6 +660,7 @@ func TestGenerateInvoiceRejectsANegativePercentageCouponAppliedThroughTheStore(t
 	if err := s.CreateCoupon(ctx, c); err != nil {
 		t.Fatalf("CreateCoupon: %v", err)
 	}
+
 	if err := s.ApplyCoupon(ctx, sub.ID, c.ID); err != nil {
 		t.Fatalf("store ApplyCoupon: %v", err)
 	}
@@ -620,6 +684,7 @@ func TestGenerateInvoiceRejectsAPercentageAbove100AppliedThroughTheStore(t *test
 	if err := s.CreateCoupon(ctx, c); err != nil {
 		t.Fatalf("CreateCoupon: %v", err)
 	}
+
 	if err := s.ApplyCoupon(ctx, sub.ID, c.ID); err != nil {
 		t.Fatalf("store ApplyCoupon: %v", err)
 	}
@@ -644,6 +709,7 @@ func TestGenerateInvoiceRejectsANegativeAmountCouponAppliedThroughTheStore(t *te
 	if err := s.CreateCoupon(ctx, c); err != nil {
 		t.Fatalf("CreateCoupon: %v", err)
 	}
+
 	if err := s.ApplyCoupon(ctx, sub.ID, c.ID); err != nil {
 		t.Fatalf("store ApplyCoupon: %v", err)
 	}
@@ -665,6 +731,7 @@ func TestGenerateInvoiceRejectsAnInvalidMeteredLadderEvenUnderTheAllowance(t *te
 	if err != nil {
 		t.Fatalf("GetPlan: %v", err)
 	}
+
 	p.Pricing.Tiers = append(p.Pricing.Tiers, plan.PriceTier{
 		FeatureKey: "api_calls", Type: plan.TierFlat, UpTo: 5000, FlatAmount: types.USD(900),
 	})
@@ -687,13 +754,26 @@ func TestGenerateInvoiceRejectsAnInvalidSeatLadderEvenWithZeroSeats(t *testing.T
 	if err != nil {
 		t.Fatalf("GetPlan: %v", err)
 	}
+
 	p.Features = append(p.Features, plan.Feature{
 		ID: id.NewFeatureID(), Key: "seats", Name: "Team members",
 		Type: plan.FeatureSeat, Period: plan.PeriodNone,
 	})
-	p.Pricing.Tiers = append(p.Pricing.Tiers,
-		plan.PriceTier{FeatureKey: "seats", Type: plan.TierGraduated, UpTo: 10, UnitAmount: types.USD(800)},
-		plan.PriceTier{FeatureKey: "seats", Type: plan.TierFlat, UpTo: 0, FlatAmount: types.USD(900)},
+
+	p.Pricing.Tiers = append(
+		p.Pricing.Tiers,
+		plan.PriceTier{
+			FeatureKey: "seats",
+			Type:       plan.TierGraduated,
+			UpTo:       10,
+			UnitAmount: types.USD(800),
+		},
+		plan.PriceTier{
+			FeatureKey: "seats",
+			Type:       plan.TierFlat,
+			UpTo:       0,
+			FlatAmount: types.USD(900),
+		},
 	)
 	if err = s.UpdatePlan(ctx, p); err != nil {
 		t.Fatalf("UpdatePlan: %v", err)
@@ -719,6 +799,7 @@ func TestGenerateInvoiceRejectsACouponOfAnUnsupportedTypeAppliedThroughTheStore(
 	if err := s.CreateCoupon(ctx, c); err != nil {
 		t.Fatalf("CreateCoupon: %v", err)
 	}
+
 	if err := s.ApplyCoupon(ctx, sub.ID, c.ID); err != nil {
 		t.Fatalf("store ApplyCoupon: %v", err)
 	}
@@ -745,6 +826,7 @@ func TestGenerateInvoiceRejectsACouponWhoseCurrencyDriftedFromThePlan(t *testing
 	if err := s.CreatePlan(ctx, p); err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
+
 	sub := &subscription.Subscription{
 		Entity: types.NewEntity(), ID: id.NewSubscriptionID(),
 		TenantID: "tenant_1", PlanID: p.ID,
@@ -761,12 +843,14 @@ func TestGenerateInvoiceRejectsACouponWhoseCurrencyDriftedFromThePlan(t *testing
 	}); err != nil {
 		t.Fatalf("CreateCoupon: %v", err)
 	}
+
 	if _, err := l.ApplyCoupon(ctx, sub.ID, "FIVEUSD"); err != nil {
 		t.Fatalf("ApplyCoupon: %v", err)
 	}
 
 	// The plan's currency drifts after the coupon was applied.
 	p.Currency = "jpy"
+
 	p.Pricing.BaseAmount = types.JPY(4900)
 	if err := s.UpdatePlan(ctx, p); err != nil {
 		t.Fatalf("UpdatePlan: %v", err)
@@ -792,6 +876,7 @@ func TestGenerateInvoiceDoesNotResubtractTheAllowanceAcrossTierBoundaries(t *tes
 	if err != nil {
 		t.Fatalf("GetPlan: %v", err)
 	}
+
 	p.Pricing.Tiers = []plan.PriceTier{
 		{FeatureKey: "api_calls", Type: plan.TierGraduated, UpTo: 2000, UnitAmount: types.USD(5)},
 		{FeatureKey: "api_calls", Type: plan.TierGraduated, UpTo: 0, UnitAmount: types.USD(3)},
@@ -811,11 +896,16 @@ func TestGenerateInvoiceDoesNotResubtractTheAllowanceAcrossTierBoundaries(t *tes
 	if len(over) != 1 {
 		t.Fatalf("got %d overage line items, want 1", len(over))
 	}
+
 	if over[0].Quantity != 1500 {
 		t.Errorf("got overage quantity %d, want 1500", over[0].Quantity)
 	}
+
 	if !over[0].Amount.Equal(types.USD(6500)) {
-		t.Errorf("got overage %v, want $65.00 (priced as the differential across tier boundaries, not the allowance re-subtracted as a flat rate)", over[0].Amount)
+		t.Errorf(
+			"got overage %v, want $65.00 (priced as the differential across tier boundaries, not the allowance re-subtracted as a flat rate)",
+			over[0].Amount,
+		)
 	}
 }
 
@@ -844,6 +934,7 @@ func TestGenerateInvoiceStacksTwoPercentagesWithoutCompounding(t *testing.T) {
 		if err := s.CreateCoupon(ctx, c); err != nil {
 			t.Fatalf("CreateCoupon %s: %v", c.Code, err)
 		}
+
 		if _, err := l.ApplyCoupon(ctx, sub.ID, c.Code); err != nil {
 			t.Fatalf("ApplyCoupon %s: %v", c.Code, err)
 		}
@@ -855,8 +946,12 @@ func TestGenerateInvoiceStacksTwoPercentagesWithoutCompounding(t *testing.T) {
 	}
 
 	if !inv.DiscountAmount.Equal(types.USD(1470)) {
-		t.Errorf("got discount %v, want $14.70 (two independent percentages against the original subtotal, not compounded)", inv.DiscountAmount)
+		t.Errorf(
+			"got discount %v, want $14.70 (two independent percentages against the original subtotal, not compounded)",
+			inv.DiscountAmount,
+		)
 	}
+
 	if !inv.Total.Equal(types.USD(3430)) {
 		t.Errorf("got total %v, want $34.30", inv.Total)
 	}
@@ -873,10 +968,12 @@ func TestGenerateInvoiceSeatsBillAgainstZeroAllowanceNotTheFeatureLimit(t *testi
 	if err != nil {
 		t.Fatalf("GetPlan: %v", err)
 	}
+
 	p.Features = append(p.Features, plan.Feature{
 		ID: id.NewFeatureID(), Key: "seats", Name: "Team members",
 		Type: plan.FeatureSeat, Limit: 5, Period: plan.PeriodNone,
 	})
+
 	p.Pricing.Tiers = append(p.Pricing.Tiers, plan.PriceTier{
 		FeatureKey: "seats", Type: plan.TierGraduated, UpTo: 0, UnitAmount: types.USD(800),
 	})
@@ -898,12 +995,18 @@ func TestGenerateInvoiceSeatsBillAgainstZeroAllowanceNotTheFeatureLimit(t *testi
 	if len(seats) != 1 {
 		t.Fatalf("got %d seat line items, want 1", len(seats))
 	}
+
 	if seats[0].Quantity != 3 {
 		t.Errorf("got seat quantity %d, want 3", seats[0].Quantity)
 	}
+
 	if !seats[0].Amount.Equal(types.USD(2400)) {
-		t.Errorf("got seat charge %v, want $24.00 (all 3 seats billed against a zero allowance, not the feature's Limit of 5)", seats[0].Amount)
+		t.Errorf(
+			"got seat charge %v, want $24.00 (all 3 seats billed against a zero allowance, not the feature's Limit of 5)",
+			seats[0].Amount,
+		)
 	}
+
 	if !inv.Total.Equal(types.USD(7300)) {
 		t.Errorf("got total %v, want $73.00", inv.Total)
 	}
@@ -915,7 +1018,10 @@ func TestGenerateInvoiceSeatsBillAgainstZeroAllowanceNotTheFeatureLimit(t *testi
 func TestGenerateInvoiceNormalisesTheTaxCalculatorsCurrency(t *testing.T) {
 	ctx := context.Background()
 	s := memory.New()
-	l := ledger.New(s, ledger.WithPlugin(&stubTaxCalculator{result: types.Money{Amount: 980, Currency: "USD"}}))
+	l := ledger.New(
+		s,
+		ledger.WithPlugin(&stubTaxCalculator{result: types.Money{Amount: 980, Currency: "USD"}}),
+	)
 
 	p := &plan.Plan{
 		Entity: types.NewEntity(), ID: id.NewPlanID(), Slug: "pro",
@@ -925,6 +1031,7 @@ func TestGenerateInvoiceNormalisesTheTaxCalculatorsCurrency(t *testing.T) {
 	if err := s.CreatePlan(ctx, p); err != nil {
 		t.Fatalf("CreatePlan: %v", err)
 	}
+
 	sub := &subscription.Subscription{
 		Entity: types.NewEntity(), ID: id.NewSubscriptionID(),
 		TenantID: "tenant_1", PlanID: p.ID,
@@ -942,6 +1049,7 @@ func TestGenerateInvoiceNormalisesTheTaxCalculatorsCurrency(t *testing.T) {
 	if !inv.TaxAmount.Equal(types.Money{Amount: 980, Currency: "usd"}) {
 		t.Errorf("got tax %+v, want {Amount:980 Currency:usd}", inv.TaxAmount)
 	}
+
 	if !inv.Total.Equal(types.Money{Amount: 5880, Currency: "usd"}) {
 		t.Errorf("got total %+v, want {Amount:5880 Currency:usd}", inv.Total)
 	}
@@ -958,6 +1066,7 @@ func TestGenerateInvoiceSkipsValidationForAnUnlimitedMeteredFeature(t *testing.T
 	if err != nil {
 		t.Fatalf("GetPlan: %v", err)
 	}
+
 	p.Features[0].Limit = -1
 	// Mixed tier types on one feature: an invalid ladder.
 	p.Pricing.Tiers = []plan.PriceTier{
@@ -974,8 +1083,11 @@ func TestGenerateInvoiceSkipsValidationForAnUnlimitedMeteredFeature(t *testing.T
 	if err != nil {
 		t.Fatalf("GenerateInvoice: %v", err)
 	}
+
 	if len(lineItemsOfType(inv, invoice.LineItemOverage)) != 0 {
-		t.Errorf("got an overage line item for an unlimited feature with an invalid ladder, want none")
+		t.Errorf(
+			"got an overage line item for an unlimited feature with an invalid ladder, want none",
+		)
 	}
 }
 
@@ -1007,9 +1119,15 @@ type fixedStrategy struct {
 
 func (s *fixedStrategy) Name() string         { return "stub-pricing" }
 func (s *fixedStrategy) StrategyName() string { return "stub-pricing" }
-func (s *fixedStrategy) Compute(tiers []interface{}, usage, included int64, currency string) interface{} {
+
+func (s *fixedStrategy) Compute(
+	tiers []interface{},
+	usage, included int64,
+	currency string,
+) interface{} {
 	s.calls++
 	s.tiers, s.usage, s.included, s.currency = tiers, usage, included, currency
+
 	return s.result
 }
 
@@ -1048,19 +1166,26 @@ func (c *captureLogger) Warn(msg string, fields ...log.Field) {
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	c.warns = append(c.warns, rec)
 }
 
 func (c *captureLogger) recorded() []warnRecord {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	return append([]warnRecord(nil), c.warns...)
 }
 
 // hookFixture builds billingFixture's plan and subscription on a ledger that
 // carries the given plugins, and lets the caller edit the plan first.
-func hookFixture(t *testing.T, edit func(p *plan.Plan), plugins ...plugin.Plugin) (*ledger.Ledger, *memory.Store, *subscription.Subscription) {
+func hookFixture(
+	t *testing.T,
+	edit func(p *plan.Plan),
+	plugins ...plugin.Plugin,
+) (*ledger.Ledger, *memory.Store, *subscription.Subscription) {
 	t.Helper()
+
 	ctx := context.Background()
 
 	opts := make([]ledger.Option, 0, len(plugins))
@@ -1077,7 +1202,9 @@ func hookFixture(t *testing.T, edit func(p *plan.Plan), plugins ...plugin.Plugin
 	if err != nil {
 		t.Fatalf("GetPlan: %v", err)
 	}
+
 	edit(p)
+
 	if err := s.UpdatePlan(ctx, p); err != nil {
 		t.Fatalf("UpdatePlan: %v", err)
 	}
@@ -1090,19 +1217,23 @@ func setFeatureMeta(key, value string) func(*plan.Plan) {
 		if p.Features[0].Metadata == nil {
 			p.Features[0].Metadata = map[string]string{}
 		}
+
 		p.Features[0].Metadata[key] = value
 	}
 }
 
 func overageAmount(t *testing.T, inv *invoice.Invoice) types.Money {
 	t.Helper()
+
 	over := lineItemsOfType(inv, invoice.LineItemOverage)
 	if len(over) == 0 {
 		return types.Zero("usd")
 	}
+
 	if len(over) != 1 {
 		t.Fatalf("got %d overage line items, want at most 1", len(over))
 	}
+
 	return over[0].Amount
 }
 
@@ -1114,6 +1245,7 @@ func TestGenerateInvoiceUsesANamedUsageAggregator(t *testing.T) {
 	// One event inside the billing period, one before it. The aggregator
 	// must see only the first.
 	ingestAPICalls(t, s, sub, 1)
+
 	if err := s.IngestBatch(ctx, []*meter.UsageEvent{{
 		ID: id.NewUsageEventID(), TenantID: sub.TenantID, AppID: sub.AppID,
 		FeatureKey: "api_calls", Quantity: 1,
@@ -1131,8 +1263,12 @@ func TestGenerateInvoiceUsesANamedUsageAggregator(t *testing.T) {
 	if got := overageAmount(t, inv); !got.Equal(types.USD(1500)) {
 		t.Errorf("got overage %v, want $15.00 priced from the aggregator's total", got)
 	}
+
 	if agg.seen != 1 {
-		t.Errorf("aggregator saw %d events, want 1: it must be bounded to the billing period", agg.seen)
+		t.Errorf(
+			"aggregator saw %d events, want 1: it must be bounded to the billing period",
+			agg.seen,
+		)
 	}
 }
 
@@ -1144,6 +1280,7 @@ func TestGenerateInvoiceFallsBackWhenTheAggregatorIsNotRegistered(t *testing.T) 
 	if err != nil {
 		t.Fatalf("GenerateInvoice: %v", err)
 	}
+
 	if got := overageAmount(t, inv); !got.Equal(types.USD(1500)) {
 		t.Errorf("got overage %v, want the store's $15.00", got)
 	}
@@ -1170,9 +1307,11 @@ func TestGenerateInvoiceUsesANamedPricingStrategy(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GenerateInvoice: %v", err)
 			}
+
 			if strategy.calls != 1 {
 				t.Errorf("strategy called %d times, want 1", strategy.calls)
 			}
+
 			if got := overageAmount(t, inv); !got.Equal(types.USD(12345)) {
 				t.Errorf("got overage %v, want the strategy's $123.45", got)
 			}
@@ -1189,9 +1328,11 @@ func TestGenerateInvoiceDoesNotCallAStrategyWithinTheAllowance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateInvoice: %v", err)
 	}
+
 	if strategy.calls != 0 {
 		t.Errorf("strategy called %d times for usage inside the allowance, want 0", strategy.calls)
 	}
+
 	if got := overageAmount(t, inv); !got.IsZero() {
 		t.Errorf("got overage %v, want none", got)
 	}
@@ -1218,6 +1359,7 @@ func TestGenerateInvoiceRejectsABadStrategyResult(t *testing.T) {
 			if err == nil {
 				t.Fatal("got nil error; a bad strategy result must fail generation")
 			}
+
 			if !strings.Contains(err.Error(), "stub-pricing") {
 				t.Errorf("error %q does not name the strategy", err.Error())
 			}
@@ -1233,6 +1375,7 @@ func TestGenerateInvoiceFallsBackWhenTheStrategyIsNotRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateInvoice: %v", err)
 	}
+
 	if got := overageAmount(t, inv); !got.Equal(types.USD(1500)) {
 		t.Errorf("got overage %v, want the built-in $15.00", got)
 	}
@@ -1247,6 +1390,7 @@ func TestGenerateInvoiceAcceptsAStrategyResultInAnotherCurrencyCasing(t *testing
 	if err != nil {
 		t.Fatalf("GenerateInvoice: %v", err)
 	}
+
 	if got := overageAmount(t, inv); !got.Equal(types.USD(500)) {
 		t.Errorf("got overage %v, want $5.00 normalised to the plan's currency", got)
 	}
@@ -1280,17 +1424,28 @@ func TestGenerateInvoicePricesASeatFeatureWithANamedStrategy(t *testing.T) {
 	if len(seats) != 1 {
 		t.Fatalf("got %d seat line items, want 1", len(seats))
 	}
+
 	if !seats[0].Amount.Equal(types.USD(777)) {
-		t.Errorf("got seat charge %v, want the strategy's $7.77 rather than the built-in $40.00", seats[0].Amount)
+		t.Errorf(
+			"got seat charge %v, want the strategy's $7.77 rather than the built-in $40.00",
+			seats[0].Amount,
+		)
 	}
+
 	if strategy.calls != 1 {
 		t.Errorf("strategy called %d times, want 1", strategy.calls)
 	}
 }
 
 func TestGenerateInvoiceUsesTheFeaturesStrategyOverThePlans(t *testing.T) {
-	featureStrat := &namedStrategy{name: "feature-pricing", fixedStrategy: fixedStrategy{result: types.USD(1111)}}
-	planStrat := &namedStrategy{name: "plan-pricing", fixedStrategy: fixedStrategy{result: types.USD(2222)}}
+	featureStrat := &namedStrategy{
+		name:          "feature-pricing",
+		fixedStrategy: fixedStrategy{result: types.USD(1111)},
+	}
+	planStrat := &namedStrategy{
+		name:          "plan-pricing",
+		fixedStrategy: fixedStrategy{result: types.USD(2222)},
+	}
 
 	l, s, sub := hookFixture(t, func(p *plan.Plan) {
 		setFeatureMeta("pricing_strategy", "feature-pricing")(p)
@@ -1302,14 +1457,20 @@ func TestGenerateInvoiceUsesTheFeaturesStrategyOverThePlans(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateInvoice: %v", err)
 	}
+
 	if got := overageAmount(t, inv); !got.Equal(types.USD(1111)) {
 		t.Errorf("got overage %v, want the feature's $11.11", got)
 	}
+
 	if featureStrat.calls != 1 {
 		t.Errorf("feature strategy called %d times, want 1", featureStrat.calls)
 	}
+
 	if planStrat.calls != 0 {
-		t.Errorf("plan strategy called %d times, want 0: the feature's choice wins", planStrat.calls)
+		t.Errorf(
+			"plan strategy called %d times, want 0: the feature's choice wins",
+			planStrat.calls,
+		)
 	}
 }
 
@@ -1323,7 +1484,12 @@ func TestGenerateInvoiceHandsAStrategyItsDocumentedArguments(t *testing.T) {
 		p.Pricing.Tiers = []plan.PriceTier{
 			{FeatureKey: "api_calls", Type: plan.TierGraduated, UpTo: 0, UnitAmount: types.USD(2)},
 			{FeatureKey: "other", Type: plan.TierGraduated, UpTo: 0, UnitAmount: types.USD(9)},
-			{FeatureKey: "api_calls", Type: plan.TierGraduated, UpTo: 5000, UnitAmount: types.USD(3)},
+			{
+				FeatureKey: "api_calls",
+				Type:       plan.TierGraduated,
+				UpTo:       5000,
+				UnitAmount: types.USD(3),
+			},
 		}
 	}, strategy)
 	ingestAPICalls(t, s, sub, 1500)
@@ -1333,21 +1499,38 @@ func TestGenerateInvoiceHandsAStrategyItsDocumentedArguments(t *testing.T) {
 	}
 
 	if strategy.usage != 1500 || strategy.included != 1000 {
-		t.Errorf("got usage %d and included %d, want 1500 and 1000", strategy.usage, strategy.included)
+		t.Errorf(
+			"got usage %d and included %d, want 1500 and 1000",
+			strategy.usage,
+			strategy.included,
+		)
 	}
+
 	if strategy.currency != "usd" {
 		t.Errorf("got currency %q, want it lowercased", strategy.currency)
 	}
+
 	if len(strategy.tiers) != 2 {
 		t.Fatalf("got %d tiers, want the 2 belonging to the feature", len(strategy.tiers))
 	}
+
 	first, ok1 := strategy.tiers[0].(plan.PriceTier)
+
 	second, ok2 := strategy.tiers[1].(plan.PriceTier)
 	if !ok1 || !ok2 {
-		t.Fatalf("got tier types %T and %T, want plan.PriceTier values", strategy.tiers[0], strategy.tiers[1])
+		t.Fatalf(
+			"got tier types %T and %T, want plan.PriceTier values",
+			strategy.tiers[0],
+			strategy.tiers[1],
+		)
 	}
+
 	if first.UpTo != 5000 || second.UpTo != 0 {
-		t.Errorf("got UpTo %d then %d, want the bounded tier first and the unbounded one last", first.UpTo, second.UpTo)
+		t.Errorf(
+			"got UpTo %d then %d, want the bounded tier first and the unbounded one last",
+			first.UpTo,
+			second.UpTo,
+		)
 	}
 }
 
@@ -1357,6 +1540,7 @@ func TestGenerateInvoiceBoundsTheAggregatorAtThePeriodEnd(t *testing.T) {
 	l, s, sub := hookFixture(t, setFeatureMeta("aggregator", "stub-agg"), agg)
 
 	ingestAPICalls(t, s, sub, 1)
+
 	if err := s.IngestBatch(ctx, []*meter.UsageEvent{{
 		ID: id.NewUsageEventID(), TenantID: sub.TenantID, AppID: sub.AppID,
 		FeatureKey: "api_calls", Quantity: 1,
@@ -1368,8 +1552,12 @@ func TestGenerateInvoiceBoundsTheAggregatorAtThePeriodEnd(t *testing.T) {
 	if _, err := l.GenerateInvoice(ctx, sub.ID); err != nil {
 		t.Fatalf("GenerateInvoice: %v", err)
 	}
+
 	if agg.seen != 1 {
-		t.Errorf("aggregator saw %d events, want 1: an event after the period end must not be billed", agg.seen)
+		t.Errorf(
+			"aggregator saw %d events, want 1: an event after the period end must not be billed",
+			agg.seen,
+		)
 	}
 }
 
@@ -1391,6 +1579,7 @@ func TestGenerateInvoiceRefusesABadAggregatorResult(t *testing.T) {
 			if err == nil {
 				t.Fatal("got nil error; a bad aggregator result must fail generation")
 			}
+
 			if !strings.Contains(err.Error(), `"stub-agg"`) {
 				t.Errorf("error %q does not name the aggregator", err.Error())
 			}
@@ -1412,9 +1601,11 @@ func TestGenerateInvoiceWarnsWhenAnAggregatorIsNotRegistered(t *testing.T) {
 	if len(warns) != 1 {
 		t.Fatalf("got %d warnings, want 1", len(warns))
 	}
+
 	if !strings.Contains(warns[0].msg, "unregistered usage aggregator") {
 		t.Errorf("warning %q does not say the aggregator is unregistered", warns[0].msg)
 	}
+
 	if got := warns[0].fields["aggregator"]; got != "absent" {
 		t.Errorf("got aggregator field %v, want %q", got, "absent")
 	}
@@ -1447,12 +1638,15 @@ func TestGenerateInvoiceWarnsWhenAStrategyIsNotRegistered(t *testing.T) {
 			if len(warns) != 1 {
 				t.Fatalf("got %d warnings, want 1", len(warns))
 			}
+
 			if !strings.Contains(warns[0].msg, "unregistered pricing strategy") {
 				t.Errorf("warning %q does not say the strategy is unregistered", warns[0].msg)
 			}
+
 			if !strings.Contains(warns[0].msg, c.wantNamer) {
 				t.Errorf("warning %q does not blame the %s", warns[0].msg, c.wantNamer)
 			}
+
 			if got := warns[0].fields["strategy"]; got != "absent" {
 				t.Errorf("got strategy field %v, want %q", got, "absent")
 			}
@@ -1463,10 +1657,12 @@ func TestGenerateInvoiceWarnsWhenAStrategyIsNotRegistered(t *testing.T) {
 // requireNoInvoiceStored fails when generation left an invoice behind.
 func requireNoInvoiceStored(t *testing.T, s *memory.Store, sub *subscription.Subscription) {
 	t.Helper()
+
 	stored, err := s.ListInvoices(context.Background(), sub.TenantID, sub.AppID, invoice.ListOpts{})
 	if err != nil {
 		t.Fatalf("ListInvoices: %v", err)
 	}
+
 	if len(stored) != 0 {
 		t.Errorf("got %d stored invoices after a refused generation, want none", len(stored))
 	}
@@ -1489,12 +1685,15 @@ func TestGenerateInvoiceRefusesAnAggregatorTotalThatOverflowsPricing(t *testing.
 	if !errors.Is(err, types.ErrOverflow) {
 		t.Fatalf("got invoice %v, err %v, want an error wrapping types.ErrOverflow", inv, err)
 	}
+
 	if inv != nil {
 		t.Errorf("got an invoice alongside the error: %+v", inv)
 	}
+
 	if !strings.Contains(err.Error(), `"api_calls"`) {
 		t.Errorf("error %q does not name the feature", err.Error())
 	}
+
 	requireNoInvoiceStored(t, s, sub)
 }
 
@@ -1507,16 +1706,19 @@ func TestGenerateInvoiceRefusesASubtotalThatOverflows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPlan: %v", err)
 	}
+
 	p.Features = append(p.Features, plan.Feature{
 		ID: id.NewFeatureID(), Key: "seats", Name: "Team members",
 		Type: plan.FeatureSeat, Limit: 0, Period: plan.PeriodNone,
 	})
+
 	p.Pricing.Tiers = append(p.Pricing.Tiers, plan.PriceTier{
 		FeatureKey: "seats", Type: plan.TierGraduated, UpTo: 0, UnitAmount: types.USD(800),
 	})
 	if err = s.UpdatePlan(ctx, p); err != nil {
 		t.Fatalf("UpdatePlan: %v", err)
 	}
+
 	sub.Quantity = map[string]int64{"seats": 1}
 	if err = s.UpdateSubscription(ctx, sub); err != nil {
 		t.Fatalf("UpdateSubscription: %v", err)
@@ -1526,9 +1728,11 @@ func TestGenerateInvoiceRefusesASubtotalThatOverflows(t *testing.T) {
 	if !errors.Is(err, types.ErrOverflow) {
 		t.Fatalf("got %v, want an error wrapping types.ErrOverflow", err)
 	}
+
 	if !strings.Contains(err.Error(), "subtotal") {
 		t.Errorf("error %q does not name the subtotal stage", err.Error())
 	}
+
 	requireNoInvoiceStored(t, s, sub)
 }
 
@@ -1543,6 +1747,7 @@ func TestGenerateInvoiceRefusesAPercentageDiscountThatOverflows(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreateCoupon: %v", err)
 	}
+
 	if _, err := l.ApplyCoupon(ctx, sub.ID, "HALF"); err != nil {
 		t.Fatalf("ApplyCoupon: %v", err)
 	}
@@ -1551,9 +1756,11 @@ func TestGenerateInvoiceRefusesAPercentageDiscountThatOverflows(t *testing.T) {
 	if !errors.Is(err, types.ErrOverflow) {
 		t.Fatalf("got %v, want an error wrapping types.ErrOverflow", err)
 	}
+
 	if !strings.Contains(err.Error(), `"HALF"`) {
 		t.Errorf("error %q does not name the coupon", err.Error())
 	}
+
 	requireNoInvoiceStored(t, s, sub)
 }
 
@@ -1570,6 +1777,7 @@ func TestGenerateInvoiceRefusesADiscountTotalThatOverflows(t *testing.T) {
 		if err := s.CreateCoupon(ctx, c); err != nil {
 			t.Fatalf("CreateCoupon: %v", err)
 		}
+
 		if err := s.ApplyCoupon(ctx, sub.ID, c.ID); err != nil {
 			t.Fatalf("store ApplyCoupon: %v", err)
 		}
@@ -1579,24 +1787,31 @@ func TestGenerateInvoiceRefusesADiscountTotalThatOverflows(t *testing.T) {
 	if !errors.Is(err, types.ErrOverflow) {
 		t.Fatalf("got %v, want an error wrapping types.ErrOverflow", err)
 	}
+
 	if !strings.Contains(err.Error(), "discount") {
 		t.Errorf("error %q does not name the discount stage", err.Error())
 	}
+
 	requireNoInvoiceStored(t, s, sub)
 }
 
 func TestGenerateInvoiceRefusesATaxTotalThatOverflows(t *testing.T) {
 	half := &stubTaxCalculator{result: types.USD(math.MaxInt64/2 + 1)}
-	other := &namedTax{stubTaxCalculator: stubTaxCalculator{result: types.USD(math.MaxInt64/2 + 1)}, name: "other-tax"}
+	other := &namedTax{
+		stubTaxCalculator: stubTaxCalculator{result: types.USD(math.MaxInt64/2 + 1)},
+		name:              "other-tax",
+	}
 	l, s, sub := hookFixture(t, func(*plan.Plan) {}, half, other)
 
 	_, err := l.GenerateInvoice(context.Background(), sub.ID)
 	if !errors.Is(err, types.ErrOverflow) {
 		t.Fatalf("got %v, want an error wrapping types.ErrOverflow", err)
 	}
+
 	if !strings.Contains(err.Error(), "tax") {
 		t.Errorf("error %q does not name the tax stage", err.Error())
 	}
+
 	requireNoInvoiceStored(t, s, sub)
 }
 
@@ -1608,9 +1823,11 @@ func TestGenerateInvoiceRefusesATotalThatOverflows(t *testing.T) {
 	if !errors.Is(err, types.ErrOverflow) {
 		t.Fatalf("got %v, want an error wrapping types.ErrOverflow", err)
 	}
+
 	if !strings.Contains(err.Error(), "total") {
 		t.Errorf("error %q does not name the total stage", err.Error())
 	}
+
 	requireNoInvoiceStored(t, s, sub)
 }
 
@@ -1623,6 +1840,7 @@ func TestGenerateInvoiceAcceptsTheLargestTotalThatFits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateInvoice: %v", err)
 	}
+
 	if !inv.Total.Equal(types.USD(math.MaxInt64)) {
 		t.Errorf("got total %v, want %v", inv.Total, types.USD(math.MaxInt64))
 	}
@@ -1648,9 +1866,11 @@ func TestGenerateInvoiceRefusesANegativeStoreTotal(t *testing.T) {
 	if err == nil {
 		t.Fatalf("got invoice with total %v, want an error for a negative usage total", inv.Total)
 	}
+
 	if !strings.Contains(err.Error(), `"api_calls"`) {
 		t.Errorf("error %q does not name the feature", err.Error())
 	}
+
 	requireNoInvoiceStored(t, s, sub)
 }
 
@@ -1673,5 +1893,6 @@ func TestGenerateInvoiceRefusesANegativeBaseAmount(t *testing.T) {
 	if !errors.Is(err, ledger.ErrInvalidPricing) {
 		t.Fatalf("got invoice %v, err %v, want an error wrapping ErrInvalidPricing", inv, err)
 	}
+
 	requireNoInvoiceStored(t, s, sub)
 }

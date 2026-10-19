@@ -111,6 +111,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 	cols := unionSortedIndexKeys(indexes, uniqueIndexes)
 
 	var errs []error
+
 	created := make(map[string]bool, len(cols))
 
 	for _, col := range cols {
@@ -121,8 +122,12 @@ func (s *Store) Migrate(ctx context.Context) error {
 				if isDuplicateKeyError(err) {
 					errs = append(errs, duplicateKeyMigrateError(col, err))
 				} else {
-					errs = append(errs, fmt.Errorf("ledger/mongo: migrate: create %s indexes: %w", col, err))
+					errs = append(
+						errs,
+						fmt.Errorf("ledger/mongo: migrate: create %s indexes: %w", col, err),
+					)
 				}
+
 				ok = false
 			}
 		}
@@ -137,8 +142,12 @@ func (s *Store) Migrate(ctx context.Context) error {
 				if isDuplicateKeyError(err) {
 					errs = append(errs, duplicateKeyMigrateError(col, err))
 				} else {
-					errs = append(errs, fmt.Errorf("ledger/mongo: migrate: create %s indexes: %w", col, err))
+					errs = append(
+						errs,
+						fmt.Errorf("ledger/mongo: migrate: create %s indexes: %w", col, err),
+					)
 				}
+
 				ok = false
 			}
 		}
@@ -147,10 +156,12 @@ func (s *Store) Migrate(ctx context.Context) error {
 	}
 
 	supersededByCol := migrationSupersededIndexes()
+
 	supersededCols := make([]string, 0, len(supersededByCol))
 	for col := range supersededByCol {
 		supersededCols = append(supersededCols, col)
 	}
+
 	sort.Strings(supersededCols)
 
 	for _, col := range supersededCols {
@@ -162,10 +173,19 @@ func (s *Store) Migrate(ctx context.Context) error {
 			// dropping protection a replacement never took over.
 			continue
 		}
+
 		for _, name := range supersededByCol[col] {
 			if err := s.mdb.Collection(col).Indexes().DropOne(ctx, name); err != nil {
 				if !isIndexNotFound(err) {
-					errs = append(errs, fmt.Errorf("ledger/mongo: migrate: drop superseded %s index on %q: %w", name, col, err))
+					errs = append(
+						errs,
+						fmt.Errorf(
+							"ledger/mongo: migrate: drop superseded %s index on %q: %w",
+							name,
+							col,
+							err,
+						),
+					)
 				}
 			}
 		}
@@ -188,15 +208,18 @@ func (s *Store) Close() error {
 
 func (s *Store) CreatePlan(ctx context.Context, p *plan.Plan) error {
 	m := toPlanModel(p)
+
 	_, err := s.mdb.NewInsert(m).Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: create plan: %w", err)
 	}
+
 	return nil
 }
 
 func (s *Store) GetPlan(ctx context.Context, planID id.PlanID) (*plan.Plan, error) {
 	var m planModel
+
 	err := s.mdb.NewFind(&m).
 		Filter(bson.M{"_id": planID.String()}).
 		Scan(ctx)
@@ -204,13 +227,16 @@ func (s *Store) GetPlan(ctx context.Context, planID id.PlanID) (*plan.Plan, erro
 		if isNoDocuments(err) {
 			return nil, ledger.ErrPlanNotFound
 		}
+
 		return nil, fmt.Errorf("ledger/mongo: get plan: %w", err)
 	}
+
 	return fromPlanModel(&m)
 }
 
 func (s *Store) GetPlanBySlug(ctx context.Context, slug, appID string) (*plan.Plan, error) {
 	var m planModel
+
 	err := s.mdb.NewFind(&m).
 		Filter(bson.M{"slug": slug, "app_id": appID}).
 		Scan(ctx)
@@ -218,18 +244,25 @@ func (s *Store) GetPlanBySlug(ctx context.Context, slug, appID string) (*plan.Pl
 		if isNoDocuments(err) {
 			return nil, ledger.ErrPlanNotFound
 		}
+
 		return nil, fmt.Errorf("ledger/mongo: get plan by slug: %w", err)
 	}
+
 	return fromPlanModel(&m)
 }
 
-func (s *Store) ListPlans(ctx context.Context, appID string, opts plan.ListOpts) ([]*plan.Plan, error) {
+func (s *Store) ListPlans(
+	ctx context.Context,
+	appID string,
+	opts plan.ListOpts,
+) ([]*plan.Plan, error) {
 	var models []planModel
 
 	filter := bson.M{}
 	if appID != "" {
 		filter["app_id"] = appID
 	}
+
 	if opts.Status != "" {
 		filter["status"] = string(opts.Status)
 	}
@@ -241,6 +274,7 @@ func (s *Store) ListPlans(ctx context.Context, appID string, opts plan.ListOpts)
 	if opts.Limit > 0 {
 		q = q.Limit(int64(opts.Limit))
 	}
+
 	if opts.Offset > 0 {
 		q = q.Skip(int64(opts.Offset))
 	}
@@ -255,8 +289,10 @@ func (s *Store) ListPlans(ctx context.Context, appID string, opts plan.ListOpts)
 		if err != nil {
 			return nil, err
 		}
+
 		result[i] = p
 	}
+
 	return result, nil
 }
 
@@ -270,9 +306,11 @@ func (s *Store) UpdatePlan(ctx context.Context, p *plan.Plan) error {
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: update plan: %w", err)
 	}
+
 	if res.MatchedCount() == 0 {
 		return ledger.ErrPlanNotFound
 	}
+
 	return nil
 }
 
@@ -283,14 +321,17 @@ func (s *Store) DeletePlan(ctx context.Context, planID id.PlanID) error {
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: delete plan: %w", err)
 	}
+
 	if res.DeletedCount() == 0 {
 		return ledger.ErrPlanNotFound
 	}
+
 	return nil
 }
 
 func (s *Store) ArchivePlan(ctx context.Context, planID id.PlanID) error {
 	t := now()
+
 	res, err := s.mdb.NewUpdate((*planModel)(nil)).
 		Filter(bson.M{"_id": planID.String()}).
 		Set("status", string(plan.StatusArchived)).
@@ -299,9 +340,11 @@ func (s *Store) ArchivePlan(ctx context.Context, planID id.PlanID) error {
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: archive plan: %w", err)
 	}
+
 	if res.MatchedCount() == 0 {
 		return ledger.ErrPlanNotFound
 	}
+
 	return nil
 }
 
@@ -309,15 +352,21 @@ func (s *Store) ArchivePlan(ctx context.Context, planID id.PlanID) error {
 
 func (s *Store) CreateSubscription(ctx context.Context, sub *subscription.Subscription) error {
 	m := toSubscriptionModel(sub)
+
 	_, err := s.mdb.NewInsert(m).Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: create subscription: %w", err)
 	}
+
 	return nil
 }
 
-func (s *Store) GetSubscription(ctx context.Context, subID id.SubscriptionID) (*subscription.Subscription, error) {
+func (s *Store) GetSubscription(
+	ctx context.Context,
+	subID id.SubscriptionID,
+) (*subscription.Subscription, error) {
 	var m subscriptionModel
+
 	err := s.mdb.NewFind(&m).
 		Filter(bson.M{"_id": subID.String()}).
 		Scan(ctx)
@@ -325,18 +374,29 @@ func (s *Store) GetSubscription(ctx context.Context, subID id.SubscriptionID) (*
 		if isNoDocuments(err) {
 			return nil, ledger.ErrSubscriptionNotFound
 		}
+
 		return nil, fmt.Errorf("ledger/mongo: get subscription: %w", err)
 	}
+
 	return fromSubscriptionModel(&m)
 }
 
-func (s *Store) GetActiveSubscription(ctx context.Context, tenantID, appID string) (*subscription.Subscription, error) {
+func (s *Store) GetActiveSubscription(
+	ctx context.Context,
+	tenantID, appID string,
+) (*subscription.Subscription, error) {
 	var m subscriptionModel
+
 	err := s.mdb.NewFind(&m).
 		Filter(bson.M{
 			"tenant_id": tenantID,
 			"app_id":    appID,
-			"status":    bson.M{"$in": []string{string(subscription.StatusActive), string(subscription.StatusTrialing)}},
+			"status": bson.M{
+				"$in": []string{
+					string(subscription.StatusActive),
+					string(subscription.StatusTrialing),
+				},
+			},
 		}).
 		Sort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}).
 		Limit(1).
@@ -345,21 +405,29 @@ func (s *Store) GetActiveSubscription(ctx context.Context, tenantID, appID strin
 		if isNoDocuments(err) {
 			return nil, ledger.ErrNoActiveSubscription
 		}
+
 		return nil, fmt.Errorf("ledger/mongo: get active subscription: %w", err)
 	}
+
 	return fromSubscriptionModel(&m)
 }
 
-func (s *Store) ListSubscriptions(ctx context.Context, tenantID, appID string, opts subscription.ListOpts) ([]*subscription.Subscription, error) {
+func (s *Store) ListSubscriptions(
+	ctx context.Context,
+	tenantID, appID string,
+	opts subscription.ListOpts,
+) ([]*subscription.Subscription, error) {
 	var models []subscriptionModel
 
 	filter := bson.M{}
 	if tenantID != "" {
 		filter["tenant_id"] = tenantID
 	}
+
 	if appID != "" {
 		filter["app_id"] = appID
 	}
+
 	if opts.Status != "" {
 		filter["status"] = string(opts.Status)
 	}
@@ -371,6 +439,7 @@ func (s *Store) ListSubscriptions(ctx context.Context, tenantID, appID string, o
 	if opts.Limit > 0 {
 		q = q.Limit(int64(opts.Limit))
 	}
+
 	if opts.Offset > 0 {
 		q = q.Skip(int64(opts.Offset))
 	}
@@ -385,8 +454,10 @@ func (s *Store) ListSubscriptions(ctx context.Context, tenantID, appID string, o
 		if err != nil {
 			return nil, err
 		}
+
 		result[i] = sub
 	}
+
 	return result, nil
 }
 
@@ -400,9 +471,11 @@ func (s *Store) UpdateSubscription(ctx context.Context, sub *subscription.Subscr
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: update subscription: %w", err)
 	}
+
 	if res.MatchedCount() == 0 {
 		return ledger.ErrSubscriptionNotFound
 	}
+
 	return nil
 }
 
@@ -412,8 +485,13 @@ func (s *Store) UpdateSubscription(ctx context.Context, sub *subscription.Subscr
 // FindOneAndUpdate hands back the stored cancel_at in the same operation. So
 // grove's operation hooks do not see this write, as with
 // EnactSubscriptionCancel.
-func (s *Store) CancelSubscription(ctx context.Context, subID id.SubscriptionID, immediately bool) (time.Time, error) {
+func (s *Store) CancelSubscription(
+	ctx context.Context,
+	subID id.SubscriptionID,
+	immediately bool,
+) (time.Time, error) {
 	t := now()
+
 	var update any
 	if immediately {
 		update = bson.M{"$set": bson.M{
@@ -435,10 +513,16 @@ func (s *Store) CancelSubscription(ctx context.Context, subID id.SubscriptionID,
 	var stored struct {
 		CancelAt time.Time `bson:"cancel_at"`
 	}
+
 	err := s.mdb.Collection(colSubscriptions).FindOneAndUpdate(ctx,
 		bson.M{
-			"_id":    subID.String(),
-			"status": bson.M{"$nin": []string{string(subscription.StatusCanceled), string(subscription.StatusExpired)}},
+			"_id": subID.String(),
+			"status": bson.M{
+				"$nin": []string{
+					string(subscription.StatusCanceled),
+					string(subscription.StatusExpired),
+				},
+			},
 		},
 		update,
 		options.FindOneAndUpdate().
@@ -448,9 +532,11 @@ func (s *Store) CancelSubscription(ctx context.Context, subID id.SubscriptionID,
 	if isNoDocuments(err) {
 		return time.Time{}, s.cancelMissed(ctx, subID)
 	}
+
 	if err != nil {
 		return time.Time{}, fmt.Errorf("ledger/mongo: cancel subscription: %w", err)
 	}
+
 	return stored.CancelAt.UTC(), nil
 }
 
@@ -460,21 +546,29 @@ func (s *Store) IngestBatch(ctx context.Context, events []*meter.UsageEvent) err
 	if len(events) == 0 {
 		return nil
 	}
+
 	for _, e := range events {
 		m := toUsageEventModel(e)
+
 		_, err := s.mdb.NewInsert(m).Exec(ctx)
 		if err != nil {
 			// Skip duplicates for idempotency
 			if mongo.IsDuplicateKeyError(err) {
 				continue
 			}
+
 			return fmt.Errorf("ledger/mongo: ingest event: %w", err)
 		}
 	}
+
 	return nil
 }
 
-func (s *Store) Aggregate(ctx context.Context, tenantID, appID, featureKey string, period plan.Period) (int64, error) {
+func (s *Store) Aggregate(
+	ctx context.Context,
+	tenantID, appID, featureKey string,
+	period plan.Period,
+) (int64, error) {
 	// The period start is inclusive, matching the half-open [Start, End)
 	// window QueryUsage applies: an event stamped exactly at the start of the
 	// period belongs to it. The start is computed from time.Now(), so a test
@@ -515,46 +609,65 @@ func (s *Store) Aggregate(ctx context.Context, tenantID, appID, featureKey strin
 	if len(results) == 0 {
 		return 0, nil
 	}
+
 	return results[0].Total, nil
 }
 
-func (s *Store) AggregateMulti(ctx context.Context, tenantID, appID string, featureKeys []string, period plan.Period) (map[string]int64, error) {
+func (s *Store) AggregateMulti(
+	ctx context.Context,
+	tenantID, appID string,
+	featureKeys []string,
+	period plan.Period,
+) (map[string]int64, error) {
 	result := make(map[string]int64)
+
 	for _, key := range featureKeys {
 		total, err := s.Aggregate(ctx, tenantID, appID, key, period)
 		if err != nil {
 			return nil, err
 		}
+
 		result[key] = total
 	}
+
 	return result, nil
 }
 
-func (s *Store) QueryUsage(ctx context.Context, tenantID, appID string, opts meter.QueryOpts) ([]*meter.UsageEvent, error) {
+func (s *Store) QueryUsage(
+	ctx context.Context,
+	tenantID, appID string,
+	opts meter.QueryOpts,
+) ([]*meter.UsageEvent, error) {
 	var models []usageEventModel
 
 	filter := bson.M{}
 	if tenantID != "" {
 		filter["tenant_id"] = tenantID
 	}
+
 	if appID != "" {
 		filter["app_id"] = appID
 	}
+
 	if opts.FeatureKey != "" {
 		filter["feature_key"] = opts.FeatureKey
 	}
+
 	if !opts.Start.IsZero() {
 		if _, ok := filter["timestamp"]; !ok {
 			filter["timestamp"] = bson.M{}
 		}
+
 		if ts, ok := filter["timestamp"].(bson.M); ok {
 			ts["$gte"] = opts.Start
 		}
 	}
+
 	if !opts.End.IsZero() {
 		if _, ok := filter["timestamp"]; !ok {
 			filter["timestamp"] = bson.M{}
 		}
+
 		if ts, ok := filter["timestamp"].(bson.M); ok {
 			// Half-open window, [Start, End): an event exactly at End belongs
 			// to the next billing period.
@@ -569,6 +682,7 @@ func (s *Store) QueryUsage(ctx context.Context, tenantID, appID string, opts met
 	if opts.Limit > 0 {
 		q = q.Limit(int64(opts.Limit))
 	}
+
 	if opts.Offset > 0 {
 		q = q.Skip(int64(opts.Offset))
 	}
@@ -583,8 +697,10 @@ func (s *Store) QueryUsage(ctx context.Context, tenantID, appID string, opts met
 		if err != nil {
 			return nil, err
 		}
+
 		result[i] = evt
 	}
+
 	return result, nil
 }
 
@@ -595,14 +711,20 @@ func (s *Store) PurgeUsage(ctx context.Context, before time.Time) (int64, error)
 	if err != nil {
 		return 0, fmt.Errorf("ledger/mongo: purge usage: %w", err)
 	}
+
 	return res.DeletedCount(), nil
 }
 
 // ==================== Entitlement Cache Store ====================
 
-func (s *Store) GetCached(ctx context.Context, tenantID, appID, featureKey string) (*entitlement.Result, error) {
+func (s *Store) GetCached(
+	ctx context.Context,
+	tenantID, appID, featureKey string,
+) (*entitlement.Result, error) {
 	var m entitlementCacheModel
+
 	cacheKey := tenantID + ":" + appID + ":" + featureKey
+
 	err := s.mdb.NewFind(&m).
 		Filter(bson.M{
 			"_id":        cacheKey,
@@ -613,12 +735,19 @@ func (s *Store) GetCached(ctx context.Context, tenantID, appID, featureKey strin
 		if isNoDocuments(err) {
 			return nil, ledger.ErrCacheMiss
 		}
+
 		return nil, fmt.Errorf("ledger/mongo: get cached: %w", err)
 	}
+
 	return fromEntitlementCacheModel(&m), nil
 }
 
-func (s *Store) SetCached(ctx context.Context, tenantID, appID, featureKey string, result *entitlement.Result, ttl time.Duration) error {
+func (s *Store) SetCached(
+	ctx context.Context,
+	tenantID, appID, featureKey string,
+	result *entitlement.Result,
+	ttl time.Duration,
+) error {
 	expiresAt := time.Now().UTC().Add(ttl)
 	m := toEntitlementCacheModel(tenantID, appID, featureKey, result, expiresAt)
 
@@ -644,6 +773,7 @@ func (s *Store) SetCached(ctx context.Context, tenantID, appID, featureKey strin
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: set cached: %w", err)
 	}
+
 	return nil
 }
 
@@ -654,17 +784,20 @@ func (s *Store) Invalidate(ctx context.Context, tenantID, appID string) error {
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: invalidate: %w", err)
 	}
+
 	return nil
 }
 
 func (s *Store) InvalidateFeature(ctx context.Context, tenantID, appID, featureKey string) error {
 	cacheKey := tenantID + ":" + appID + ":" + featureKey
+
 	_, err := s.mdb.NewDelete((*entitlementCacheModel)(nil)).
 		Filter(bson.M{"_id": cacheKey}).
 		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: invalidate feature: %w", err)
 	}
+
 	return nil
 }
 
@@ -672,15 +805,18 @@ func (s *Store) InvalidateFeature(ctx context.Context, tenantID, appID, featureK
 
 func (s *Store) CreateInvoice(ctx context.Context, inv *invoice.Invoice) error {
 	m := toInvoiceModel(inv)
+
 	_, err := s.mdb.NewInsert(m).Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: create invoice: %w", err)
 	}
+
 	return nil
 }
 
 func (s *Store) GetInvoice(ctx context.Context, invID id.InvoiceID) (*invoice.Invoice, error) {
 	var m invoiceModel
+
 	err := s.mdb.NewFind(&m).
 		Filter(bson.M{"_id": invID.String()}).
 		Scan(ctx)
@@ -688,27 +824,37 @@ func (s *Store) GetInvoice(ctx context.Context, invID id.InvoiceID) (*invoice.In
 		if isNoDocuments(err) {
 			return nil, ledger.ErrInvoiceNotFound
 		}
+
 		return nil, fmt.Errorf("ledger/mongo: get invoice: %w", err)
 	}
+
 	return fromInvoiceModel(&m)
 }
 
-func (s *Store) ListInvoices(ctx context.Context, tenantID, appID string, opts invoice.ListOpts) ([]*invoice.Invoice, error) {
+func (s *Store) ListInvoices(
+	ctx context.Context,
+	tenantID, appID string,
+	opts invoice.ListOpts,
+) ([]*invoice.Invoice, error) {
 	var models []invoiceModel
 
 	filter := bson.M{}
 	if tenantID != "" {
 		filter["tenant_id"] = tenantID
 	}
+
 	if appID != "" {
 		filter["app_id"] = appID
 	}
+
 	if opts.Status != "" {
 		filter["status"] = string(opts.Status)
 	}
+
 	if !opts.Start.IsZero() {
 		filter["period_start"] = bson.M{"$gte": opts.Start}
 	}
+
 	if !opts.End.IsZero() {
 		filter["period_end"] = bson.M{"$lte": opts.End}
 	}
@@ -720,6 +866,7 @@ func (s *Store) ListInvoices(ctx context.Context, tenantID, appID string, opts i
 	if opts.Limit > 0 {
 		q = q.Limit(int64(opts.Limit))
 	}
+
 	if opts.Offset > 0 {
 		q = q.Skip(int64(opts.Offset))
 	}
@@ -734,8 +881,10 @@ func (s *Store) ListInvoices(ctx context.Context, tenantID, appID string, opts i
 		if err != nil {
 			return nil, err
 		}
+
 		result[i] = inv
 	}
+
 	return result, nil
 }
 
@@ -749,14 +898,21 @@ func (s *Store) UpdateInvoice(ctx context.Context, inv *invoice.Invoice) error {
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: update invoice: %w", err)
 	}
+
 	if res.MatchedCount() == 0 {
 		return ledger.ErrInvoiceNotFound
 	}
+
 	return nil
 }
 
-func (s *Store) GetInvoiceByPeriod(ctx context.Context, tenantID, appID string, periodStart, periodEnd time.Time) (*invoice.Invoice, error) {
+func (s *Store) GetInvoiceByPeriod(
+	ctx context.Context,
+	tenantID, appID string,
+	periodStart, periodEnd time.Time,
+) (*invoice.Invoice, error) {
 	var m invoiceModel
+
 	err := s.mdb.NewFind(&m).
 		Filter(bson.M{
 			"tenant_id":    tenantID,
@@ -769,8 +925,10 @@ func (s *Store) GetInvoiceByPeriod(ctx context.Context, tenantID, appID string, 
 		if isNoDocuments(err) {
 			return nil, ledger.ErrInvoiceNotFound
 		}
+
 		return nil, fmt.Errorf("ledger/mongo: get invoice by period: %w", err)
 	}
+
 	return fromInvoiceModel(&m)
 }
 
@@ -796,13 +954,21 @@ func (s *Store) ListPendingInvoices(ctx context.Context, appID string) ([]*invoi
 		if err != nil {
 			return nil, err
 		}
+
 		result[i] = inv
 	}
+
 	return result, nil
 }
 
-func (s *Store) MarkInvoicePaid(ctx context.Context, invID id.InvoiceID, paidAt time.Time, paymentRef string) error {
+func (s *Store) MarkInvoicePaid(
+	ctx context.Context,
+	invID id.InvoiceID,
+	paidAt time.Time,
+	paymentRef string,
+) error {
 	t := now()
+
 	res, err := s.mdb.NewUpdate((*invoiceModel)(nil)).
 		Filter(bson.M{"_id": invID.String()}).
 		Set("status", string(invoice.StatusPaid)).
@@ -813,14 +979,17 @@ func (s *Store) MarkInvoicePaid(ctx context.Context, invID id.InvoiceID, paidAt 
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: mark invoice paid: %w", err)
 	}
+
 	if res.MatchedCount() == 0 {
 		return ledger.ErrInvoiceNotFound
 	}
+
 	return nil
 }
 
 func (s *Store) MarkInvoiceVoided(ctx context.Context, invID id.InvoiceID, reason string) error {
 	t := now()
+
 	res, err := s.mdb.NewUpdate((*invoiceModel)(nil)).
 		Filter(bson.M{"_id": invID.String()}).
 		Set("status", string(invoice.StatusVoided)).
@@ -831,9 +1000,11 @@ func (s *Store) MarkInvoiceVoided(ctx context.Context, invID id.InvoiceID, reaso
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: mark invoice voided: %w", err)
 	}
+
 	if res.MatchedCount() == 0 {
 		return ledger.ErrInvoiceNotFound
 	}
+
 	return nil
 }
 
@@ -841,15 +1012,18 @@ func (s *Store) MarkInvoiceVoided(ctx context.Context, invID id.InvoiceID, reaso
 
 func (s *Store) CreateCoupon(ctx context.Context, c *coupon.Coupon) error {
 	m := toCouponModel(c)
+
 	_, err := s.mdb.NewInsert(m).Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: create coupon: %w", err)
 	}
+
 	return nil
 }
 
 func (s *Store) GetCoupon(ctx context.Context, code, appID string) (*coupon.Coupon, error) {
 	var m couponModel
+
 	err := s.mdb.NewFind(&m).
 		Filter(bson.M{"code": code, "app_id": appID}).
 		Scan(ctx)
@@ -857,13 +1031,16 @@ func (s *Store) GetCoupon(ctx context.Context, code, appID string) (*coupon.Coup
 		if isNoDocuments(err) {
 			return nil, ledger.ErrCouponNotFound
 		}
+
 		return nil, fmt.Errorf("ledger/mongo: get coupon: %w", err)
 	}
+
 	return fromCouponModel(&m)
 }
 
 func (s *Store) GetCouponByID(ctx context.Context, couponID id.CouponID) (*coupon.Coupon, error) {
 	var m couponModel
+
 	err := s.mdb.NewFind(&m).
 		Filter(bson.M{"_id": couponID.String()}).
 		Scan(ctx)
@@ -871,18 +1048,25 @@ func (s *Store) GetCouponByID(ctx context.Context, couponID id.CouponID) (*coupo
 		if isNoDocuments(err) {
 			return nil, ledger.ErrCouponNotFound
 		}
+
 		return nil, fmt.Errorf("ledger/mongo: get coupon by id: %w", err)
 	}
+
 	return fromCouponModel(&m)
 }
 
-func (s *Store) ListCoupons(ctx context.Context, appID string, opts coupon.ListOpts) ([]*coupon.Coupon, error) {
+func (s *Store) ListCoupons(
+	ctx context.Context,
+	appID string,
+	opts coupon.ListOpts,
+) ([]*coupon.Coupon, error) {
 	var models []couponModel
 
 	filter := bson.M{}
 	if appID != "" {
 		filter["app_id"] = appID
 	}
+
 	if opts.Active {
 		t := time.Now().UTC()
 		filter["$and"] = bson.A{
@@ -906,6 +1090,7 @@ func (s *Store) ListCoupons(ctx context.Context, appID string, opts coupon.ListO
 	if opts.Limit > 0 {
 		q = q.Limit(int64(opts.Limit))
 	}
+
 	if opts.Offset > 0 {
 		q = q.Skip(int64(opts.Offset))
 	}
@@ -920,8 +1105,10 @@ func (s *Store) ListCoupons(ctx context.Context, appID string, opts coupon.ListO
 		if err != nil {
 			return nil, err
 		}
+
 		result[i] = c
 	}
+
 	return result, nil
 }
 
@@ -955,9 +1142,11 @@ func (s *Store) UpdateCoupon(ctx context.Context, c *coupon.Coupon) error {
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: update coupon: %w", err)
 	}
+
 	if res.MatchedCount() == 0 {
 		return ledger.ErrCouponNotFound
 	}
+
 	return nil
 }
 
@@ -968,16 +1157,22 @@ func (s *Store) DeleteCoupon(ctx context.Context, couponID id.CouponID) error {
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: delete coupon: %w", err)
 	}
+
 	if res.DeletedCount() == 0 {
 		return ledger.ErrCouponNotFound
 	}
+
 	return nil
 }
 
 // ApplyCoupon is a low-level operation kept for callers and tests that need
 // it separately. Engine code redeems through RedeemCoupon, which records
 // the application and increments the redemption count as one unit.
-func (s *Store) ApplyCoupon(ctx context.Context, subID id.SubscriptionID, couponID id.CouponID) error {
+func (s *Store) ApplyCoupon(
+	ctx context.Context,
+	subID id.SubscriptionID,
+	couponID id.CouponID,
+) error {
 	if err := validateSubscriptionID(subID); err != nil {
 		return err
 	}
@@ -996,18 +1191,23 @@ func (s *Store) ApplyCoupon(ctx context.Context, subID id.SubscriptionID, coupon
 		if isDuplicateKeyError(err) {
 			return ledger.ErrCouponAlreadyApplied
 		}
+
 		return fmt.Errorf("ledger/mongo: apply coupon: %w", err)
 	}
 
 	return nil
 }
 
-func (s *Store) ListAppliedCoupons(ctx context.Context, subID id.SubscriptionID) ([]*coupon.Coupon, error) {
+func (s *Store) ListAppliedCoupons(
+	ctx context.Context,
+	subID id.SubscriptionID,
+) ([]*coupon.Coupon, error) {
 	if subID.IsNil() {
 		return make([]*coupon.Coupon, 0), nil
 	}
 
 	var docs []couponApplicationDoc
+
 	err := s.mdb.NewFind(&docs).
 		Filter(bson.M{"subscription_id": subID.String()}).
 		Sort(bson.D{{Key: "applied_at", Value: 1}, {Key: "_id", Value: 1}}).
@@ -1038,6 +1238,7 @@ func (s *Store) ListAppliedCoupons(ctx context.Context, subID id.SubscriptionID)
 			// still entitled to.
 			return nil, getErr
 		}
+
 		result = append(result, c)
 	}
 
@@ -1058,6 +1259,7 @@ func (s *Store) IncrementCouponRedemptions(ctx context.Context, couponID id.Coup
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: increment coupon redemptions: %w", err)
 	}
+
 	if res.MatchedCount() == 0 {
 		return ledger.ErrCouponNotFound
 	}
@@ -1106,7 +1308,11 @@ func (s *Store) IncrementCouponRedemptions(ctx context.Context, couponID id.Coup
 // RedeemCoupon subtests have been run once against a real mongod in a
 // scratch database (see the task report), but not under sustained
 // concurrent load the way sqlite and postgres have via -race.
-func (s *Store) RedeemCoupon(ctx context.Context, subID id.SubscriptionID, couponID id.CouponID) error {
+func (s *Store) RedeemCoupon(
+	ctx context.Context,
+	subID id.SubscriptionID,
+	couponID id.CouponID,
+) error {
 	if err := validateSubscriptionID(subID); err != nil {
 		return err
 	}
@@ -1125,6 +1331,7 @@ func (s *Store) RedeemCoupon(ctx context.Context, subID id.SubscriptionID, coupo
 		if isDuplicateKeyError(err) {
 			return ledger.ErrCouponAlreadyApplied
 		}
+
 		return fmt.Errorf("ledger/mongo: redeem coupon: insert application: %w", err)
 	}
 
@@ -1142,8 +1349,13 @@ func (s *Store) RedeemCoupon(ctx context.Context, subID id.SubscriptionID, coupo
 		}).
 		Exec(ctx)
 	if err != nil {
-		return s.compensate(ctx, appDoc.ID, fmt.Errorf("ledger/mongo: redeem coupon: increment: %w", err))
+		return s.compensate(
+			ctx,
+			appDoc.ID,
+			fmt.Errorf("ledger/mongo: redeem coupon: increment: %w", err),
+		)
 	}
+
 	if res.MatchedCount() == 0 {
 		// Ambiguous, the same way the SQL backends' zero-rows result is:
 		// either the cap was reached, or the coupon was deleted between
@@ -1154,8 +1366,10 @@ func (s *Store) RedeemCoupon(ctx context.Context, subID id.SubscriptionID, coupo
 			if errors.Is(getErr, ledger.ErrCouponNotFound) {
 				return s.compensate(ctx, appDoc.ID, ledger.ErrCouponNotFound)
 			}
+
 			return s.compensate(ctx, appDoc.ID, getErr)
 		}
+
 		return s.compensate(ctx, appDoc.ID, ledger.ErrCouponExhausted)
 	}
 
@@ -1170,8 +1384,13 @@ func (s *Store) RedeemCoupon(ctx context.Context, subID id.SubscriptionID, coupo
 // delete also failed and left the application row behind.
 func (s *Store) compensate(ctx context.Context, applicationID string, primary error) error {
 	if delErr := s.deleteCouponApplication(ctx, applicationID); delErr != nil {
-		return fmt.Errorf("ledger/mongo: redeem coupon: %w, and the compensating delete of the application row also failed: %w", primary, delErr)
+		return fmt.Errorf(
+			"ledger/mongo: redeem coupon: %w, and the compensating delete of the application row also failed: %w",
+			primary,
+			delErr,
+		)
 	}
+
 	return primary
 }
 
@@ -1194,6 +1413,7 @@ func (s *Store) deleteCouponApplication(ctx context.Context, applicationID strin
 	_, err := s.mdb.NewDelete((*couponApplicationDoc)(nil)).
 		Filter(bson.M{"_id": applicationID}).
 		Exec(cctx)
+
 	return err
 }
 
@@ -1201,18 +1421,22 @@ func (s *Store) deleteCouponApplication(ctx context.Context, applicationID strin
 
 func (s *Store) CreateFeature(ctx context.Context, f *feature.Feature) error {
 	m := toFeatureCatalogModel(f)
+
 	_, err := s.mdb.NewInsert(m).Exec(ctx)
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
 			return ledger.ErrDuplicateFeature
 		}
+
 		return fmt.Errorf("ledger/mongo: create feature: %w", err)
 	}
+
 	return nil
 }
 
 func (s *Store) GetFeature(ctx context.Context, featureID id.FeatureID) (*feature.Feature, error) {
 	var m featureCatalogModel
+
 	err := s.mdb.NewFind(&m).
 		Filter(bson.M{"_id": featureID.String()}).
 		Scan(ctx)
@@ -1220,13 +1444,16 @@ func (s *Store) GetFeature(ctx context.Context, featureID id.FeatureID) (*featur
 		if isNoDocuments(err) {
 			return nil, ledger.ErrFeatureNotFound
 		}
+
 		return nil, fmt.Errorf("ledger/mongo: get feature: %w", err)
 	}
+
 	return fromFeatureCatalogModel(&m)
 }
 
 func (s *Store) GetFeatureByKey(ctx context.Context, key, appID string) (*feature.Feature, error) {
 	var m featureCatalogModel
+
 	err := s.mdb.NewFind(&m).
 		Filter(bson.M{"key": key, "app_id": appID}).
 		Scan(ctx)
@@ -1234,18 +1461,25 @@ func (s *Store) GetFeatureByKey(ctx context.Context, key, appID string) (*featur
 		if isNoDocuments(err) {
 			return nil, ledger.ErrFeatureNotFound
 		}
+
 		return nil, fmt.Errorf("ledger/mongo: get feature by key: %w", err)
 	}
+
 	return fromFeatureCatalogModel(&m)
 }
 
-func (s *Store) ListFeatures(ctx context.Context, appID string, opts feature.ListOpts) ([]*feature.Feature, error) {
+func (s *Store) ListFeatures(
+	ctx context.Context,
+	appID string,
+	opts feature.ListOpts,
+) ([]*feature.Feature, error) {
 	var models []featureCatalogModel
 
 	filter := bson.M{}
 	if appID != "" {
 		filter["app_id"] = appID
 	}
+
 	if opts.Status != "" {
 		filter["status"] = string(opts.Status)
 	}
@@ -1257,6 +1491,7 @@ func (s *Store) ListFeatures(ctx context.Context, appID string, opts feature.Lis
 	if opts.Limit > 0 {
 		q = q.Limit(int64(opts.Limit))
 	}
+
 	if opts.Offset > 0 {
 		q = q.Skip(int64(opts.Offset))
 	}
@@ -1271,12 +1506,17 @@ func (s *Store) ListFeatures(ctx context.Context, appID string, opts feature.Lis
 		if err != nil {
 			return nil, err
 		}
+
 		result[i] = f
 	}
+
 	return result, nil
 }
 
-func (s *Store) ListGlobalFeatures(ctx context.Context, opts feature.ListOpts) ([]*feature.Feature, error) {
+func (s *Store) ListGlobalFeatures(
+	ctx context.Context,
+	opts feature.ListOpts,
+) ([]*feature.Feature, error) {
 	var models []featureCatalogModel
 
 	filter := bson.M{"app_id": ""}
@@ -1291,6 +1531,7 @@ func (s *Store) ListGlobalFeatures(ctx context.Context, opts feature.ListOpts) (
 	if opts.Limit > 0 {
 		q = q.Limit(int64(opts.Limit))
 	}
+
 	if opts.Offset > 0 {
 		q = q.Skip(int64(opts.Offset))
 	}
@@ -1305,8 +1546,10 @@ func (s *Store) ListGlobalFeatures(ctx context.Context, opts feature.ListOpts) (
 		if err != nil {
 			return nil, err
 		}
+
 		result[i] = f
 	}
+
 	return result, nil
 }
 
@@ -1320,9 +1563,11 @@ func (s *Store) UpdateFeature(ctx context.Context, f *feature.Feature) error {
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: update feature: %w", err)
 	}
+
 	if res.MatchedCount() == 0 {
 		return ledger.ErrFeatureNotFound
 	}
+
 	return nil
 }
 
@@ -1333,14 +1578,17 @@ func (s *Store) DeleteFeature(ctx context.Context, featureID id.FeatureID) error
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: delete feature: %w", err)
 	}
+
 	if res.DeletedCount() == 0 {
 		return ledger.ErrFeatureNotFound
 	}
+
 	return nil
 }
 
 func (s *Store) ArchiveFeature(ctx context.Context, featureID id.FeatureID) error {
 	t := now()
+
 	res, err := s.mdb.NewUpdate((*featureCatalogModel)(nil)).
 		Filter(bson.M{"_id": featureID.String()}).
 		Set("status", string(feature.StatusArchived)).
@@ -1349,9 +1597,11 @@ func (s *Store) ArchiveFeature(ctx context.Context, featureID id.FeatureID) erro
 	if err != nil {
 		return fmt.Errorf("ledger/mongo: archive feature: %w", err)
 	}
+
 	if res.MatchedCount() == 0 {
 		return ledger.ErrFeatureNotFound
 	}
+
 	return nil
 }
 
@@ -1369,6 +1619,7 @@ func now() time.Time {
 // start: the zero time, which every event is after.
 func getStartOfPeriod(t time.Time, period plan.Period) time.Time {
 	t = t.UTC()
+
 	switch period {
 	case plan.PeriodMonthly:
 		return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
@@ -1408,10 +1659,12 @@ func isIndexNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
+
 	var se mongo.ServerError
 	if errors.As(err, &se) {
 		return se.HasErrorCode(27) || se.HasErrorCode(26)
 	}
+
 	return false
 }
 
@@ -1419,8 +1672,13 @@ func isIndexNotFound(err error) bool {
 // the wrong prefix before any storage is touched.
 func validateSubscriptionID(subID id.SubscriptionID) error {
 	if subID.IsNil() || subID.Prefix() != id.PrefixSubscription {
-		return fmt.Errorf("ledger/mongo: invalid subscription id %q: %w", subID.String(), ledger.ErrInvalidInput)
+		return fmt.Errorf(
+			"ledger/mongo: invalid subscription id %q: %w",
+			subID.String(),
+			ledger.ErrInvalidInput,
+		)
 	}
+
 	return nil
 }
 
@@ -1436,12 +1694,31 @@ func migrationIndexes() map[string][]mongo.IndexModel {
 			{Keys: bson.D{{Key: "app_id", Value: 1}, {Key: "created_at", Value: 1}}},
 		},
 		colSubscriptions: append([]mongo.IndexModel{
-			{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "app_id", Value: 1}, {Key: "status", Value: 1}}},
-			{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "app_id", Value: 1}, {Key: "created_at", Value: -1}}},
+			{
+				Keys: bson.D{
+					{Key: "tenant_id", Value: 1},
+					{Key: "app_id", Value: 1},
+					{Key: "status", Value: 1},
+				},
+			},
+			{
+				Keys: bson.D{
+					{Key: "tenant_id", Value: 1},
+					{Key: "app_id", Value: 1},
+					{Key: "created_at", Value: -1},
+				},
+			},
 			{Keys: bson.D{{Key: "plan_id", Value: 1}}},
 		}, lifecycleSubscriptionIndexes()...),
 		colUsageEvents: {
-			{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "app_id", Value: 1}, {Key: "feature_key", Value: 1}, {Key: "timestamp", Value: -1}}},
+			{
+				Keys: bson.D{
+					{Key: "tenant_id", Value: 1},
+					{Key: "app_id", Value: 1},
+					{Key: "feature_key", Value: 1},
+					{Key: "timestamp", Value: -1},
+				},
+			},
 			{Keys: bson.D{{Key: "timestamp", Value: -1}}},
 			// The idempotency_key partial unique index lives in
 			// migrationUniqueIndexes, not here: see that function for why.
@@ -1451,9 +1728,22 @@ func migrationIndexes() map[string][]mongo.IndexModel {
 			{Keys: bson.D{{Key: "expires_at", Value: 1}}},
 		},
 		colInvoices: append([]mongo.IndexModel{
-			{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "app_id", Value: 1}, {Key: "created_at", Value: -1}}},
+			{
+				Keys: bson.D{
+					{Key: "tenant_id", Value: 1},
+					{Key: "app_id", Value: 1},
+					{Key: "created_at", Value: -1},
+				},
+			},
 			{Keys: bson.D{{Key: "app_id", Value: 1}, {Key: "status", Value: 1}}},
-			{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "app_id", Value: 1}, {Key: "period_start", Value: 1}, {Key: "period_end", Value: 1}}},
+			{
+				Keys: bson.D{
+					{Key: "tenant_id", Value: 1},
+					{Key: "app_id", Value: 1},
+					{Key: "period_start", Value: 1},
+					{Key: "period_end", Value: 1},
+				},
+			},
 			{Keys: bson.D{{Key: "subscription_id", Value: 1}}},
 		}, lifecycleInvoiceIndexes()...),
 		colCoupons: {
@@ -1527,16 +1817,20 @@ func migrationUniqueIndexes() map[string][]mongo.IndexModel {
 // deterministic order regardless of which map(s) mention them.
 func unionSortedIndexKeys(maps ...map[string][]mongo.IndexModel) []string {
 	seen := make(map[string]struct{})
+
 	for _, m := range maps {
 		for col := range m {
 			seen[col] = struct{}{}
 		}
 	}
+
 	cols := make([]string, 0, len(seen))
 	for col := range seen {
 		cols = append(cols, col)
 	}
+
 	sort.Strings(cols)
+
 	return cols
 }
 
@@ -1565,6 +1859,7 @@ func duplicateKeyMigrateError(col string, err error) error {
 				"no data was changed; resolve the duplicates and re-run Migrate: %w",
 			col, name, err)
 	}
+
 	return fmt.Errorf(
 		"ledger/mongo: migrate: existing documents in %q hold duplicate values under a new "+
 			"unique index; no data was changed; resolve the duplicates and re-run Migrate: %w",
@@ -1581,15 +1876,20 @@ func duplicateKeyMigrateError(col string, err error) error {
 // naming just the collection.
 func duplicateKeyIndexName(err error) string {
 	const marker = "index: "
+
 	msg := err.Error()
+
 	i := strings.Index(msg, marker)
 	if i < 0 {
 		return ""
 	}
+
 	rest := msg[i+len(marker):]
+
 	end := strings.IndexAny(rest, " \t\n")
 	if end < 0 {
 		return rest
 	}
+
 	return rest[:end]
 }

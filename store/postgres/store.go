@@ -50,10 +50,12 @@ func (s *Store) Migrate(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("ledger/postgres: create migration executor: %w", err)
 	}
+
 	orch := migrate.NewOrchestrator(executor, Migrations)
 	if _, err := orch.Migrate(ctx); err != nil {
 		return fmt.Errorf("ledger/postgres: migration failed: %w", err)
 	}
+
 	return nil
 }
 
@@ -71,15 +73,18 @@ func (s *Store) Close() error {
 
 func (s *Store) CreatePlan(ctx context.Context, p *plan.Plan) error {
 	m := toPlanModel(p)
+
 	_, err := s.pg.NewInsert(m).Exec(ctx)
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
 func (s *Store) GetPlan(ctx context.Context, planID id.PlanID) (*plan.Plan, error) {
 	m := new(planModel)
+
 	err := s.pg.NewSelect(m).
 		Where("id = ?", planID.String()).
 		Scan(ctx)
@@ -87,13 +92,16 @@ func (s *Store) GetPlan(ctx context.Context, planID id.PlanID) (*plan.Plan, erro
 		if isNoRows(err) {
 			return nil, ledger.ErrPlanNotFound
 		}
+
 		return nil, err
 	}
+
 	return fromPlanModel(m)
 }
 
 func (s *Store) GetPlanBySlug(ctx context.Context, slug, appID string) (*plan.Plan, error) {
 	m := new(planModel)
+
 	err := s.pg.NewSelect(m).
 		Where("slug = ?", slug).
 		Where("app_id = ?", appID).
@@ -102,27 +110,38 @@ func (s *Store) GetPlanBySlug(ctx context.Context, slug, appID string) (*plan.Pl
 		if isNoRows(err) {
 			return nil, ledger.ErrPlanNotFound
 		}
+
 		return nil, err
 	}
+
 	return fromPlanModel(m)
 }
 
-func (s *Store) ListPlans(ctx context.Context, appID string, opts plan.ListOpts) ([]*plan.Plan, error) {
+func (s *Store) ListPlans(
+	ctx context.Context,
+	appID string,
+	opts plan.ListOpts,
+) ([]*plan.Plan, error) {
 	var models []planModel
+
 	q := s.pg.NewSelect(&models)
 
 	if appID != "" {
 		q = q.Where("app_id = ?", appID)
 	}
+
 	if opts.Status != "" {
 		q = q.Where("status = ?", string(opts.Status))
 	}
+
 	if opts.Limit > 0 {
 		q = q.Limit(opts.Limit)
 	}
+
 	if opts.Offset > 0 {
 		q = q.Offset(opts.Offset)
 	}
+
 	q = q.OrderExpr("created_at ASC, id ASC")
 
 	if err := q.Scan(ctx); err != nil {
@@ -135,25 +154,31 @@ func (s *Store) ListPlans(ctx context.Context, appID string, opts plan.ListOpts)
 		if err != nil {
 			return nil, err
 		}
+
 		result[i] = p
 	}
+
 	return result, nil
 }
 
 func (s *Store) UpdatePlan(ctx context.Context, p *plan.Plan) error {
 	m := toPlanModel(p)
 	m.UpdatedAt = now()
+
 	res, err := s.pg.NewUpdate(m).WherePK().Exec(ctx)
 	if err != nil {
 		return err
 	}
+
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return err
 	}
+
 	if rows == 0 {
 		return ledger.ErrPlanNotFound
 	}
+
 	return nil
 }
 
@@ -164,18 +189,22 @@ func (s *Store) DeletePlan(ctx context.Context, planID id.PlanID) error {
 	if err != nil {
 		return err
 	}
+
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return err
 	}
+
 	if rows == 0 {
 		return ledger.ErrPlanNotFound
 	}
+
 	return nil
 }
 
 func (s *Store) ArchivePlan(ctx context.Context, planID id.PlanID) error {
 	t := now()
+
 	res, err := s.pg.NewUpdate((*planModel)(nil)).
 		Set("status = ?", string(plan.StatusArchived)).
 		Set("updated_at = ?", t).
@@ -184,13 +213,16 @@ func (s *Store) ArchivePlan(ctx context.Context, planID id.PlanID) error {
 	if err != nil {
 		return err
 	}
+
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return err
 	}
+
 	if rows == 0 {
 		return ledger.ErrPlanNotFound
 	}
+
 	return nil
 }
 
@@ -198,15 +230,18 @@ func (s *Store) ArchivePlan(ctx context.Context, planID id.PlanID) error {
 
 func (s *Store) CreateFeature(ctx context.Context, f *feature.Feature) error {
 	m := toFeatureModel(f)
+
 	_, err := s.pg.NewInsert(m).Exec(ctx)
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
 func (s *Store) GetFeature(ctx context.Context, featureID id.FeatureID) (*feature.Feature, error) {
 	m := new(featureModel)
+
 	err := s.pg.NewSelect(m).
 		Where("id = ?", featureID.String()).
 		Scan(ctx)
@@ -214,13 +249,16 @@ func (s *Store) GetFeature(ctx context.Context, featureID id.FeatureID) (*featur
 		if isNoRows(err) {
 			return nil, ledger.ErrFeatureNotFound
 		}
+
 		return nil, err
 	}
+
 	return fromFeatureModel(m)
 }
 
 func (s *Store) GetFeatureByKey(ctx context.Context, key, appID string) (*feature.Feature, error) {
 	m := new(featureModel)
+
 	err := s.pg.NewSelect(m).
 		Where("key = ?", key).
 		Where("app_id = ?", appID).
@@ -229,27 +267,38 @@ func (s *Store) GetFeatureByKey(ctx context.Context, key, appID string) (*featur
 		if isNoRows(err) {
 			return nil, ledger.ErrFeatureNotFound
 		}
+
 		return nil, err
 	}
+
 	return fromFeatureModel(m)
 }
 
-func (s *Store) ListFeatures(ctx context.Context, appID string, opts feature.ListOpts) ([]*feature.Feature, error) {
+func (s *Store) ListFeatures(
+	ctx context.Context,
+	appID string,
+	opts feature.ListOpts,
+) ([]*feature.Feature, error) {
 	var models []featureModel
+
 	q := s.pg.NewSelect(&models)
 
 	if appID != "" {
 		q = q.Where("app_id = ?", appID)
 	}
+
 	if opts.Status != "" {
 		q = q.Where("status = ?", string(opts.Status))
 	}
+
 	if opts.Limit > 0 {
 		q = q.Limit(opts.Limit)
 	}
+
 	if opts.Offset > 0 {
 		q = q.Offset(opts.Offset)
 	}
+
 	q = q.OrderExpr("created_at ASC, id ASC")
 
 	if err := q.Scan(ctx); err != nil {
@@ -262,24 +311,33 @@ func (s *Store) ListFeatures(ctx context.Context, appID string, opts feature.Lis
 		if err != nil {
 			return nil, err
 		}
+
 		result[i] = f
 	}
+
 	return result, nil
 }
 
-func (s *Store) ListGlobalFeatures(ctx context.Context, opts feature.ListOpts) ([]*feature.Feature, error) {
+func (s *Store) ListGlobalFeatures(
+	ctx context.Context,
+	opts feature.ListOpts,
+) ([]*feature.Feature, error) {
 	var models []featureModel
+
 	q := s.pg.NewSelect(&models).Where("app_id = ?", "")
 
 	if opts.Status != "" {
 		q = q.Where("status = ?", string(opts.Status))
 	}
+
 	if opts.Limit > 0 {
 		q = q.Limit(opts.Limit)
 	}
+
 	if opts.Offset > 0 {
 		q = q.Offset(opts.Offset)
 	}
+
 	q = q.OrderExpr("created_at ASC, id ASC")
 
 	if err := q.Scan(ctx); err != nil {
@@ -292,25 +350,31 @@ func (s *Store) ListGlobalFeatures(ctx context.Context, opts feature.ListOpts) (
 		if err != nil {
 			return nil, err
 		}
+
 		result[i] = f
 	}
+
 	return result, nil
 }
 
 func (s *Store) UpdateFeature(ctx context.Context, f *feature.Feature) error {
 	m := toFeatureModel(f)
 	m.UpdatedAt = now()
+
 	res, err := s.pg.NewUpdate(m).WherePK().Exec(ctx)
 	if err != nil {
 		return err
 	}
+
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return err
 	}
+
 	if rows == 0 {
 		return ledger.ErrFeatureNotFound
 	}
+
 	return nil
 }
 
@@ -321,18 +385,22 @@ func (s *Store) DeleteFeature(ctx context.Context, featureID id.FeatureID) error
 	if err != nil {
 		return err
 	}
+
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return err
 	}
+
 	if rows == 0 {
 		return ledger.ErrFeatureNotFound
 	}
+
 	return nil
 }
 
 func (s *Store) ArchiveFeature(ctx context.Context, featureID id.FeatureID) error {
 	t := now()
+
 	res, err := s.pg.NewUpdate((*featureModel)(nil)).
 		Set("status = ?", string(feature.StatusArchived)).
 		Set("updated_at = ?", t).
@@ -341,13 +409,16 @@ func (s *Store) ArchiveFeature(ctx context.Context, featureID id.FeatureID) erro
 	if err != nil {
 		return err
 	}
+
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return err
 	}
+
 	if rows == 0 {
 		return ledger.ErrFeatureNotFound
 	}
+
 	return nil
 }
 
@@ -356,11 +427,16 @@ func (s *Store) ArchiveFeature(ctx context.Context, featureID id.FeatureID) erro
 func (s *Store) CreateSubscription(ctx context.Context, sub *subscription.Subscription) error {
 	m := toSubscriptionModel(sub)
 	_, err := s.pg.NewInsert(m).Exec(ctx)
+
 	return err
 }
 
-func (s *Store) GetSubscription(ctx context.Context, subID id.SubscriptionID) (*subscription.Subscription, error) {
+func (s *Store) GetSubscription(
+	ctx context.Context,
+	subID id.SubscriptionID,
+) (*subscription.Subscription, error) {
 	m := new(subscriptionModel)
+
 	err := s.pg.NewSelect(m).
 		Where("id = ?", subID.String()).
 		Scan(ctx)
@@ -368,13 +444,19 @@ func (s *Store) GetSubscription(ctx context.Context, subID id.SubscriptionID) (*
 		if isNoRows(err) {
 			return nil, ledger.ErrSubscriptionNotFound
 		}
+
 		return nil, err
 	}
+
 	return fromSubscriptionModel(m)
 }
 
-func (s *Store) GetActiveSubscription(ctx context.Context, tenantID, appID string) (*subscription.Subscription, error) {
+func (s *Store) GetActiveSubscription(
+	ctx context.Context,
+	tenantID, appID string,
+) (*subscription.Subscription, error) {
 	m := new(subscriptionModel)
+
 	err := s.pg.NewSelect(m).
 		Where("tenant_id = ?", tenantID).
 		Where("app_id = ?", appID).
@@ -386,30 +468,42 @@ func (s *Store) GetActiveSubscription(ctx context.Context, tenantID, appID strin
 		if isNoRows(err) {
 			return nil, ledger.ErrNoActiveSubscription
 		}
+
 		return nil, err
 	}
+
 	return fromSubscriptionModel(m)
 }
 
-func (s *Store) ListSubscriptions(ctx context.Context, tenantID, appID string, opts subscription.ListOpts) ([]*subscription.Subscription, error) {
+func (s *Store) ListSubscriptions(
+	ctx context.Context,
+	tenantID, appID string,
+	opts subscription.ListOpts,
+) ([]*subscription.Subscription, error) {
 	var models []subscriptionModel
+
 	q := s.pg.NewSelect(&models)
 
 	if tenantID != "" {
 		q = q.Where("tenant_id = ?", tenantID)
 	}
+
 	if appID != "" {
 		q = q.Where("app_id = ?", appID)
 	}
+
 	if opts.Status != "" {
 		q = q.Where("status = ?", string(opts.Status))
 	}
+
 	if opts.Limit > 0 {
 		q = q.Limit(opts.Limit)
 	}
+
 	if opts.Offset > 0 {
 		q = q.Offset(opts.Offset)
 	}
+
 	q = q.OrderExpr("created_at DESC, id DESC")
 
 	if err := q.Scan(ctx); err != nil {
@@ -422,30 +516,41 @@ func (s *Store) ListSubscriptions(ctx context.Context, tenantID, appID string, o
 		if err != nil {
 			return nil, err
 		}
+
 		result[i] = sub
 	}
+
 	return result, nil
 }
 
 func (s *Store) UpdateSubscription(ctx context.Context, sub *subscription.Subscription) error {
 	m := toSubscriptionModel(sub)
 	m.UpdatedAt = now()
+
 	res, err := s.pg.NewUpdate(m).WherePK().Exec(ctx)
 	if err != nil {
 		return err
 	}
+
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return err
 	}
+
 	if rows == 0 {
 		return ledger.ErrSubscriptionNotFound
 	}
+
 	return nil
 }
 
-func (s *Store) CancelSubscription(ctx context.Context, subID id.SubscriptionID, immediately bool) (time.Time, error) {
+func (s *Store) CancelSubscription(
+	ctx context.Context,
+	subID id.SubscriptionID,
+	immediately bool,
+) (time.Time, error) {
 	t := now()
+
 	updates := s.pg.NewUpdate((*subscriptionModel)(nil))
 	if immediately {
 		updates = updates.
@@ -460,6 +565,7 @@ func (s *Store) CancelSubscription(ctx context.Context, subID id.SubscriptionID,
 	}
 
 	var cancelAt time.Time
+
 	err := updates.
 		Set("updated_at = ?", t).
 		Where("id = ?", subID.String()).
@@ -469,9 +575,11 @@ func (s *Store) CancelSubscription(ctx context.Context, subID id.SubscriptionID,
 	if isNoRows(err) {
 		return time.Time{}, s.cancelMissed(ctx, subID)
 	}
+
 	if err != nil {
 		return time.Time{}, err
 	}
+
 	return cancelAt.UTC(), nil
 }
 
@@ -481,17 +589,24 @@ func (s *Store) IngestBatch(ctx context.Context, events []*meter.UsageEvent) err
 	if len(events) == 0 {
 		return nil
 	}
+
 	models := make([]usageEventModel, len(events))
 	for i, e := range events {
 		models[i] = *toUsageEventModel(e)
 	}
+
 	_, err := s.pg.NewInsert(&models).
 		OnConflict("(idempotency_key) WHERE idempotency_key != '' DO NOTHING").
 		Exec(ctx)
+
 	return err
 }
 
-func (s *Store) Aggregate(ctx context.Context, tenantID, appID, featureKey string, period plan.Period) (int64, error) {
+func (s *Store) Aggregate(
+	ctx context.Context,
+	tenantID, appID, featureKey string,
+	period plan.Period,
+) (int64, error) {
 	// The period start is inclusive, matching the half-open [Start, End)
 	// window QueryUsage applies: an event stamped exactly at the start of the
 	// period belongs to it. The start is computed from time.Now(), so a test
@@ -500,6 +615,7 @@ func (s *Store) Aggregate(ctx context.Context, tenantID, appID, featureKey strin
 	startOfPeriod := getStartOfPeriod(time.Now(), period)
 
 	var total int64
+
 	err := s.pg.NewRaw(`
 		SELECT COALESCE(SUM(quantity), 0) FROM ledger_usage_events
 		WHERE tenant_id = $1 AND app_id = $2 AND feature_key = $3 AND timestamp >= $4
@@ -507,48 +623,69 @@ func (s *Store) Aggregate(ctx context.Context, tenantID, appID, featureKey strin
 	if err != nil {
 		return 0, err
 	}
+
 	return total, nil
 }
 
-func (s *Store) AggregateMulti(ctx context.Context, tenantID, appID string, featureKeys []string, period plan.Period) (map[string]int64, error) {
+func (s *Store) AggregateMulti(
+	ctx context.Context,
+	tenantID, appID string,
+	featureKeys []string,
+	period plan.Period,
+) (map[string]int64, error) {
 	result := make(map[string]int64)
+
 	for _, key := range featureKeys {
 		total, err := s.Aggregate(ctx, tenantID, appID, key, period)
 		if err != nil {
 			return nil, err
 		}
+
 		result[key] = total
 	}
+
 	return result, nil
 }
 
-func (s *Store) QueryUsage(ctx context.Context, tenantID, appID string, opts meter.QueryOpts) ([]*meter.UsageEvent, error) {
+func (s *Store) QueryUsage(
+	ctx context.Context,
+	tenantID, appID string,
+	opts meter.QueryOpts,
+) ([]*meter.UsageEvent, error) {
 	var models []usageEventModel
+
 	q := s.pg.NewSelect(&models)
 
 	if tenantID != "" {
 		q = q.Where("tenant_id = ?", tenantID)
 	}
+
 	if appID != "" {
 		q = q.Where("app_id = ?", appID)
 	}
+
 	if opts.FeatureKey != "" {
 		q = q.Where("feature_key = ?", opts.FeatureKey)
 	}
+
 	if !opts.Start.IsZero() {
 		q = q.Where("timestamp >= ?", opts.Start)
 	}
+
 	if !opts.End.IsZero() {
 		// Half-open window, [Start, End): an event exactly at End belongs to
 		// the next billing period.
 		q = q.Where("timestamp < ?", opts.End)
 	}
+
 	if opts.Limit > 0 {
 		q = q.Limit(opts.Limit)
 	}
+
 	if opts.Offset > 0 {
 		q = q.Offset(opts.Offset)
 	}
+
 	q = q.OrderExpr("timestamp DESC, id DESC")
 
 	if err := q.Scan(ctx); err != nil {
@@ -561,8 +698,10 @@ func (s *Store) QueryUsage(ctx context.Context, tenantID, appID string, opts met
 		if err != nil {
 			return nil, err
 		}
+
 		result[i] = evt
 	}
+
 	return result, nil
 }
 
@@ -573,18 +712,24 @@ func (s *Store) PurgeUsage(ctx context.Context, before time.Time) (int64, error)
 	if err != nil {
 		return 0, err
 	}
+
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return 0, err
 	}
+
 	return rows, nil
 }
 
 // ==================== Entitlement Cache Store ====================
 
-func (s *Store) GetCached(ctx context.Context, tenantID, appID, featureKey string) (*entitlement.Result, error) {
+func (s *Store) GetCached(
+	ctx context.Context,
+	tenantID, appID, featureKey string,
+) (*entitlement.Result, error) {
 	m := new(entitlementCacheModel)
 	cacheKey := tenantID + ":" + appID + ":" + featureKey
+
 	err := s.pg.NewSelect(m).
 		Where("cache_key = ?", cacheKey).
 		Where("expires_at > ?", time.Now().UTC()).
@@ -593,12 +738,19 @@ func (s *Store) GetCached(ctx context.Context, tenantID, appID, featureKey strin
 		if isNoRows(err) {
 			return nil, ledger.ErrCacheMiss
 		}
+
 		return nil, err
 	}
+
 	return fromEntitlementCacheModel(m), nil
 }
 
-func (s *Store) SetCached(ctx context.Context, tenantID, appID, featureKey string, result *entitlement.Result, ttl time.Duration) error {
+func (s *Store) SetCached(
+	ctx context.Context,
+	tenantID, appID, featureKey string,
+	result *entitlement.Result,
+	ttl time.Duration,
+) error {
 	expiresAt := time.Now().UTC().Add(ttl)
 	m := toEntitlementCacheModel(tenantID, appID, featureKey, result, expiresAt)
 	_, err := s.pg.NewInsert(m).
@@ -613,6 +765,7 @@ func (s *Store) SetCached(ctx context.Context, tenantID, appID, featureKey strin
 		Set("expires_at = EXCLUDED.expires_at").
 		Set("created_at = EXCLUDED.created_at").
 		Exec(ctx)
+
 	return err
 }
 
@@ -621,6 +774,7 @@ func (s *Store) Invalidate(ctx context.Context, tenantID, appID string) error {
 		Where("tenant_id = ?", tenantID).
 		Where("app_id = ?", appID).
 		Exec(ctx)
+
 	return err
 }
 
@@ -629,6 +783,7 @@ func (s *Store) InvalidateFeature(ctx context.Context, tenantID, appID, featureK
 	_, err := s.pg.NewDelete((*entitlementCacheModel)(nil)).
 		Where("cache_key = ?", cacheKey).
 		Exec(ctx)
+
 	return err
 }
 
@@ -637,11 +792,13 @@ func (s *Store) InvalidateFeature(ctx context.Context, tenantID, appID, featureK
 func (s *Store) CreateInvoice(ctx context.Context, inv *invoice.Invoice) error {
 	m := toInvoiceModel(inv)
 	_, err := s.pg.NewInsert(m).Exec(ctx)
+
 	return err
 }
 
 func (s *Store) GetInvoice(ctx context.Context, invID id.InvoiceID) (*invoice.Invoice, error) {
 	m := new(invoiceModel)
+
 	err := s.pg.NewSelect(m).
 		Where("id = ?", invID.String()).
 		Scan(ctx)
@@ -649,36 +806,50 @@ func (s *Store) GetInvoice(ctx context.Context, invID id.InvoiceID) (*invoice.In
 		if isNoRows(err) {
 			return nil, ledger.ErrInvoiceNotFound
 		}
+
 		return nil, err
 	}
+
 	return fromInvoiceModel(m)
 }
 
-func (s *Store) ListInvoices(ctx context.Context, tenantID, appID string, opts invoice.ListOpts) ([]*invoice.Invoice, error) {
+func (s *Store) ListInvoices(
+	ctx context.Context,
+	tenantID, appID string,
+	opts invoice.ListOpts,
+) ([]*invoice.Invoice, error) {
 	var models []invoiceModel
+
 	q := s.pg.NewSelect(&models)
 
 	if tenantID != "" {
 		q = q.Where("tenant_id = ?", tenantID)
 	}
+
 	if appID != "" {
 		q = q.Where("app_id = ?", appID)
 	}
+
 	if opts.Status != "" {
 		q = q.Where("status = ?", string(opts.Status))
 	}
+
 	if !opts.Start.IsZero() {
 		q = q.Where("period_start >= ?", opts.Start)
 	}
+
 	if !opts.End.IsZero() {
 		q = q.Where("period_end <= ?", opts.End)
 	}
+
 	if opts.Limit > 0 {
 		q = q.Limit(opts.Limit)
 	}
+
 	if opts.Offset > 0 {
 		q = q.Offset(opts.Offset)
 	}
+
 	q = q.OrderExpr("created_at DESC, id DESC")
 
 	if err := q.Scan(ctx); err != nil {
@@ -691,30 +862,41 @@ func (s *Store) ListInvoices(ctx context.Context, tenantID, appID string, opts i
 		if err != nil {
 			return nil, err
 		}
+
 		result[i] = inv
 	}
+
 	return result, nil
 }
 
 func (s *Store) UpdateInvoice(ctx context.Context, inv *invoice.Invoice) error {
 	m := toInvoiceModel(inv)
 	m.UpdatedAt = now()
+
 	res, err := s.pg.NewUpdate(m).WherePK().Exec(ctx)
 	if err != nil {
 		return err
 	}
+
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return err
 	}
+
 	if rows == 0 {
 		return ledger.ErrInvoiceNotFound
 	}
+
 	return nil
 }
 
-func (s *Store) GetInvoiceByPeriod(ctx context.Context, tenantID, appID string, periodStart, periodEnd time.Time) (*invoice.Invoice, error) {
+func (s *Store) GetInvoiceByPeriod(
+	ctx context.Context,
+	tenantID, appID string,
+	periodStart, periodEnd time.Time,
+) (*invoice.Invoice, error) {
 	m := new(invoiceModel)
+
 	err := s.pg.NewSelect(m).
 		Where("tenant_id = ?", tenantID).
 		Where("app_id = ?", appID).
@@ -725,18 +907,22 @@ func (s *Store) GetInvoiceByPeriod(ctx context.Context, tenantID, appID string, 
 		if isNoRows(err) {
 			return nil, ledger.ErrInvoiceNotFound
 		}
+
 		return nil, err
 	}
+
 	return fromInvoiceModel(m)
 }
 
 func (s *Store) ListPendingInvoices(ctx context.Context, appID string) ([]*invoice.Invoice, error) {
 	var models []invoiceModel
+
 	q := s.pg.NewSelect(&models)
 
 	if appID != "" {
 		q = q.Where("app_id = ?", appID)
 	}
+
 	q = q.Where("status = ?", string(invoice.StatusPending))
 
 	err := q.OrderExpr("created_at DESC, id DESC").
@@ -751,13 +937,21 @@ func (s *Store) ListPendingInvoices(ctx context.Context, appID string) ([]*invoi
 		if err != nil {
 			return nil, err
 		}
+
 		result[i] = inv
 	}
+
 	return result, nil
 }
 
-func (s *Store) MarkInvoicePaid(ctx context.Context, invID id.InvoiceID, paidAt time.Time, paymentRef string) error {
+func (s *Store) MarkInvoicePaid(
+	ctx context.Context,
+	invID id.InvoiceID,
+	paidAt time.Time,
+	paymentRef string,
+) error {
 	t := now()
+
 	res, err := s.pg.NewUpdate((*invoiceModel)(nil)).
 		Set("status = ?", string(invoice.StatusPaid)).
 		Set("paid_at = ?", paidAt).
@@ -768,18 +962,22 @@ func (s *Store) MarkInvoicePaid(ctx context.Context, invID id.InvoiceID, paidAt 
 	if err != nil {
 		return err
 	}
+
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return err
 	}
+
 	if rows == 0 {
 		return ledger.ErrInvoiceNotFound
 	}
+
 	return nil
 }
 
 func (s *Store) MarkInvoiceVoided(ctx context.Context, invID id.InvoiceID, reason string) error {
 	t := now()
+
 	res, err := s.pg.NewUpdate((*invoiceModel)(nil)).
 		Set("status = ?", string(invoice.StatusVoided)).
 		Set("voided_at = ?", t).
@@ -790,13 +988,16 @@ func (s *Store) MarkInvoiceVoided(ctx context.Context, invID id.InvoiceID, reaso
 	if err != nil {
 		return err
 	}
+
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return err
 	}
+
 	if rows == 0 {
 		return ledger.ErrInvoiceNotFound
 	}
+
 	return nil
 }
 
@@ -805,11 +1006,13 @@ func (s *Store) MarkInvoiceVoided(ctx context.Context, invID id.InvoiceID, reaso
 func (s *Store) CreateCoupon(ctx context.Context, c *coupon.Coupon) error {
 	m := toCouponModel(c)
 	_, err := s.pg.NewInsert(m).Exec(ctx)
+
 	return err
 }
 
 func (s *Store) GetCoupon(ctx context.Context, code, appID string) (*coupon.Coupon, error) {
 	m := new(couponModel)
+
 	err := s.pg.NewSelect(m).
 		Where("code = ?", code).
 		Where("app_id = ?", appID).
@@ -818,13 +1021,16 @@ func (s *Store) GetCoupon(ctx context.Context, code, appID string) (*coupon.Coup
 		if isNoRows(err) {
 			return nil, ledger.ErrCouponNotFound
 		}
+
 		return nil, err
 	}
+
 	return fromCouponModel(m)
 }
 
 func (s *Store) GetCouponByID(ctx context.Context, couponID id.CouponID) (*coupon.Coupon, error) {
 	m := new(couponModel)
+
 	err := s.pg.NewSelect(m).
 		Where("id = ?", couponID.String()).
 		Scan(ctx)
@@ -832,29 +1038,40 @@ func (s *Store) GetCouponByID(ctx context.Context, couponID id.CouponID) (*coupo
 		if isNoRows(err) {
 			return nil, ledger.ErrCouponNotFound
 		}
+
 		return nil, err
 	}
+
 	return fromCouponModel(m)
 }
 
-func (s *Store) ListCoupons(ctx context.Context, appID string, opts coupon.ListOpts) ([]*coupon.Coupon, error) {
+func (s *Store) ListCoupons(
+	ctx context.Context,
+	appID string,
+	opts coupon.ListOpts,
+) ([]*coupon.Coupon, error) {
 	var models []couponModel
+
 	q := s.pg.NewSelect(&models)
 
 	if appID != "" {
 		q = q.Where("app_id = ?", appID)
 	}
+
 	if opts.Active {
 		t := time.Now().UTC()
 		q = q.Where("(valid_from IS NULL OR valid_from <= ?)", t)
 		q = q.Where("(valid_until IS NULL OR valid_until >= ?)", t)
 	}
+
 	if opts.Limit > 0 {
 		q = q.Limit(opts.Limit)
 	}
+
 	if opts.Offset > 0 {
 		q = q.Offset(opts.Offset)
 	}
+
 	q = q.OrderExpr("created_at DESC, id DESC")
 
 	if err := q.Scan(ctx); err != nil {
@@ -867,8 +1084,10 @@ func (s *Store) ListCoupons(ctx context.Context, appID string, opts coupon.ListO
 		if err != nil {
 			return nil, err
 		}
+
 		result[i] = c
 	}
+
 	return result, nil
 }
 
@@ -885,17 +1104,21 @@ var couponUpdateColumns = []string{
 func (s *Store) UpdateCoupon(ctx context.Context, c *coupon.Coupon) error {
 	m := toCouponModel(c)
 	m.UpdatedAt = now()
+
 	res, err := s.pg.NewUpdate(m).Column(couponUpdateColumns...).WherePK().Exec(ctx)
 	if err != nil {
 		return err
 	}
+
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return err
 	}
+
 	if rows == 0 {
 		return ledger.ErrCouponNotFound
 	}
+
 	return nil
 }
 
@@ -906,20 +1129,27 @@ func (s *Store) DeleteCoupon(ctx context.Context, couponID id.CouponID) error {
 	if err != nil {
 		return err
 	}
+
 	rows, err := res.RowsAffected()
 	if err != nil {
 		return err
 	}
+
 	if rows == 0 {
 		return ledger.ErrCouponNotFound
 	}
+
 	return nil
 }
 
 // ApplyCoupon is a low-level operation kept for callers and tests that need
 // it separately. Engine code redeems through RedeemCoupon, which records
 // the application and increments the redemption count as one unit.
-func (s *Store) ApplyCoupon(ctx context.Context, subID id.SubscriptionID, couponID id.CouponID) error {
+func (s *Store) ApplyCoupon(
+	ctx context.Context,
+	subID id.SubscriptionID,
+	couponID id.CouponID,
+) error {
 	if err := validateSubscriptionID(subID); err != nil {
 		return err
 	}
@@ -951,12 +1181,16 @@ func (s *Store) ApplyCoupon(ctx context.Context, subID id.SubscriptionID, coupon
 	return nil
 }
 
-func (s *Store) ListAppliedCoupons(ctx context.Context, subID id.SubscriptionID) ([]*coupon.Coupon, error) {
+func (s *Store) ListAppliedCoupons(
+	ctx context.Context,
+	subID id.SubscriptionID,
+) ([]*coupon.Coupon, error) {
 	if subID.IsNil() {
 		return make([]*coupon.Coupon, 0), nil
 	}
 
 	var models []couponApplicationModel
+
 	err := s.pg.NewSelect(&models).
 		Where("subscription_id = ?", subID.String()).
 		OrderExpr("applied_at ASC, id ASC").
@@ -989,6 +1223,7 @@ func (s *Store) ListAppliedCoupons(ctx context.Context, subID id.SubscriptionID)
 			// customer is still entitled to.
 			return nil, getErr
 		}
+
 		result = append(result, c)
 	}
 
@@ -1012,6 +1247,7 @@ func (s *Store) IncrementCouponRedemptions(ctx context.Context, couponID id.Coup
 	if err != nil {
 		return err
 	}
+
 	if rows == 0 {
 		return ledger.ErrCouponNotFound
 	}
@@ -1048,7 +1284,11 @@ func (s *Store) IncrementCouponRedemptions(ctx context.Context, couponID id.Coup
 // defensive fallback for the case where the coupon was deleted between
 // this transaction's insert and its update, not the primary way unknown
 // coupons are caught.
-func (s *Store) RedeemCoupon(ctx context.Context, subID id.SubscriptionID, couponID id.CouponID) error {
+func (s *Store) RedeemCoupon(
+	ctx context.Context,
+	subID id.SubscriptionID,
+	couponID id.CouponID,
+) error {
 	if err := validateSubscriptionID(subID); err != nil {
 		return err
 	}
@@ -1098,18 +1338,23 @@ func (s *Store) RedeemCoupon(ctx context.Context, subID id.SubscriptionID, coupo
 	if err != nil {
 		return err
 	}
+
 	if rows == 0 {
 		// The FK above already refused an unknown coupon's insert, so this
 		// is normally reachable only when the cap was hit. The existence
 		// check here only matters for the rare case of a concurrent delete
 		// landing between this transaction's insert and this update.
 		probe := new(couponModel)
-		if selErr := tx.NewSelect(probe).Where("id = ?", couponID.String()).Scan(ctx); selErr != nil {
+		if selErr := tx.NewSelect(probe).
+			Where("id = ?", couponID.String()).
+			Scan(ctx); selErr != nil {
 			if isNoRows(selErr) {
 				return ledger.ErrCouponNotFound
 			}
+
 			return selErr
 		}
+
 		return ledger.ErrCouponExhausted
 	}
 
@@ -1130,6 +1375,7 @@ func now() time.Time {
 // start: the zero time, which every event is after.
 func getStartOfPeriod(t time.Time, period plan.Period) time.Time {
 	t = t.UTC()
+
 	switch period {
 	case plan.PeriodMonthly:
 		return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
@@ -1171,7 +1417,12 @@ func isForeignKeyViolation(err error) bool {
 // the wrong prefix before any storage is touched.
 func validateSubscriptionID(subID id.SubscriptionID) error {
 	if subID.IsNil() || subID.Prefix() != id.PrefixSubscription {
-		return fmt.Errorf("ledger/postgres: invalid subscription id %q: %w", subID.String(), ledger.ErrInvalidInput)
+		return fmt.Errorf(
+			"ledger/postgres: invalid subscription id %q: %w",
+			subID.String(),
+			ledger.ErrInvalidInput,
+		)
 	}
+
 	return nil
 }

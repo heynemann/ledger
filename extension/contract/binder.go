@@ -29,13 +29,19 @@ const (
 // run adapts a handlerFn to the dispatcher's typed signature. It is the only
 // way a handler is bound, so every intent resolves its scope and translates its
 // errors the same way. The handler runs for a real app only.
-func run[I, O any](deps Deps, fn handlerFn[I, O]) func(context.Context, I, dash.Principal) (O, error) {
+func run[I, O any](
+	deps Deps,
+	fn handlerFn[I, O],
+) func(context.Context, I, dash.Principal) (O, error) {
 	return runWith(deps, appRequired, fn)
 }
 
 // runPlatform is run for an intent that also accepts the empty (platform)
 // scope, where sc.AppID is "".
-func runPlatform[I, O any](deps Deps, fn handlerFn[I, O]) func(context.Context, I, dash.Principal) (O, error) {
+func runPlatform[I, O any](
+	deps Deps,
+	fn handlerFn[I, O],
+) func(context.Context, I, dash.Principal) (O, error) {
 	return runWith(deps, platformScope, fn)
 }
 
@@ -43,19 +49,27 @@ func runPlatform[I, O any](deps Deps, fn handlerFn[I, O]) func(context.Context, 
 // "all apps", so a handler that reached the engine with an empty scope would
 // list other apps' rows. The check therefore sits here, before the handler
 // runs, and not in each handler.
-func runWith[I, O any](deps Deps, policy scopePolicy, fn handlerFn[I, O]) func(context.Context, I, dash.Principal) (O, error) {
+func runWith[I, O any](
+	deps Deps,
+	policy scopePolicy,
+	fn handlerFn[I, O],
+) func(context.Context, I, dash.Principal) (O, error) {
 	return func(ctx context.Context, in I, p dash.Principal) (O, error) {
 		var zero O
 
 		eng := deps.engine()
 		if eng == nil {
-			return zero, &dash.Error{Code: dash.CodeUnavailable, Message: "the ledger engine is not running"}
+			return zero, &dash.Error{
+				Code:    dash.CodeUnavailable,
+				Message: "the ledger engine is not running",
+			}
 		}
 
 		sc, err := resolveScope(p, deps)
 		if err != nil {
 			return zero, err
 		}
+
 		if sc.AppID == "" && policy == appRequired {
 			return zero, &dash.Error{
 				Code:    dash.CodePermissionDenied,
@@ -67,6 +81,7 @@ func runWith[I, O any](deps Deps, policy scopePolicy, fn handlerFn[I, O]) func(c
 		if err != nil {
 			return zero, toContractError(err)
 		}
+
 		return out, nil
 	}
 }
@@ -108,24 +123,36 @@ func platformCommand[I, O any](b *binder, name string, fn handlerFn[I, O]) {
 	b.platform[name] = true
 }
 
-func bindQuery[I, O any](b *binder, name string, h func(context.Context, I, dash.Principal) (O, error)) {
+func bindQuery[I, O any](
+	b *binder,
+	name string,
+	h func(context.Context, I, dash.Principal) (O, error),
+) {
 	if b.err != nil {
 		return
 	}
+
 	if err := dispatcher.RegisterQuery(b.d, contributorName, name, 1, h); err != nil {
 		b.err = fmt.Errorf("ledger/contract: register %s: %w", name, err)
 		return
 	}
+
 	b.kinds[name] = "query"
 }
 
-func bindCommand[I, O any](b *binder, name string, h func(context.Context, I, dash.Principal) (O, error)) {
+func bindCommand[I, O any](
+	b *binder,
+	name string,
+	h func(context.Context, I, dash.Principal) (O, error),
+) {
 	if b.err != nil {
 		return
 	}
+
 	if err := dispatcher.RegisterCommand(b.d, contributorName, name, 1, h); err != nil {
 		b.err = fmt.Errorf("ledger/contract: register %s: %w", name, err)
 		return
 	}
+
 	b.kinds[name] = "command"
 }

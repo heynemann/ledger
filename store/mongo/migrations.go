@@ -44,6 +44,7 @@ func init() {
 				if !ok {
 					return fmt.Errorf("expected mongomigrate executor, got %T", exec)
 				}
+
 				return mexec.DropCollection(ctx, (*planModel)(nil))
 			},
 		},
@@ -61,8 +62,20 @@ func init() {
 				}
 
 				return mexec.CreateIndexes(ctx, colSubscriptions, []mongo.IndexModel{
-					{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "app_id", Value: 1}, {Key: "status", Value: 1}}},
-					{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "app_id", Value: 1}, {Key: "created_at", Value: -1}}},
+					{
+						Keys: bson.D{
+							{Key: "tenant_id", Value: 1},
+							{Key: "app_id", Value: 1},
+							{Key: "status", Value: 1},
+						},
+					},
+					{
+						Keys: bson.D{
+							{Key: "tenant_id", Value: 1},
+							{Key: "app_id", Value: 1},
+							{Key: "created_at", Value: -1},
+						},
+					},
 					{Keys: bson.D{{Key: "plan_id", Value: 1}}},
 				})
 			},
@@ -71,6 +84,7 @@ func init() {
 				if !ok {
 					return fmt.Errorf("expected mongomigrate executor, got %T", exec)
 				}
+
 				return mexec.DropCollection(ctx, (*subscriptionModel)(nil))
 			},
 		},
@@ -88,7 +102,14 @@ func init() {
 				}
 
 				return mexec.CreateIndexes(ctx, colUsageEvents, []mongo.IndexModel{
-					{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "app_id", Value: 1}, {Key: "feature_key", Value: 1}, {Key: "timestamp", Value: -1}}},
+					{
+						Keys: bson.D{
+							{Key: "tenant_id", Value: 1},
+							{Key: "app_id", Value: 1},
+							{Key: "feature_key", Value: 1},
+							{Key: "timestamp", Value: -1},
+						},
+					},
 					{Keys: bson.D{{Key: "timestamp", Value: -1}}},
 					{
 						Keys:    bson.D{{Key: "idempotency_key", Value: 1}},
@@ -101,6 +122,7 @@ func init() {
 				if !ok {
 					return fmt.Errorf("expected mongomigrate executor, got %T", exec)
 				}
+
 				return mexec.DropCollection(ctx, (*usageEventModel)(nil))
 			},
 		},
@@ -127,6 +149,7 @@ func init() {
 				if !ok {
 					return fmt.Errorf("expected mongomigrate executor, got %T", exec)
 				}
+
 				return mexec.DropCollection(ctx, (*entitlementCacheModel)(nil))
 			},
 		},
@@ -144,9 +167,22 @@ func init() {
 				}
 
 				return mexec.CreateIndexes(ctx, colInvoices, []mongo.IndexModel{
-					{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "app_id", Value: 1}, {Key: "created_at", Value: -1}}},
+					{
+						Keys: bson.D{
+							{Key: "tenant_id", Value: 1},
+							{Key: "app_id", Value: 1},
+							{Key: "created_at", Value: -1},
+						},
+					},
 					{Keys: bson.D{{Key: "app_id", Value: 1}, {Key: "status", Value: 1}}},
-					{Keys: bson.D{{Key: "tenant_id", Value: 1}, {Key: "app_id", Value: 1}, {Key: "period_start", Value: 1}, {Key: "period_end", Value: 1}}},
+					{
+						Keys: bson.D{
+							{Key: "tenant_id", Value: 1},
+							{Key: "app_id", Value: 1},
+							{Key: "period_start", Value: 1},
+							{Key: "period_end", Value: 1},
+						},
+					},
 					{Keys: bson.D{{Key: "subscription_id", Value: 1}}},
 				})
 			},
@@ -155,6 +191,7 @@ func init() {
 				if !ok {
 					return fmt.Errorf("expected mongomigrate executor, got %T", exec)
 				}
+
 				return mexec.DropCollection(ctx, (*invoiceModel)(nil))
 			},
 		},
@@ -184,6 +221,7 @@ func init() {
 				if !ok {
 					return fmt.Errorf("expected mongomigrate executor, got %T", exec)
 				}
+
 				return mexec.DropCollection(ctx, (*couponModel)(nil))
 			},
 		},
@@ -214,6 +252,7 @@ func init() {
 				if !ok {
 					return fmt.Errorf("expected mongomigrate executor, got %T", exec)
 				}
+
 				return mexec.DropCollection(ctx, (*featureCatalogModel)(nil))
 			},
 		},
@@ -232,7 +271,10 @@ func init() {
 
 				return mexec.CreateIndexes(ctx, colCouponApplications, []mongo.IndexModel{
 					{
-						Keys:    bson.D{{Key: "coupon_id", Value: 1}, {Key: "subscription_id", Value: 1}},
+						Keys: bson.D{
+							{Key: "coupon_id", Value: 1},
+							{Key: "subscription_id", Value: 1},
+						},
 						Options: options.Index().SetUnique(true),
 					},
 					{Keys: bson.D{{Key: "subscription_id", Value: 1}}},
@@ -243,6 +285,7 @@ func init() {
 				if !ok {
 					return fmt.Errorf("expected mongomigrate executor, got %T", exec)
 				}
+
 				return mexec.DropCollection(ctx, (*couponApplicationDoc)(nil))
 			},
 		},
@@ -287,11 +330,15 @@ func init() {
 					return fmt.Errorf("create new %s index: %w", newIdempotencyKeyIndexName, err)
 				}
 
-				if err := mexec.DB().Collection(colUsageEvents).Indexes().DropOne(ctx, oldIdempotencyKeyIndexName); err != nil {
+				if err := mexec.DB().
+					Collection(colUsageEvents).
+					Indexes().
+					DropOne(ctx, oldIdempotencyKeyIndexName); err != nil {
 					if !isIndexNotFound(err) {
 						return fmt.Errorf("drop old %s index: %w", oldIdempotencyKeyIndexName, err)
 					}
 				}
+
 				return nil
 			},
 			Down: func(ctx context.Context, exec migrate.Executor) error {
@@ -312,11 +359,15 @@ func init() {
 					return fmt.Errorf("recreate old %s index: %w", oldIdempotencyKeyIndexName, err)
 				}
 
-				if err := mexec.DB().Collection(colUsageEvents).Indexes().DropOne(ctx, newIdempotencyKeyIndexName); err != nil {
+				if err := mexec.DB().
+					Collection(colUsageEvents).
+					Indexes().
+					DropOne(ctx, newIdempotencyKeyIndexName); err != nil {
 					if !isIndexNotFound(err) {
 						return fmt.Errorf("drop new %s index: %w", newIdempotencyKeyIndexName, err)
 					}
 				}
+
 				return nil
 			},
 		},
@@ -330,9 +381,15 @@ func init() {
 				if !ok {
 					return fmt.Errorf("expected mongomigrate executor, got %T", exec)
 				}
-				if err := mexec.CreateIndexes(ctx, colSubscriptions, lifecycleSubscriptionIndexes()); err != nil {
+
+				if err := mexec.CreateIndexes(
+					ctx,
+					colSubscriptions,
+					lifecycleSubscriptionIndexes(),
+				); err != nil {
 					return err
 				}
+
 				return mexec.CreateIndexes(ctx, colInvoices, lifecycleInvoiceIndexes())
 			},
 			Down: func(ctx context.Context, exec migrate.Executor) error {
@@ -340,17 +397,27 @@ func init() {
 				if !ok {
 					return fmt.Errorf("expected mongomigrate executor, got %T", exec)
 				}
+
 				drops := map[string][]string{
-					colSubscriptions: {"status_1_cancel_at_1", "status_1_trial_end_1", "status_1_current_period_end_1"},
-					colInvoices:      {"status_1_due_date_1"},
+					colSubscriptions: {
+						"status_1_cancel_at_1",
+						"status_1_trial_end_1",
+						"status_1_current_period_end_1",
+					},
+					colInvoices: {"status_1_due_date_1"},
 				}
 				for col, names := range drops {
 					for _, name := range names {
-						if err := mexec.DB().Collection(col).Indexes().DropOne(ctx, name); err != nil && !isIndexNotFound(err) {
+						if err := mexec.DB().
+							Collection(col).
+							Indexes().
+							DropOne(ctx, name); err != nil &&
+							!isIndexNotFound(err) {
 							return fmt.Errorf("drop %s index %s: %w", col, name, err)
 						}
 					}
 				}
+
 				return nil
 			},
 		},

@@ -49,11 +49,11 @@ pro := &plan.Plan{
 		{Key: "sso", Name: "Single sign-on", Type: plan.FeatureBoolean, Limit: 1},
 	},
 	Pricing: &plan.Pricing{
-		BaseAmount:    types.USD(4900), // $49.00
+		BaseAmount:    types.USD(49_000_000), // $49.000000 (USD micros)
 		BillingPeriod: plan.PeriodMonthly,
 		Tiers: []plan.PriceTier{
 			{FeatureKey: "api_calls", Type: plan.TierGraduated, UpTo: 10000, UnitAmount: types.Zero("usd")},
-			{FeatureKey: "api_calls", Type: plan.TierGraduated, UpTo: -1, UnitAmount: types.USD(1)}, // 1 cent a call
+			{FeatureKey: "api_calls", Type: plan.TierGraduated, UpTo: -1, UnitAmount: types.USD(10_000)}, // 1 cent a call
 		},
 	},
 }
@@ -176,7 +176,7 @@ func main() {
 			{Key: "sso", Name: "Single sign-on", Type: plan.FeatureBoolean, Limit: 1},
 		},
 		Pricing: &plan.Pricing{
-			BaseAmount:    types.USD(4900),
+			BaseAmount:    types.USD(49_000_000),
 			BillingPeriod: plan.PeriodMonthly,
 		},
 	}
@@ -221,7 +221,7 @@ func main() {
 }
 ```
 
-Run it with `go run .` and it prints the invoice ID and a total of `$49.00`, the base fee: three calls are well inside the 10,000 allowance.
+Run it with `go run .` and it prints the invoice ID and a total of `$49.000000`, the base fee: three calls are well inside the 10,000 allowance.
 
 ## Switch to PostgreSQL
 

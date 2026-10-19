@@ -13,6 +13,7 @@ type Entity struct {
 // NewEntity creates a new Entity with current timestamps.
 func NewEntity() Entity {
 	now := time.Now().UTC()
+
 	return Entity{
 		CreatedAt: now,
 		UpdatedAt: now,
